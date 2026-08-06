@@ -15,6 +15,20 @@
 
 ---
 
+## Table of Contents
+
+- [The Problem](#the-problem)
+- [What CropGuardian Does](#what-cropguardian-does)
+- [MVP Features](#mvp-features)
+- [Disease Management](#-disease-management)
+- [Open APIs & External Services](#open-apis--external-services)
+- [IoT Field Monitoring](#-iot-field-monitoring)
+- [Technology Stack](#technology-stack)
+- [Roadmap](#roadmap)
+- [Team Members](#team-members)
+
+---
+
 ## The Problem
 
 Ethiopia's agriculture sector sustains the livelihoods of most of its population — yet farmers make critical decisions daily without soil data, weather forecasts, or crop records.
@@ -35,7 +49,22 @@ Planting, irrigation, and harvest decisions are made without soil readings, fore
 
 ## What CropGuardian Does
 
-CropGuardian combines **IoT field sensors**, **localized weather forecasts**, and a **crop knowledge base** into a single mobile platform — delivering the right information to farmers at the moment they need it.
+CropGuardian combines **IoT field sensors**, **open weather APIs**, **disease detection guidance**, and a **crop knowledge base** into a single mobile platform — delivering the right information to farmers at the moment they need it.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                     CROPGUARDIAN                        │
+│                                                         │
+│  📡 IoT Sensors → 🌦️ Weather API → 🌿 Crop Knowledge   │
+│              ↓           ↓               ↓              │
+│         Soil Data    Forecasts      Disease Alerts       │
+│              └───────────┴───────────────┘              │
+│                          ↓                              │
+│              🤖 Recommendation Engine                   │
+│                          ↓                              │
+│              📱 Farmer's Mobile App                     │
+└─────────────────────────────────────────────────────────┘
+```
 
 ---
 
@@ -48,6 +77,7 @@ CropGuardian combines **IoT field sensors**, **localized weather forecasts**, an
 - Phone number registration with secure JWT authentication
 - Farmer profile: name, region, language preference
 - Account linked to all registered farms and sensor devices
+- Session management with token refresh
 
 ---
 
@@ -57,8 +87,21 @@ CropGuardian combines **IoT field sensors**, **localized weather forecasts**, an
 
 - Register multiple farms with name, size (hectares), and GPS coordinates
 - Assign one or more crop types per farm from a curated Ethiopian crop list
-- Log planting dates and track harvest history over seasons
-- **Supported crops:** teff, maize, sorghum, wheat, barley, coffee, enset, chickpea
+- Log planting dates and track harvest history across seasons
+- View all farms on an interactive map (OpenStreetMap)
+
+**Supported crops:**
+
+| Crop | Season | Notes |
+|---|---|---|
+| Teff | Kiremt (Jun–Sep) | Ethiopia's staple grain |
+| Maize | Belg & Kiremt | Widely grown across regions |
+| Sorghum | Kiremt | Drought-tolerant staple |
+| Wheat | Kiremt | Highlands crop |
+| Barley | Kiremt | High-altitude regions |
+| Coffee | Year-round | Primary export crop |
+| Enset | Year-round | Southern Ethiopia staple |
+| Chickpea | Belg (Feb–May) | Legume, nitrogen-fixing |
 
 ---
 
@@ -66,23 +109,65 @@ CropGuardian combines **IoT field sensors**, **localized weather forecasts**, an
 
 > Localized forecasts translated directly into farming decisions.
 
-- Current conditions and 7-day forecast for the farmer's registered location
+- Current conditions and 7-day forecast per farm location
 - Displayed metrics: temperature, rainfall probability, humidity, wind speed
 - Crop-specific weather alerts: drought risk, heavy rain warning, frost advisory
+- Historical weather summary for the past 30 days
 
-> **Example:** *Heavy rain forecast in 48 hours → Delay fertilizer application. Check field drainage.*
+**Example recommendations triggered by weather:**
+
+| Weather Event | Farming Action |
+|---|---|
+| Heavy rain in 48 hours | Delay fertilizer application; check field drainage |
+| Drought alert (5+ dry days) | Activate irrigation; reduce field activity |
+| Frost advisory overnight | Cover or harvest frost-sensitive crops |
+| High humidity (>80%) | Inspect crops for early fungal signs |
+| Wind speed >30 km/h | Avoid spraying; secure young seedlings |
 
 ---
 
-### 🌿 Crop Knowledge Base
+### 🦠 Disease Management
 
-> Practical, Ethiopia-specific agricultural guidance available on demand.
+> Early identification and prevention guidance for Ethiopia's most common crop diseases.
 
-- Crop profiles: water requirements, soil type, growth duration
-- Regional planting calendars aligned to Ethiopian seasons (*Belg* and *Kiremt*)
-- Disease identification: visual symptoms and prevention steps
-- Fertilizer guidance: type, quantity, and application timing per crop stage
-- Post-harvest handling and storage recommendations
+Disease alerts are triggered by combining **weather conditions** (temperature, humidity) with **crop stage** and **sensor data** — flagging risk windows before visible symptoms appear.
+
+#### Disease Risk Detection
+
+| Crop | Disease | Trigger Conditions | Early Action |
+|---|---|---|---|
+| Teff | Teff Straw Worm | High humidity + warm nights | Inspect stems; apply recommended pesticide |
+| Maize | Maize Streak Virus | Dry conditions + leafhopper season | Scout for discoloration; remove infected plants |
+| Wheat | Yellow Rust | Cool temperature + high humidity | Apply fungicide at first sign |
+| Sorghum | Head Smut | Wet soil at sowing time | Use treated seed; rotate fields |
+| Coffee | Coffee Berry Disease | Rainfall during berry development | Apply copper-based fungicide |
+| Common (all crops) | Aphid Infestation | Warm + dry spells | Inspect leaf undersides; apply neem solution |
+| Common (all crops) | Root Rot | Waterlogged soil (soil moisture >85%) | Improve drainage; reduce irrigation |
+
+#### How Disease Alerts Work
+
+```
+Sensor Data (SIM-80L · DHT22)
+         +
+Weather Forecast (Open-Meteo)
+         +
+Crop Stage (from Farm Record)
+         │
+         ▼
+  Disease Risk Engine
+         │
+         ▼
+  Push Alert to Farmer
+  "High rust risk on your wheat farm.
+   Apply fungicide within 48 hours."
+```
+
+#### Disease Library
+Each crop entry in the knowledge base includes:
+- **Symptoms** — visual description with common Ethiopian field examples
+- **Risk conditions** — temperature, humidity, and season thresholds
+- **Prevention steps** — practical measures accessible to smallholder farmers
+- **Treatment options** — locally available inputs and application guidance
 
 ---
 
@@ -90,7 +175,7 @@ CropGuardian combines **IoT field sensors**, **localized weather forecasts**, an
 
 > Real-time soil and environment data from physical sensors deployed on the farm.
 
-A low-cost sensor kit connects to the CropGuardian backend via an ESP32 microcontroller over Wi-Fi or GSM. Readings are collected automatically and reflected in the farmer's app — no manual data entry required.
+A low-cost sensor kit connects to the CropGuardian backend via an ESP32 microcontroller over mobile internet (GSM). Readings are collected automatically and reflected in the farmer's app — no manual data entry required.
 
 #### Sensor Kit
 
@@ -103,12 +188,12 @@ A low-cost sensor kit connects to the CropGuardian backend via an ESP32 microcon
 #### Data Flow
 
 ```
-Farm Sensors (SIM-80L · DHT22 · NPK)
+Farm Sensors (SIM-80L · DHT22 · NPK RS485)
               │
               ▼
        ESP32 Controller
               │
-         Wi-Fi / GSM
+         Mobile Internet (GSM)
               │
               ▼
   CropGuardian Backend API
@@ -117,36 +202,37 @@ Farm Sensors (SIM-80L · DHT22 · NPK)
   PostgreSQL Database
               │
               ▼
-  Recommendation Engine
+  Recommendation + Disease Engine
               │
               ▼
    Farmer's Mobile App
 ```
 
-#### What the App Shows
+#### App Dashboard — Sensor Readings
 
-- Soil moisture level with irrigation status: **Sufficient / Low / Critical**
-- Temperature and humidity with crop-specific stress indicators
-- NPK readings with fertilizer action recommendations
-- Sensor trend graphs for the past 7 days
-- Threshold alerts when readings cross crop-specific danger levels
+| Reading | Status Levels | Action Triggered |
+|---|---|---|
+| Soil Moisture | Sufficient / Low / Critical | Irrigation alert when below crop threshold |
+| Temperature | Normal / Heat Stress / Frost Risk | Crop protection alert |
+| Humidity | Normal / High (disease risk) | Fungal disease alert |
+| Nitrogen (N) | Adequate / Deficient | Apply nitrogen fertilizer |
+| Phosphorus (P) | Adequate / Deficient | Apply phosphorus at root zone |
+| Potassium (K) | Adequate / Deficient | Apply potassium; improves drought resistance |
 
 ---
 
 ### 🤖 Rule-Based Recommendations
 
-> Sensor readings and weather data converted into clear farming actions.
+> Sensor and weather data converted into clear, prioritized farming actions.
 
-Recommendations are generated by combining live sensor data, weather forecasts, and the registered crop's known requirements. No machine learning required at this stage — the rules are grounded in standard agronomic thresholds.
-
-| Data Trigger | Recommendation |
-|---|---|
-| Soil moisture below crop threshold | Irrigate now — current reading: X% |
-| Heavy rain forecast + high soil moisture | Hold irrigation, inspect drainage |
-| Soil nitrogen level low | Apply urea fertilizer before next rainfall |
-| High temperature + low humidity | Monitor for heat stress; increase irrigation frequency |
-| Temperature drop below frost threshold | Cover or harvest frost-sensitive crops immediately |
-| All readings within normal range | No action required today |
+| Priority | Trigger | Recommendation |
+|---|---|---|
+| 🔴 Critical | Soil moisture below minimum threshold | **Irrigate immediately** |
+| 🔴 Critical | Disease risk conditions met | **Apply treatment within 48 hours** |
+| 🟡 Warning | Heavy rain forecast + saturated soil | Hold irrigation; inspect drainage |
+| 🟡 Warning | Nitrogen deficiency detected | Apply urea before next rainfall |
+| 🟢 Info | Planting window approaching | Prepare seedbed; check soil temperature |
+| 🟢 Info | All readings normal | No action required today |
 
 ---
 
@@ -154,10 +240,68 @@ Recommendations are generated by combining live sensor data, weather forecasts, 
 
 > Time-sensitive information delivered directly to the farmer.
 
-- Sensor threshold breach alerts (moisture critical, nutrient deficiency)
-- Weather warnings for the farmer's registered farm location
-- Planting and harvest reminders based on registered crop calendar
-- Optional daily or weekly farm condition summary
+- Sensor threshold breach alerts (moisture critical, nutrient deficiency detected)
+- Disease risk alerts triggered by weather + sensor combinations
+- Weather warnings for registered farm locations
+- Planting and harvest reminders based on crop calendar
+- Optional daily farm condition summary
+
+---
+
+## Open APIs & External Services
+
+CropGuardian integrates open, freely available APIs — no licensing cost for core functionality.
+
+### 🌤️ Open-Meteo — Weather API
+
+**Base URL:** `https://api.open-meteo.com/v1/forecast`
+
+Free, open-source weather API with no API key required for standard use.
+
+**Parameters used:**
+
+| Parameter | Description |
+|---|---|
+| `latitude`, `longitude` | Farm GPS coordinates |
+| `current_weather` | Real-time temperature and wind |
+| `hourly=temperature_2m` | Hourly temperature forecast |
+| `hourly=precipitation_probability` | Hourly rain probability (%) |
+| `hourly=relative_humidity_2m` | Hourly humidity (%) |
+| `hourly=windspeed_10m` | Hourly wind speed |
+| `daily=precipitation_sum` | Daily total rainfall (mm) |
+| `daily=temperature_2m_max/min` | Daily high/low temperature |
+| `forecast_days=7` | 7-day forecast window |
+
+**Example request:**
+```
+GET https://api.open-meteo.com/v1/forecast
+  ?latitude=9.0054
+  &longitude=38.7636
+  &current_weather=true
+  &hourly=temperature_2m,precipitation_probability,relative_humidity_2m
+  &daily=precipitation_sum,temperature_2m_max,temperature_2m_min
+  &forecast_days=7
+```
+
+**Used for:** weather feed, disease risk triggers, recommendation engine inputs.
+
+---
+
+### 🗺️ OpenStreetMap — Mapping
+
+**Tile URL:** `https://tile.openstreetmap.org/{z}/{x}/{y}.png`
+
+Free, open-source mapping with no API key required.
+
+**Used for:** farm location registration, GPS pin display, farm boundary visualization.
+
+---
+
+### 📚 FAO GAEZ — Crop & Agro-Zone Data
+
+**Source:** FAO Global Agro-Ecological Zones database
+
+**Used for:** regional planting calendars, crop suitability data, soil condition baselines for Ethiopian growing zones.
 
 ---
 
@@ -170,19 +314,10 @@ Recommendations are generated by combining live sensor data, weather forecasts, 
 | Database | PostgreSQL |
 | Authentication | JWT |
 | IoT Microcontroller | ESP32 |
-| IoT Communication | REST API over Wi-Fi / GSM |
-| Weather Data | Open-Meteo API |
-| Maps | OpenStreetMap |
-
----
-
-## External Data Sources
-
-| Source | Data Provided |
-|---|---|
-| Open-Meteo | 7-day forecasts, temperature, rainfall probability, wind, humidity |
-| OpenStreetMap | Farm GPS location, geographic visualization |
-| FAO Agricultural Resources | Crop profiles, farming practices, regional guidelines |
+| IoT Communication | REST API over GSM / Mobile Internet |
+| Weather Data | Open-Meteo API (free, no key) |
+| Maps | OpenStreetMap (free, no key) |
+| Push Notifications | Firebase Cloud Messaging (FCM) |
 
 ---
 
@@ -190,8 +325,8 @@ Recommendations are generated by combining live sensor data, weather forecasts, 
 
 | Phase | Focus | Status |
 |---|---|---|
-| **Phase 1 — MVP** | Mobile app, farm records, weather feed, crop library, IoT sensor kit, rule-based recommendations | 🚧 In development |
-| **Phase 2 — USSD Access** | Basic phone support via USSD menus: weather summary, crop alerts, irrigation reminders — no smartphone required | 📋 Planned |
+| **Phase 1 — MVP** | Mobile app, farm records, weather feed, disease alerts, crop library, IoT sensor kit, rule-based recommendations | 🚧 In development |
+| **Phase 2 — USSD Access** | Basic phone support via USSD menus: weather summary, disease alerts, irrigation reminders — no smartphone required | 📋 Planned |
 | **Phase 3 — Intelligence** | Satellite crop health monitoring, AI yield prediction, expanded sensor coverage | 📋 Planned |
 
 ---
