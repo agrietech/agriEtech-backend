@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🌱 CropGuardian
+# 🌱 AgriEtech
 
 ### Agricultural Decision Support for Ethiopian Smallholder Farmers
 
@@ -18,7 +18,7 @@
 ## Table of Contents
 
 - [The Problem](#the-problem)
-- [What CropGuardian Does](#what-cropguardian-does)
+- [What AgriEtech Does](#what-AgriEtech-does)
 - [MVP Features](#mvp-features)
 - [Disease Management](#-disease-management)
 - [Open APIs & External Services](#open-apis--external-services)
@@ -47,13 +47,13 @@ Planting, irrigation, and harvest decisions are made without soil readings, fore
 
 ---
 
-## What CropGuardian Does
+## What AgriEtech Does
 
-CropGuardian combines **IoT field sensors**, **open weather APIs**, **disease detection guidance**, and a **crop knowledge base** into a single mobile platform — delivering the right information to farmers at the moment they need it.
+AgriEtech combines **IoT field sensors**, **open weather APIs**, **disease detection guidance**, and a **crop knowledge base** into a single mobile platform — delivering the right information to farmers at the moment they need it.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                     CROPGUARDIAN                        │
+│                     AgriEtech                        │
 │                                                         │
 │  📡 IoT Sensors → 🌦️ Weather API → 🌿 Crop Knowledge   │
 │              ↓           ↓               ↓              │
@@ -175,7 +175,7 @@ Each crop entry in the knowledge base includes:
 
 > Real-time soil and environment data from physical sensors deployed on the farm.
 
-A low-cost sensor kit connects to the CropGuardian backend via an ESP32 microcontroller over mobile internet (GSM). Readings are collected automatically and reflected in the farmer's app — no manual data entry required.
+A low-cost sensor kit connects to the AgriEtech backend via an ESP32 microcontroller over mobile internet (GSM). Readings are collected automatically and reflected in the farmer's app — no manual data entry required.
 
 #### Sensor Kit
 
@@ -196,7 +196,7 @@ Farm Sensors (SIM-80L · DHT22 · NPK RS485)
          Mobile Internet (GSM)
               │
               ▼
-  CropGuardian Backend API
+  AgriEtech Backend API
               │
               ▼
   PostgreSQL Database
@@ -250,7 +250,7 @@ Farm Sensors (SIM-80L · DHT22 · NPK RS485)
 
 ## Open APIs & External Services
 
-CropGuardian integrates open, freely available APIs — no licensing cost for core functionality.
+AgriEtech integrates open, freely available APIs — no licensing cost for core functionality.
 
 ### 🌤️ Open-Meteo — Weather API
 
@@ -348,3 +348,4 @@ Free, open-source mapping with no API key required.
 > 🚧 **MVP in active development**
 
 Statistics and crop data reflect current published figures and will be updated as the platform grows. Sensor compatibility and supported crops will expand based on field feedback.
+
