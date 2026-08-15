@@ -1,0 +1,257 @@
+// AgriEtech - Prisma Schema Definition
+// Multi-Hazard Early Warning Database Schema for Ethiopia
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  FARMER
+  DEVELOPMENT_AGENT
+  WOREDA_OFFICER
+  RESEARCHER
+  ADMIN
+}
+
+enum RiskLevel {
+  LOW
+  MODERATE
+  HIGH
+  CRITICAL
+}
+
+enum HazardType {
+  DROUGHT
+  FLOOD
+  LOCUST_PEST
+  VEGETATION_STRESS
+  FROST
+  HEAT_STRESS
+}
+
+enum DeliveryChannel {
+  SMS
+  USSD
+  PUSH_NOTIFICATION
+  WEBSOCKET
+  EMAIL
+}
+
+enum AlertStatus {
+  DRAFT
+  DISPATCHED
+  DELIVERED
+  FAILED
+}
+
+model User {
+  id               String            @id @default(uuid())
+  phoneNumber      String            @unique
+  fullName         String
+  passwordHash     String?
+  role             Role              @default(FARMER)
+  preferredLang    String            @default("am") // 'am' for Amharic, 'en' for English
+  woredaId         String?
+  woreda           Woreda?           @relation(fields: [woredaId], references: [id])
+  farms            Farm[]
+  alertLogs        AlertDeliveryLog[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@index([phoneNumber])
+  @@index([woredaId])
+}
+
+model Region {
+  id               String            @id @default(uuid())
+  code             String            @unique // e.g., 'ET-OR', 'ET-AM'
+  nameEn           String
+  nameAm           String?
+  geojson          Json?             // Polygon boundary
+  zones            Zone[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+}
+
+model Zone {
+  id               String            @id @default(uuid())
+  regionId         String
+  region           Region            @relation(fields: [regionId], references: [id], onDelete: Cascade)
+  nameEn           String
+  nameAm           String?
+  geojson          Json?             // Polygon boundary
+  woredas          Woreda[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@index([regionId])
+}
+
+model Woreda {
+  id               String            @id @default(uuid())
+  zoneId           String
+  zone             Zone              @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  nameEn           String
+  nameAm           String?
+  geojson          Json?             // Polygon boundary
+  centerLat        Float
+  centerLng        Float
+  farms            Farm[]
+  users            User[]
+  satelliteObs     SatelliteObservation[]
+  riskAssessments  RiskAssessment[]
+  alerts           Alert[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@index([zoneId])
+  @@index([centerLat, centerLng])
+}
+
+model Farm {
+  id               String            @id @default(uuid())
+  userId           String
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  woredaId         String
+  woreda           Woreda            @relation(fields: [woredaId], references: [id])
+  farmName         String
+  areaHectares     Float?
+  polygonGeojson   Json?
+  latitude         Float
+  longitude        Float
+  primaryCrop      String?
+  sensors          Sensor[]
+  diseaseDiagnoses DiseaseDiagnosis[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@index([userId])
+  @@index([woredaId])
+  @@index([latitude, longitude])
+}
+
+model Sensor {
+  id               String            @id @default(uuid())
+  farmId           String
+  farm             Farm              @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  hardwareId       String            @unique
+  sensorType       String            // SOIL_MOISTURE, TEMPERATURE, RAIN_GAUGE, LEAF_WETNESS
+  isActive         Boolean           @default(true)
+  readings         SensorReading[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@index([farmId])
+  @@index([hardwareId])
+}
+
+model SensorReading {
+  id               String            @id @default(uuid())
+  sensorId         String
+  sensor           Sensor            @relation(fields: [sensorId], references: [id], onDelete: Cascade)
+  soilMoisture     Float?
+  soilTemp         Float?
+  ambientTemp      Float?
+  humidity         Float?
+  rainfallMm       Float?
+  batteryLevel     Float?
+  recordedAt       DateTime
+  createdAt        DateTime          @default(now())
+
+  @@index([sensorId, recordedAt])
+}
+
+model SatelliteObservation {
+  id               String            @id @default(uuid())
+  woredaId         String
+  woreda           Woreda            @relation(fields: [woredaId], references: [id], onDelete: Cascade)
+  observationDate  DateTime
+  source           String            // CHIRPS, MODIS, SENTINEL_1, SENTINEL_2, NASA_POWER, GLOFAS, FAO_WAPOR
+  chirpsRainfallMm Float?
+  nasaPowerTempMax Float?
+  nasaPowerTempMin Float?
+  modisNdvi        Float?
+  sentinel2Ndvi    Float?
+  glofasDischarge  Float?
+  soilMoistureSat  Float?
+  locustPresence   Boolean           @default(false)
+  rawPayload       Json?
+  createdAt        DateTime          @default(now())
+
+  @@index([woredaId, observationDate])
+  @@index([source])
+}
+
+model RiskAssessment {
+  id               String            @id @default(uuid())
+  woredaId         String
+  woreda           Woreda            @relation(fields: [woredaId], references: [id], onDelete: Cascade)
+  assessmentDate   DateTime
+  hazardType       HazardType
+  riskLevel        RiskLevel
+  riskScore        Float             // 0.0 to 1.0 composite index
+  spi30Day         Float?            // Standardized Precipitation Index 30-day
+  spi90Day         Float?            // Standardized Precipitation Index 90-day
+  dischargeAnomaly Float?
+  ndviAnomaly      Float?
+  locustRiskRadius Float?
+  recommendationsEn String?
+  recommendationsAm String?
+  createdAt        DateTime          @default(now())
+
+  @@index([woredaId, assessmentDate])
+  @@index([hazardType, riskLevel])
+}
+
+model Alert {
+  id               String            @id @default(uuid())
+  woredaId         String
+  woreda           Woreda            @relation(fields: [woredaId], references: [id])
+  hazardType       HazardType
+  severity         RiskLevel
+  titleEn          String
+  titleAm          String
+  messageEn        String
+  messageAm        String
+  deliveryLogs     AlertDeliveryLog[]
+  createdAt        DateTime          @default(now())
+
+  @@index([woredaId, severity])
+}
+
+model AlertDeliveryLog {
+  id               String            @id @default(uuid())
+  alertId          String
+  alert            Alert             @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  userId           String
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel          DeliveryChannel
+  status           AlertStatus       @default(DRAFT)
+  responsePayload  Json?
+  sentAt           DateTime?
+  createdAt        DateTime          @default(now())
+
+  @@index([alertId])
+  @@index([userId])
+}
+
+model DiseaseDiagnosis {
+  id               String            @id @default(uuid())
+  farmId           String
+  farm             Farm              @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  imageUrl         String
+  cropIdentified   String?
+  diseaseName      String?
+  confidenceScore  Float?
+  treatmentEn      String?
+  treatmentAm      String?
+  rawResponse      Json?
+  createdAt        DateTime          @default(now())
+
+  @@index([farmId])
+}
