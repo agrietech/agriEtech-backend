@@ -12,6 +12,8 @@ dist/
 
 # Prisma
 prisma/migrations/
+!prisma/migrations/
+!prisma/migrations/**
 
 # OS
 .DS_Store
