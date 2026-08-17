@@ -10,10 +10,12 @@ dist/
 .idea/
 *.log
 
-# Prisma
-prisma/migrations/
-!prisma/migrations/
-!prisma/migrations/**
+# Prisma — generated client output (rebuild with: npm run prisma:generate)
+generated/
+
+# Runtime directories
+logs/
+uploads/
 
 # OS
 .DS_Store
