@@ -1,6 +1,9 @@
 const { prisma, isConnected } = require('../../config/db');
 const { dispatchHazardAlertSms } = require('../../delivery/sms/smsDispatcher');
-const { broadcastEmergencyAlert } = require('../../delivery/websocket/riskAssessmentChannel');
+const {
+  broadcastAlertToWoreda,
+  broadcastEmergencyAlert,
+} = require('../../delivery/websocket/riskAssessmentChannel');
 
 // Create emergency early warning alert
 async function createAlert({
@@ -46,7 +49,10 @@ async function createAlert({
     });
   }
 
-  broadcastEmergencyAlert(alert);
+  broadcastAlertToWoreda(woredaId, alert);
+  if ((severity || 'HIGH').toUpperCase() === 'CRITICAL') {
+    broadcastEmergencyAlert(alert);
+  }
   return alert;
 }
 
