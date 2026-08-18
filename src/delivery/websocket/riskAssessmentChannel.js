@@ -1,12 +1,11 @@
 const { getIO } = require('../../config/socket');
 const logger = require('../../utils/logger');
 
-// Broadcast risk assessment update to woreda channel subscribers.
-// Event name must stay in sync with the frontend's socket_client.dart listener.
+// Broadcast risk assessment update to woreda channel subscribers
 function broadcastRiskUpdate(woredaId, assessmentData) {
   try {
     const io = getIO();
-    io.to(`woreda:${woredaId}`).emit('risk:updated', {
+    io.to(`woreda:${woredaId}`).emit('risk:update', {
       woredaId,
       timestamp: new Date().toISOString(),
       data: assessmentData,
@@ -16,21 +15,7 @@ function broadcastRiskUpdate(woredaId, assessmentData) {
   }
 }
 
-// Push a new advisory to only the woreda it concerns (preferred path).
-function broadcastAlertToWoreda(woredaId, alert) {
-  try {
-    const io = getIO();
-    io.to(`woreda:${woredaId}`).emit('alert:new', {
-      timestamp: new Date().toISOString(),
-      alert,
-    });
-  } catch (err) {
-    logger.warn(`WebSocket alert skipped: ${err.message}`);
-  }
-}
-
-// Broadcast critical emergency alert to all connected clients regardless of
-// woreda subscription — reserved for CRITICAL severity, cross-region hazards.
+// Broadcast critical emergency alert to all connected clients
 function broadcastEmergencyAlert(alertPayload) {
   try {
     const io = getIO();
@@ -45,6 +30,5 @@ function broadcastEmergencyAlert(alertPayload) {
 
 module.exports = {
   broadcastRiskUpdate,
-  broadcastAlertToWoreda,
   broadcastEmergencyAlert,
 };
