@@ -1,0 +1,49 @@
+{
+  "alerts": {
+    "drought_warning": "የድርቅ ማስጠንቀቂያ",
+    "drought_message": "በአካባቢዎ ዝቅተኛ የዝናብ መጠን ተገኝቷል። ተጨማሪ መስኖ ያዘጋጁ እና ውሃ ይቆጥቡ።",
+    "flood_warning": "የጎርፍ ማስጠንቀቂያ",
+    "flood_message": "ከባድ ዝናብ ይጠበቃል። ከብቶችን ወደ ከፍተኛ ቦታ ያንቀሳቅሱ እና ሰብሎችን ይጠብቁ።",
+    "locust_warning": "የበረሃ አንበጣ ማስጠንቀቂያ",
+    "locust_message": "የአንበጣ ወረርሽኝ ከአካባቢዎ {{distance}} ኪሜ ርቀት ላይ ተገኝቷል። የመቆጣጠሪያ እርምጃዎችን ወዲያውኑ ያዘጋጁ።",
+    "heatwave_warning": "የሙቀት ጭንቀት ማስጠንቀቂያ",
+    "heatwave_message": "በጣም ከፍተኛ ሙቀት ይጠበቃል። ለሰብሎች እና ከብቶች ጥላ እና ውሃ ያቅርቡ።",
+    "frost_warning": "የበረዶ ማስጠንቀቂያ",
+    "frost_message": "ሙቀት ከ0°ሴ በታች ሊወርድ ይችላል። ስሜታዊ ሰብሎችን ይጠብቁ።",
+    "pest_warning": "የተባይ ማስጠንቀቂያ",
+    "pest_message": "በአካባቢዎ ከፍተኛ የተባይ እንቅስቃሴ ተገኝቷል።",
+    "disease_warning": "የሰብል በሽታ ማስጠንቀቂያ",
+    "disease_message": "በአየር ሁኔታ ምክንያት የበሽታ አደጋ ከፍተኛ ነው።"
+  },
+  "severity": {
+    "CRITICAL": "ወሳኝ",
+    "HIGH": "ከፍተኛ",
+    "MODERATE": "መካከለኛ",
+    "LOW": "ዝቅተኛ",
+    "INFO": "መረጃ"
+  },
+  "recommendations": {
+    "delay_planting": "የአፈር እርጥበት እስኪሻሻል ድረስ መዝራትን ያዘገዩ",
+    "apply_irrigation": "ወዲያውኑ ተጨማሪ መስኖ ያድርጉ",
+    "harvest_early": "ከከባድ ዝናብ በፊት ቀደም ብሎ ማጨድን ያስቡበት",
+    "apply_pesticide": "ተገቢ የተባይ መቆጣጠሪያ እርምጃዎችን ይተግብሩ",
+    "protect_crops": "ሰብሎችን ከከባድ የአየር ሁኔታ ይጠብቁ",
+    "conserve_water": "የውሃ ሀብቶችን ይቆጥቡ",
+    "monitor_closely": "ሁኔታውን በቅርበት ይከታተሉ"
+  },
+  "ussd": {
+    "main_menu": "CON እንኳን ወደ አግሪኢቴክ በደህና መጡ\n1. የዛሬ የአየር ሁኔታ\n2. ንቁ ማስጠንቀቂያዎች\n3. ተባይ ሪፖርት\n4. የሰብል ምክር\n5. ቋንቋ",
+    "weather_forecast": "የአየር ሁኔታ ትንበያ",
+    "no_alerts": "ለአካባቢዎ ንቁ ማስጠንቀቂያ የለም",
+    "recent_alerts": "የቅርብ ጊዜ ማስጠንቀቂያዎች",
+    "back": "0. ወደ ዋና ምናሌ ተመለስ"
+  },
+  "crops": {
+    "wheat": "ስንዴ",
+    "barley": "ገብስ",
+    "teff": "ጤፍ",
+    "maize": "በቆሎ",
+    "sorghum": "ማሽላ",
+    "coffee": "ቡና"
+  }
+}
