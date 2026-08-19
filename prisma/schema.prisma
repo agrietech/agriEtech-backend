@@ -50,20 +50,26 @@ enum AlertStatus {
 }
 
 model User {
-  id               String            @id @default(uuid())
-  phoneNumber      String            @unique
-  fullName         String
-  passwordHash     String?
-  role             Role              @default(FARMER)
-  preferredLang    String            @default("am") // 'am' for Amharic, 'en' for English
-  woredaId         String?
-  woreda           Woreda?           @relation(fields: [woredaId], references: [id])
-  farms            Farm[]
-  alertLogs        AlertDeliveryLog[]
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  id                    String            @id @default(uuid())
+  phoneNumber           String?           @unique
+  email                 String?           @unique
+  fullName              String
+  passwordHash          String?
+  role                  Role              @default(FARMER)
+  preferredLang         String            @default("am") // 'am' for Amharic, 'en' for English
+  isEmailVerified       Boolean           @default(false)
+  resetPasswordToken    String?
+  resetPasswordExpires DateTime?
+  verificationToken     String?
+  woredaId              String?
+  woreda                Woreda?           @relation(fields: [woredaId], references: [id])
+  farms                 Farm[]
+  alertLogs             AlertDeliveryLog[]
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
 
   @@index([phoneNumber])
+  @@index([email])
   @@index([woredaId])
 }
 
@@ -243,14 +249,22 @@ model AlertDeliveryLog {
 
 model DiseaseDiagnosis {
   id               String            @id @default(uuid())
-  farmId           String
-  farm             Farm              @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  farmId           String?
+  farm             Farm?             @relation(fields: [farmId], references: [id], onDelete: Cascade)
   imageUrl         String
+  cropType         String?
   cropIdentified   String?
   diseaseName      String?
+  pathogen         String?
+  severity         String?           @default("MODERATE") // LOW, MODERATE, HIGH, CRITICAL
   confidenceScore  Float?
+  symptomsEn       String?
+  symptomsAm       String?
   treatmentEn      String?
   treatmentAm      String?
+  treatmentOm      String?
+  preventionEn     String?
+  preventionAm     String?
   rawResponse      Json?
   createdAt        DateTime          @default(now())
 

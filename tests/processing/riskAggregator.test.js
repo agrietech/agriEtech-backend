@@ -1,4 +1,8 @@
-const { calculateCompositeRisk, getAlertLevel, DEFAULT_WEIGHTS } = require('../../src/processing/riskAggregator');
+const {
+  calculateCompositeRisk,
+  getAlertLevel,
+  DEFAULT_WEIGHTS,
+} = require('../../src/processing/riskAggregator');
 
 describe('Multi-Hazard Risk Aggregator Suite', () => {
   it('should compute weighted composite score accurately', () => {
