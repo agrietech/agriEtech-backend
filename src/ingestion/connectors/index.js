@@ -27,7 +27,8 @@ const openMeteoConnector = {
         params: {
           latitude: lat,
           longitude: lng,
-          daily: 'temperature_2m_max,temperature_2m_min,precipitation_sum,relative_humidity_2m_mean',
+          daily:
+            'temperature_2m_max,temperature_2m_min,precipitation_sum,relative_humidity_2m_mean',
           forecast_days: days,
           timezone: 'Africa/Addis_Ababa',
         },
