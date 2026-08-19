@@ -1,4 +1,6 @@
-const turf = require('@turf/turf');
+const { polygon: createPolygon } = require('@turf/helpers');
+const kinks = require('@turf/kinks').default || require('@turf/kinks');
+const booleanWithin = require('@turf/boolean-within').default || require('@turf/boolean-within');
 
 // Ethiopian geographic bounding box (approximate)
 const ETHIOPIA_BOUNDS = { minLat: 3.0, maxLat: 15.5, minLng: 32.5, maxLng: 48.5 };
@@ -41,7 +43,7 @@ function asPolygon(geojson, label) {
     // GeoJSON spec: a linear ring must have >= 4 positions (3 distinct + closure)
     if (ring.length < 4) {
       throw createHttpError(
-        `${label} ${ringLabel} must have at least 4 positions (3 vertices + closing point)`
+        `${label} has invalid polygon coordinates: ${ringLabel} must have at least 4 positions (3 vertices + closing point)`
       );
     }
 
@@ -84,14 +86,14 @@ function asPolygon(geojson, label) {
   // Build a turf polygon – will throw on structurally invalid coordinates
   let polygon;
   try {
-    polygon = turf.polygon(geometry.coordinates);
+    polygon = createPolygon(geometry.coordinates);
   } catch (error) {
     throw createHttpError(`${label} has invalid polygon coordinates: ${error.message}`);
   }
 
   // Reject self-intersecting rings
-  const kinks = turf.kinks(polygon);
-  if (kinks.features.length > 0) {
+  const kinkFeatures = kinks(polygon);
+  if (kinkFeatures.features.length > 0) {
     throw createHttpError(`${label} must not self-intersect`);
   }
 
@@ -112,7 +114,7 @@ function validateFarmPolygon(geojson) {
  */
 function assertContainedByWoreda(farmPolygon, woredaGeojson) {
   const woredaPolygon = asPolygon(woredaGeojson, 'Woreda boundary');
-  if (!turf.booleanWithin(farmPolygon, woredaPolygon)) {
+  if (!booleanWithin(farmPolygon, woredaPolygon)) {
     throw createHttpError('Farm boundary must be entirely within the selected woreda');
   }
 }

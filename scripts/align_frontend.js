@@ -824,13 +824,11 @@ final currentUserProvider = Provider<UserModel?>((ref) {
 }
 
 // =============================================================================
-// 12. Update team_git_commits.txt in FRONTEND repo
-// =============================================================================
-const backendCommits = readFile('../../agriEtech-backend/team_git_commits.txt');
-// (already done in backend; we just create a reference copy)
-writeFile('team_git_commits.txt',
-  fs.readFileSync('C:/Users/a/Desktop/agriEtech-backend/team_git_commits.txt', 'utf8')
-);
+// 12. Sync team_git_commits if present
+const gitCommitsPath = 'C:/Users/a/Desktop/agriEtech-backend/team_git_commits.txt';
+if (fs.existsSync(gitCommitsPath)) {
+  writeFile('team_git_commits.txt', fs.readFileSync(gitCommitsPath, 'utf8'));
+}
 
 // =============================================================================
 // SUMMARY

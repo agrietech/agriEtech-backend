@@ -1,23 +1,62 @@
 const { prisma, isConnected } = require('../../config/db');
-const turf = require('@turf/turf');
+const centroid = require('@turf/centroid').default || require('@turf/centroid');
+const { getCoord } = require('@turf/invariant');
 const boundariesService = require('../boundaries/boundaries.service');
 const { assertContainedByWoreda, createHttpError, validateFarmPolygon } = require('./farmGeometry');
 
+const inMemoryFarms = new Map();
+
+// Ethiopian geographic bounding box (approximate)
+const ETHIOPIA_BOUNDS = { minLat: 3.0, maxLat: 15.5, minLng: 32.5, maxLng: 48.5 };
+
 /**
  * Register a new farm plot.
- *
- * 1. Validates the incoming GeoJSON polygon (structure, coordinates, self-intersection).
- * 2. Fetches the selected woreda and verifies it has a configured boundary.
- * 3. Asserts the entire farm polygon is spatially contained within the woreda.
- * 4. Computes centroid from the polygon for lat/lng fields.
- * 5. Persists the farm row + PostGIS geometry column in a single transaction.
  */
-async function createFarm({ userId, farmName, primaryCrop, areaHectares, woredaId, polygonGeojson }) {
+async function createFarm({ userId, farmName, primaryCrop, areaHectares, woredaId, polygonGeojson, latitude: inputLat, longitude: inputLng }) {
+  // Validate coordinates if provided directly
+  if (inputLat !== undefined && inputLat !== null && inputLng !== undefined && inputLng !== null) {
+    const lat = Number(inputLat);
+    const lng = Number(inputLng);
+    if (
+      Number.isNaN(lat) ||
+      Number.isNaN(lng) ||
+      lat < ETHIOPIA_BOUNDS.minLat ||
+      lat > ETHIOPIA_BOUNDS.maxLat ||
+      lng < ETHIOPIA_BOUNDS.minLng ||
+      lng > ETHIOPIA_BOUNDS.maxLng
+    ) {
+      throw createHttpError('Coordinates fall outside Ethiopia', 400);
+    }
+  }
+
+  let finalPolygon = polygonGeojson;
+  if (!finalPolygon && inputLat !== undefined && inputLng !== undefined) {
+    const lat = Number(inputLat);
+    const lng = Number(inputLng);
+    finalPolygon = {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [lng - 0.005, lat - 0.005],
+          [lng + 0.005, lat - 0.005],
+          [lng + 0.005, lat + 0.005],
+          [lng - 0.005, lat + 0.005],
+          [lng - 0.005, lat - 0.005],
+        ],
+      ],
+    };
+  }
+
+  if (!finalPolygon) {
+    throw createHttpError('polygonGeojson or valid latitude/longitude is required', 400);
+  }
+
   // Step 1 – deep polygon validation (coordinate ranges, closure, kinks)
-  const farmPolygon = validateFarmPolygon(polygonGeojson);
+  const farmPolygon = validateFarmPolygon(finalPolygon);
 
   // Step 2 – retrieve woreda and its boundary
-  const woreda = await boundariesService.getWoredaById(woredaId);
+  const targetWoredaId = woredaId || 'woreda_adama_01';
+  const woreda = await boundariesService.getWoredaById(targetWoredaId);
   if (!woreda) {
     throw createHttpError('Selected woreda was not found', 404);
   }
@@ -29,22 +68,27 @@ async function createFarm({ userId, farmName, primaryCrop, areaHectares, woredaI
   assertContainedByWoreda(farmPolygon, woreda.geojson);
 
   // Step 4 – derive centroid for the flat lat/lng columns
-  const [longitude, latitude] = turf.getCoord(turf.centroid(farmPolygon));
+  const [derivedLng, derivedLat] = getCoord(centroid(farmPolygon));
+  const latitude = inputLat !== undefined ? Number(inputLat) : derivedLat;
+  const longitude = inputLng !== undefined ? Number(inputLng) : derivedLng;
 
   // Step 5 – persist
   if (!isConnected()) {
     // Offline / dev stub fallback
-    return {
-      id: `farm_${Date.now()}`,
+    const mockFarm = {
+      id: `farm_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       userId,
       farmName,
       primaryCrop: primaryCrop || null,
       areaHectares: areaHectares ?? null,
       latitude,
       longitude,
-      woredaId,
+      woredaId: targetWoredaId,
       polygonGeojson: farmPolygon.geometry,
+      createdAt: new Date().toISOString(),
     };
+    inMemoryFarms.set(mockFarm.id, mockFarm);
+    return mockFarm;
   }
 
   return prisma.$transaction(async (tx) => {
@@ -56,7 +100,7 @@ async function createFarm({ userId, farmName, primaryCrop, areaHectares, woredaI
         areaHectares: areaHectares ?? null,
         latitude,
         longitude,
-        woredaId,
+        woredaId: targetWoredaId,
         polygonGeojson: farmPolygon.geometry,
       },
     });
@@ -77,8 +121,10 @@ async function getFarmsByUser(userId) {
   if (isConnected() && userId) {
     return await prisma.farm.findMany({ where: { userId } });
   }
+  const userFarms = Array.from(inMemoryFarms.values()).filter((f) => !userId || f.userId === userId);
+  if (userFarms.length > 0) return userFarms;
   return [
-    { id: 'farm_01', farmName: 'Adama Teff Plot', primaryCrop: 'Teff', latitude: 8.54, longitude: 39.27 },
+    { id: 'farm_01', farmName: 'Adama Teff Plot', primaryCrop: 'Teff', latitude: 8.54, longitude: 39.27, userId },
   ];
 }
 
@@ -86,6 +132,9 @@ async function getFarmsByUser(userId) {
 async function getFarmById(id) {
   if (isConnected()) {
     return await prisma.farm.findUnique({ where: { id } });
+  }
+  if (inMemoryFarms.has(id)) {
+    return inMemoryFarms.get(id);
   }
   return { id, farmName: 'Adama Teff Plot', primaryCrop: 'Teff', areaHectares: 2.0 };
 }

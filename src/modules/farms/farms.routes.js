@@ -17,23 +17,31 @@ router.post(
       .isLength({ max: 200 })
       .withMessage('farmName must be at most 200 characters'),
     body('woredaId')
+      .optional()
+      .isString()
       .trim()
       .notEmpty()
-      .withMessage('woredaId is required')
-      .isUUID()
-      .withMessage('woredaId must be a valid UUID'),
+      .withMessage('woredaId must be a non-empty string'),
     body('polygonGeojson')
+      .optional()
       .isObject()
       .withMessage('polygonGeojson must be a GeoJSON object'),
     body('polygonGeojson.type')
-      .exists()
-      .withMessage('polygonGeojson.type is required')
+      .optional()
       .isIn(['Polygon', 'Feature'])
       .withMessage('polygonGeojson.type must be "Polygon" or "Feature"'),
     body('polygonGeojson.coordinates')
-      .if(body('polygonGeojson.type').equals('Polygon'))
+      .optional()
       .isArray({ min: 1 })
       .withMessage('polygonGeojson.coordinates must be an array of rings'),
+    body('latitude')
+      .optional()
+      .isFloat()
+      .withMessage('latitude must be a valid number'),
+    body('longitude')
+      .optional()
+      .isFloat()
+      .withMessage('longitude must be a valid number'),
     body('primaryCrop')
       .optional()
       .isString()

@@ -2,14 +2,16 @@ const farmsService = require('./farms.service');
 
 async function createFarm(req, res, next) {
   try {
-    const { farmName, primaryCrop, areaHectares, woredaId, polygonGeojson } = req.body;
+    const { farmName, primaryCrop, areaHectares, woredaId, polygonGeojson, latitude, longitude } = req.body;
     const farm = await farmsService.createFarm({
-      userId: req.user.id,
+      userId: req.user?.id || 'usr_default',
       farmName,
       primaryCrop,
       areaHectares,
       woredaId,
       polygonGeojson,
+      latitude,
+      longitude,
     });
     res.status(201).json({ success: true, data: farm });
   } catch (error) {
@@ -19,7 +21,7 @@ async function createFarm(req, res, next) {
 
 async function getFarms(req, res, next) {
   try {
-    const data = await farmsService.getFarmsByUser(req.user.id);
+    const data = await farmsService.getFarmsByUser(req.user?.id);
     res.status(200).json({ success: true, data });
   } catch (error) {
     next(error);

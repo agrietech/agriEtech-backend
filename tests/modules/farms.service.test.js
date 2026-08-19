@@ -1,11 +1,11 @@
-const prismaMock = {
+const mockPrisma = {
   farm: { create: jest.fn() },
   $executeRaw: jest.fn(),
+  $transaction: jest.fn((callback) => callback(mockPrisma)),
 };
-prismaMock.$transaction.mockImplementation((callback) => callback(prismaMock));
 
 jest.mock('../../src/config/db', () => ({
-  prisma: prismaMock,
+  prisma: mockPrisma,
   isConnected: jest.fn(),
 }));
 
