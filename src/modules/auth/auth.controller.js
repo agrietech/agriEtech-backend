@@ -3,36 +3,95 @@ const authService = require('./auth.service');
 // Register user endpoint
 async function register(req, res, next) {
   try {
-    const { name, phone, email, password, role, woredaId } = req.body;
-    if (!phone || !name) {
-      return res.status(400).json({ success: false, error: 'Name and phone are required' });
-    }
-    const user = await authService.registerUser({ name, phone, email, password, role, woredaId });
-    const token = authService.generateToken({ id: user.id, role: user.role, phone: user.phone });
-    res.status(201).json({ success: true, data: { user, token } });
+    const result = await authService.registerUser(req.body);
+    res.status(201).json({ success: true, data: result });
   } catch (error) {
     next(error);
   }
 }
 
-// User login endpoint
-async function login(req, res, _next) {
+// User login endpoint (Email or Phone)
+async function login(req, res, next) {
   try {
-    const { phone, password } = req.body;
-    if (!phone || !password) {
-      return res.status(400).json({ success: false, error: 'Phone and password are required' });
-    }
-    const result = await authService.loginUser({ phone, password });
+    const result = await authService.loginUser(req.body);
     res.status(200).json({ success: true, data: result });
   } catch (error) {
-    res.status(401).json({ success: false, error: error.message });
+    next(error);
+  }
+}
+
+// Refresh access token
+async function refreshToken(req, res, next) {
+  try {
+    const { refreshToken } = req.body;
+    const result = await authService.refreshAccessToken(refreshToken);
+    res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Logout & blacklist tokens
+async function logout(req, res, next) {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
+    const { refreshToken } = req.body || {};
+    await authService.logoutUser(token, refreshToken);
+    res.status(200).json({ success: true, data: { message: 'Logged out successfully' } });
+  } catch (error) {
+    next(error);
   }
 }
 
 // Current user profile
 async function getProfile(req, res, next) {
   try {
-    res.status(200).json({ success: true, data: req.user });
+    const profile = await authService.getUserProfile(req.user?.id);
+    res.status(200).json({ success: true, data: profile });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Update password (authenticated)
+async function updatePassword(req, res, next) {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    await authService.updatePassword(req.user?.id, currentPassword, newPassword);
+    res.status(200).json({ success: true, data: { message: 'Password updated successfully' } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Forgot password - Send reset link to email
+async function forgotPassword(req, res, next) {
+  try {
+    const { email, identifier } = req.body;
+    const result = await authService.forgotPassword(email || identifier);
+    res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Reset password with token
+async function resetPassword(req, res, next) {
+  try {
+    const result = await authService.resetPassword(req.body);
+    res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Verify email address
+async function verifyEmail(req, res, next) {
+  try {
+    const token = req.body.token || req.query.token;
+    const result = await authService.verifyEmail(token);
+    res.status(200).json({ success: true, data: result });
   } catch (error) {
     next(error);
   }
@@ -41,5 +100,11 @@ async function getProfile(req, res, next) {
 module.exports = {
   register,
   login,
+  refreshToken,
+  logout,
   getProfile,
+  updatePassword,
+  forgotPassword,
+  resetPassword,
+  verifyEmail,
 };

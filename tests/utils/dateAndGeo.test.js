@@ -18,7 +18,7 @@ describe('Utilities Suite: Date & Geospatial', () => {
   it('should validate coordinates within Ethiopia', () => {
     expect(isWithinEthiopia(9.03, 38.74)).toBe(true); // Addis Ababa
     expect(isWithinEthiopia(8.54, 39.27)).toBe(true); // Adama
-    expect(isWithinEthiopia(51.50, -0.12)).toBe(false); // London
+    expect(isWithinEthiopia(51.5, -0.12)).toBe(false); // London
   });
 
   it('should calculate geodesic distance between two points', () => {

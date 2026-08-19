@@ -1,17 +1,8 @@
 const { PrismaClient } = require('@prisma/client');
-const { PrismaPg } = require('@prisma/adapter-pg');
-const { Pool } = require('pg');
 const env = require('./env');
 const logger = require('../utils/logger');
 
-const pool = new Pool({
-  connectionString: env.DATABASE_URL,
-});
-
-const adapter = new PrismaPg(pool);
-
 const prisma = new PrismaClient({
-  adapter,
   log: env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
 });
 
@@ -35,7 +26,6 @@ async function connectDB() {
 // Disconnect from database
 async function disconnectDB() {
   await prisma.$disconnect();
-  await pool.end();
   isDbConnected = false;
 }
 
