@@ -1,0 +1,49 @@
+{
+  "alerts": {
+    "drought_warning": "Drought Warning",
+    "drought_message": "Low rainfall detected in your area. Prepare supplemental irrigation and conserve water.",
+    "flood_warning": "Flood Warning",
+    "flood_message": "Heavy rainfall expected. Move livestock to higher ground and protect crops.",
+    "locust_warning": "Desert Locust Alert",
+    "locust_message": "Locust swarm detected {{distance}}km from your location. Prepare control measures immediately.",
+    "heatwave_warning": "Heat Stress Warning",
+    "heatwave_message": "Very high temperatures expected. Provide shade and water for crops and livestock.",
+    "frost_warning": "Frost Warning",
+    "frost_message": "Temperatures may drop below 0°C. Protect sensitive crops.",
+    "pest_warning": "Pest Alert",
+    "pest_message": "Increased pest activity detected in your area.",
+    "disease_warning": "Crop Disease Alert",
+    "disease_message": "Disease risk high due to weather conditions."
+  },
+  "severity": {
+    "CRITICAL": "Critical",
+    "HIGH": "High",
+    "MODERATE": "Moderate",
+    "LOW": "Low",
+    "INFO": "Information"
+  },
+  "recommendations": {
+    "delay_planting": "Delay planting until soil moisture improves",
+    "apply_irrigation": "Apply supplemental irrigation immediately",
+    "harvest_early": "Consider early harvest before heavy rains",
+    "apply_pesticide": "Apply appropriate pest control measures",
+    "protect_crops": "Protect crops from extreme weather",
+    "conserve_water": "Conserve water resources",
+    "monitor_closely": "Monitor situation closely"
+  },
+  "ussd": {
+    "main_menu": "CON Welcome to AgriEtech\n1. Today's Weather\n2. Active Alerts\n3. Report Pest\n4. Crop Advice\n5. Language",
+    "weather_forecast": "Weather Forecast",
+    "no_alerts": "No active alerts for your area",
+    "recent_alerts": "Recent Alerts",
+    "back": "0. Back to main menu"
+  },
+  "crops": {
+    "wheat": "Wheat",
+    "barley": "Barley",
+    "teff": "Teff",
+    "maize": "Maize",
+    "sorghum": "Sorghum",
+    "coffee": "Coffee"
+  }
+}
