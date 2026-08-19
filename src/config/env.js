@@ -1,9 +1,14 @@
 require('dotenv').config();
 
+const NODE_ENV = process.env.NODE_ENV || 'development';
+
 const env = {
-  NODE_ENV: process.env.NODE_ENV || 'development',
+  NODE_ENV,
   PORT: parseInt(process.env.PORT, 10) || 5000,
   APP_URL: process.env.APP_URL || 'http://localhost:5000',
+  CORS_ORIGIN: process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())
+    : '*',
   DATABASE_URL:
     process.env.DATABASE_URL ||
     'postgresql://agrietech_user:agrietech_password@localhost:5432/agrietech_db?schema=public',
@@ -35,4 +40,17 @@ const env = {
   EMAIL_FROM: process.env.EMAIL_FROM || 'no-reply@agrietech.et',
 };
 
+// Validate critical variables in production
+if (env.NODE_ENV === 'production') {
+  const missing = [];
+  if (!process.env.DATABASE_URL) missing.push('DATABASE_URL');
+  if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'dev_secret_key_change_in_production') {
+    missing.push('JWT_SECRET (must be securely generated in production)');
+  }
+  if (missing.length > 0) {
+    throw new Error(`[FATAL] Missing required production environment variables: ${missing.join(', ')}`);
+  }
+}
+
 module.exports = env;
+
