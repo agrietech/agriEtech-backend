@@ -1,7 +1,7 @@
 const { Queue, Worker } = require('bullmq');
-const redis = require('../../../../../../../../../../Desktop/Projects/agriTech/agriEtech-backend/src/config/redis');
-const env = require('../../../../../../../../../../Desktop/Projects/agriTech/agriEtech-backend/src/config/env');
-const logger = require('../../../../../../../../../../Desktop/Projects/agriTech/agriEtech-backend/src/utils/logger');
+const redis = require('../../config/redis');
+const env = require('../../config/env');
+const logger = require('../../utils/logger');
 
 const QUEUE_NAME = 'ingestionQueue';
 let ingestionQueue = null;
