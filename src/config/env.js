@@ -29,7 +29,7 @@ const env = {
   GLOFAS_API_KEY: process.env.GLOFAS_API_KEY,
   EARTHDATA_BEARER_TOKEN: process.env.EARTHDATA_BEARER_TOKEN,
   PLANT_ID_API_KEY: process.env.PLANT_ID_API_KEY,
-  PLANT_ID_API_URL: process.env.PLANT_ID_API_URL || 'https://api.plant.id/v2/identify',
+  PLANT_ID_API_URL: process.env.PLANT_ID_API_URL || process.env.PLANT_ID_BASE_URL || 'https://plant.id/api/v3',
   OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
   OPENROUTER_MODEL: process.env.OPENROUTER_MODEL || 'google/gemini-2.5-flash',
   OPENROUTER_BASE_URL: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',

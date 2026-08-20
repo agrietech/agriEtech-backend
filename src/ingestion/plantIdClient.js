@@ -31,12 +31,26 @@ class PlantIdClient {
     }
 
     try {
-      const cleanBase64 = imageBase64
+      let base64Data = imageBase64
         ? imageBase64.replace(/^data:image\/\w+;base64,/, '')
         : null;
 
-      const formattedImage = cleanBase64
-        ? `data:image/jpeg;base64,${cleanBase64}`
+      // If imageUrl provided without base64, fetch buffer and encode
+      if (!base64Data && imageUrl && imageUrl.startsWith('http')) {
+        try {
+          const imgResponse = await axios.get(imageUrl, {
+            responseType: 'arraybuffer',
+            headers: { 'User-Agent': 'AgriEtech-BotanicalClient/1.0' },
+            timeout: 10000,
+          });
+          base64Data = Buffer.from(imgResponse.data).toString('base64');
+        } catch (_fetchErr) {
+          logger.warn(`[PlantIdClient] Failed to pre-fetch image URL: ${_fetchErr.message}`);
+        }
+      }
+
+      const formattedImage = base64Data
+        ? `data:image/jpeg;base64,${base64Data}`
         : imageUrl;
 
       const isV3 = this.apiUrl.includes('v3') || !this.apiUrl.includes('v2');
