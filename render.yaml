@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: agrietech-backend
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: npm install && npx prisma generate
+    startCommand: npm start
+    healthCheckPath: /health/liveness
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5000
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENWEATHER_API_KEY
+        sync: false
+      - key: GLOFAS_API_KEY
+        sync: false
+      - key: EARTHDATA_BEARER_TOKEN
+        sync: false
