@@ -147,21 +147,26 @@ async function getWoredaById(id) {
       },
     });
   }
+
+  const isBishoftu = id === 'ET040102' || id === 'woreda_bishoftu_02';
+  const centerLat = isBishoftu ? 8.75 : 8.54;
+  const centerLng = isBishoftu ? 38.98 : 39.27;
+
   return {
     id: id || 'ET040101',
-    nameEn: id === 'ET040102' ? 'Bishoftu' : 'Adama Zuria',
-    nameAm: id === 'ET040102' ? 'ቢሾፍቱ' : 'አዳማ ዙሪያ',
-    centerLat: id === 'ET040102' ? 8.75 : 8.54,
-    centerLng: id === 'ET040102' ? 38.98 : 39.27,
+    nameEn: isBishoftu ? 'Bishoftu' : 'Adama Zuria',
+    nameAm: isBishoftu ? 'ቢሾፍቱ' : 'አዳማ ዙሪያ',
+    centerLat,
+    centerLng,
     geojson: {
       type: 'Polygon',
       coordinates: [
         [
-          [39.1, 8.4],
-          [39.4, 8.4],
-          [39.4, 8.7],
-          [39.1, 8.7],
-          [39.1, 8.4],
+          [centerLng - 0.15, centerLat - 0.15],
+          [centerLng + 0.15, centerLat - 0.15],
+          [centerLng + 0.15, centerLat + 0.15],
+          [centerLng - 0.15, centerLat + 0.15],
+          [centerLng - 0.15, centerLat - 0.15],
         ],
       ],
     },

@@ -85,7 +85,7 @@ class PlantIdClient {
 
         const payload = {
           api_key: this.apiKey,
-          images: cleanBase64 ? [cleanBase64] : imageUrl ? [imageUrl] : [],
+          images: formattedImage ? [formattedImage] : base64Data ? [base64Data] : imageUrl ? [imageUrl] : [],
           modifiers: ['crops_fast', 'health_all', 'similar_images'],
           plant_details: ['common_names', 'taxonomy', 'wiki_description'],
           disease_details: ['cause', 'common_names', 'description', 'treatment'],

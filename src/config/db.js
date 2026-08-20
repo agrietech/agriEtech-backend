@@ -47,7 +47,9 @@ async function connectDB() {
 async function disconnectDB() {
   try {
     await prisma.$disconnect();
-  } catch (_e) {}
+  } catch (_e) {
+    // Ignore disconnect error during shutdown
+  }
   isDbConnected = false;
 }
 

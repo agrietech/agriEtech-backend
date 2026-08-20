@@ -135,7 +135,9 @@ class CacheManager {
     if (this.isConnected) {
       try {
         await this.redis.del(fullKey);
-      } catch (_e) {}
+      } catch (_e) {
+        // Silently handle redis del failure in fallback
+      }
     }
     return true;
   }
@@ -161,7 +163,9 @@ class CacheManager {
           await this.redis.del(...keys);
           count += keys.length;
         }
-      } catch (_e) {}
+      } catch (_e) {
+        // Silently handle redis pattern del failure in fallback
+      }
     }
 
     return count;
@@ -242,7 +246,9 @@ class CacheManager {
     if (this.redis) {
       try {
         await this.redis.quit();
-      } catch (_e) {}
+      } catch (_e) {
+        // Silently handle quit error during shutdown
+      }
       this.isConnected = false;
     }
   }

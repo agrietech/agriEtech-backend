@@ -40,7 +40,9 @@ const storage = multer.diskStorage({
       if (!fs.existsSync(targetDir)) {
         fs.mkdirSync(targetDir, { recursive: true });
       }
-    } catch (_e) {}
+    } catch (_e) {
+      // Directory creation error handled by fs or multer
+    }
     cb(null, targetDir);
   },
   filename: (_req, file, cb) => {
