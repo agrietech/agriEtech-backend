@@ -1,62 +1,33 @@
 const { PrismaClient } = require('@prisma/client');
+const { PrismaPg } = require('@prisma/adapter-pg');
+const { Pool } = require('pg');
 const env = require('./env');
 const logger = require('../utils/logger');
 
-let prisma;
+/**
+ * Prisma 7 requires a driver adapter. This module always initializes
+ * PrismaClient with @prisma/adapter-pg, which is a production dependency.
+ */
+const connectionString = env.DATABASE_URL || process.env.DATABASE_URL || '';
 
-function createPrismaClient() {
-  const connectionString = env.DATABASE_URL || process.env.DATABASE_URL;
+const isRemote =
+  connectionString.includes('supabase') ||
+  connectionString.includes('render') ||
+  connectionString.includes('aws') ||
+  connectionString.includes('pooler') ||
+  connectionString.includes('neon');
 
-  // Try Prisma 7 driver adapter with pg Pool
-  try {
-    const { PrismaPg } = require('@prisma/adapter-pg');
-    const { Pool } = require('pg');
+const pool = new Pool({
+  connectionString: connectionString || 'postgresql://localhost:5432/postgres',
+  ssl: isRemote ? { rejectUnauthorized: false } : undefined,
+});
 
-    if (connectionString) {
-      const isRemote =
-        connectionString.includes('supabase') ||
-        connectionString.includes('render') ||
-        connectionString.includes('aws') ||
-        connectionString.includes('pooler');
+const adapter = new PrismaPg(pool);
 
-      const pool = new Pool({
-        connectionString,
-        ssl: isRemote ? { rejectUnauthorized: false } : undefined,
-      });
-
-      const adapter = new PrismaPg(pool);
-      return new PrismaClient({
-        adapter,
-        log: env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
-      });
-    }
-  } catch (adapterErr) {
-    logger.debug(`[DB] Driver adapter init notice: ${adapterErr.message}`);
-  }
-
-  // Fallback to standard PrismaClient
-  try {
-    return new PrismaClient({
-      log: env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
-    });
-  } catch (stdErr) {
-    logger.error(`[DB] Standard PrismaClient init failed: ${stdErr.message}`);
-    // If strict driver adapter is required by runtime
-    try {
-      const { PrismaPg } = require('@prisma/adapter-pg');
-      const { Pool } = require('pg');
-      const pool = new Pool({
-        connectionString: connectionString || 'postgresql://localhost:5432/postgres',
-      });
-      const adapter = new PrismaPg(pool);
-      return new PrismaClient({ adapter });
-    } catch (_finalErr) {
-      return new PrismaClient();
-    }
-  }
-}
-
-prisma = createPrismaClient();
+const prisma = new PrismaClient({
+  adapter,
+  log: env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
+});
 
 let isDbConnected = false;
 

@@ -8,12 +8,13 @@ RUN apk add --no-cache python3 make g++
 
 COPY package*.json ./
 COPY prisma ./prisma/
+COPY prisma.config.js ./
 
 # Install all dependencies (including dev for prisma CLI)
 RUN npm ci
 
-# Generate Prisma Client
-RUN npx prisma generate
+# Generate Prisma Client (DATABASE_URL required by prisma.config.js for schema validation)
+RUN DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder" npx prisma generate
 
 # Prune development dependencies
 RUN npm prune --omit=dev
@@ -37,7 +38,7 @@ COPY --from=builder --chown=node:node /app/node_modules ./node_modules
 COPY --from=builder --chown=node:node /app/package*.json ./
 COPY --from=builder --chown=node:node /app/prisma ./prisma
 
-# Copy application source code
+# Copy application source code (includes prisma.config.js, src/, etc.)
 COPY --chown=node:node . .
 
 # Ensure complete ownership for node user
