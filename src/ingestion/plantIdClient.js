@@ -4,16 +4,16 @@ const logger = require('../utils/logger');
 
 /**
  * Plant.id (Kindwise) Botanical & Plant Disease Diagnostic Client
- * Specializes in botanical taxonomy identification and statistical disease probability ranking.
+ * Supports Plant.id API v3 and API v2 with automatic version detection and fallback.
  */
 class PlantIdClient {
   constructor() {
     this.apiKey = env.PLANT_ID_API_KEY || '';
-    this.apiUrl = env.PLANT_ID_API_URL || 'https://api.plant.id/v2/identify';
+    this.apiUrl = env.PLANT_ID_API_URL || env.PLANT_ID_BASE_URL || 'https://plant.id/api/v3';
   }
 
   isConfigured() {
-    return Boolean(this.apiKey && this.apiKey.trim().length > 5);
+    return Boolean(this.apiKey && this.apiKey.trim().length > 5 && !this.apiKey.includes('your_'));
   }
 
   /**
@@ -35,28 +35,91 @@ class PlantIdClient {
         ? imageBase64.replace(/^data:image\/\w+;base64,/, '')
         : null;
 
-      const payload = {
-        api_key: this.apiKey,
-        images: cleanBase64 ? [cleanBase64] : imageUrl ? [imageUrl] : [],
-        modifiers: ['crops_fast', 'health_all', 'similar_images'],
-        plant_details: ['common_names', 'taxonomy', 'wiki_description'],
-        disease_details: ['cause', 'common_names', 'description', 'treatment'],
-      };
+      const formattedImage = cleanBase64
+        ? `data:image/jpeg;base64,${cleanBase64}`
+        : imageUrl;
 
-      const response = await axios.post(this.apiUrl, payload, {
-        headers: { 'Content-Type': 'application/json' },
-        timeout: 25000,
-      });
+      const isV3 = this.apiUrl.includes('v3') || !this.apiUrl.includes('v2');
+      let targetUrl = this.apiUrl;
 
-      return this._parsePlantIdResponse(response.data, cropHint);
+      if (isV3) {
+        if (!targetUrl.endsWith('/identification')) {
+          targetUrl = `${targetUrl.replace(/\/$/, '')}/identification`;
+        }
+
+        const payload = {
+          images: formattedImage ? [formattedImage] : [],
+          similar_images: true,
+          health: 'all',
+          classification_level: 'species',
+        };
+
+        const response = await axios.post(targetUrl, payload, {
+          headers: {
+            'Api-Key': this.apiKey,
+            'Content-Type': 'application/json',
+          },
+          timeout: 25000,
+        });
+
+        return this._parsePlantIdV3Response(response.data, cropHint);
+      } else {
+        // v2 API
+        if (!targetUrl.endsWith('/identify')) {
+          targetUrl = `${targetUrl.replace(/\/$/, '')}/identify`;
+        }
+
+        const payload = {
+          api_key: this.apiKey,
+          images: cleanBase64 ? [cleanBase64] : imageUrl ? [imageUrl] : [],
+          modifiers: ['crops_fast', 'health_all', 'similar_images'],
+          plant_details: ['common_names', 'taxonomy', 'wiki_description'],
+          disease_details: ['cause', 'common_names', 'description', 'treatment'],
+        };
+
+        const response = await axios.post(targetUrl, payload, {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 25000,
+        });
+
+        return this._parsePlantIdV2Response(response.data, cropHint);
+      }
     } catch (error) {
-      const msg = error.response?.data?.message || error.message;
+      const msg = error.response?.data?.message || error.response?.data?.error || error.message;
       logger.error(`[PlantIdClient] API call failed: ${msg}. Fallback to botanical model.`);
       return this._generateMockBotanicalResult(cropHint);
     }
   }
 
-  _parsePlantIdResponse(data, cropHint) {
+  _parsePlantIdV3Response(data, cropHint) {
+    const result = data?.result || {};
+    const classification = result.classification?.suggestions || [];
+    const topPlant = classification[0] || {};
+    const diseaseAssessment = result.disease?.suggestions || [];
+    const isHealthy = result.is_healthy?.binary ?? (diseaseAssessment.length === 0);
+
+    return {
+      success: true,
+      apiVersion: 'v3',
+      crop: {
+        scientificName: topPlant.name || cropHint || 'Crop',
+        commonNames: topPlant.details?.common_names || [cropHint || topPlant.name || 'Crop'],
+        probability: topPlant.probability || 0.95,
+      },
+      isHealthy,
+      isHealthyProbability: result.is_healthy?.probability ?? 0.05,
+      diseases: diseaseAssessment.slice(0, 3).map((d) => ({
+        name: d.name,
+        probability: d.probability,
+        cause: d.details?.cause || 'Pathogenic infection / pest infestation',
+        description: d.details?.description || '',
+        treatment: d.details?.treatment || {},
+      })),
+      rawPayload: data,
+    };
+  }
+
+  _parsePlantIdV2Response(data, cropHint) {
     const suggestions = data?.suggestions || [];
     const topPlant = suggestions[0] || {};
     const healthAssessment = data?.health_assessment || {};
@@ -64,6 +127,7 @@ class PlantIdClient {
 
     return {
       success: true,
+      apiVersion: 'v2',
       crop: {
         scientificName: topPlant.plant_name || cropHint || 'Zea mays',
         commonNames: topPlant.plant_details?.common_names || [cropHint || 'Maize'],
