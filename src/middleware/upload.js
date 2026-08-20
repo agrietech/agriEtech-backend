@@ -1,36 +1,47 @@
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-
 const os = require('os');
 const logger = require('../utils/logger');
 
-// Ensure upload directories exist
-let uploadDir = path.join(__dirname, '../../uploads/diagnoses');
-let audioUploadDir = path.join(__dirname, '../../uploads/audio');
-
-try {
-  if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-  if (!fs.existsSync(audioUploadDir)) fs.mkdirSync(audioUploadDir, { recursive: true });
-} catch (err) {
-  // If container restricts /app/uploads, fallback gracefully to OS temporary directory
-  logger.warn(`[Upload Middleware] Notice: ${err.message}. Using OS temp directory fallback.`);
-  uploadDir = path.join(os.tmpdir(), 'agrietech/uploads/diagnoses');
-  audioUploadDir = path.join(os.tmpdir(), 'agrietech/uploads/audio');
+// Helper to safely get or create writable directory
+function getWritableDir(primarySubdir, fallbackSubdir) {
+  const primaryPath = path.resolve(__dirname, '../../uploads', primarySubdir);
   try {
-    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-    if (!fs.existsSync(audioUploadDir)) fs.mkdirSync(audioUploadDir, { recursive: true });
-  } catch (_e) {}
+    if (!fs.existsSync(primaryPath)) {
+      fs.mkdirSync(primaryPath, { recursive: true });
+    }
+    // Test write permission
+    fs.accessSync(primaryPath, fs.constants.W_OK);
+    return primaryPath;
+  } catch (_err) {
+    const fallbackPath = path.join(os.tmpdir(), 'agrietech', fallbackSubdir);
+    try {
+      if (!fs.existsSync(fallbackPath)) {
+        fs.mkdirSync(fallbackPath, { recursive: true });
+      }
+      return fallbackPath;
+    } catch (_fallbackErr) {
+      return os.tmpdir();
+    }
+  }
 }
+
+const uploadDir = getWritableDir('diagnoses', 'uploads/diagnoses');
+const audioUploadDir = getWritableDir('audio', 'uploads/audio');
+
+logger.debug(`[Uploads] Storage configured: images -> ${uploadDir}, audio -> ${audioUploadDir}`);
 
 // Disk storage configuration for general & vision uploads
 const storage = multer.diskStorage({
   destination: (_req, file, cb) => {
-    if (file.mimetype.startsWith('audio/')) {
-      cb(null, audioUploadDir);
-    } else {
-      cb(null, uploadDir);
-    }
+    const targetDir = file.mimetype.startsWith('audio/') ? audioUploadDir : uploadDir;
+    try {
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+      }
+    } catch (_e) {}
+    cb(null, targetDir);
   },
   filename: (_req, file, cb) => {
     const ext = path.extname(file.originalname) || (file.mimetype.startsWith('audio/') ? '.wav' : '.jpg');
