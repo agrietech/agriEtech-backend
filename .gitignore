@@ -16,6 +16,8 @@ generated/
 # Runtime directories
 logs/
 uploads/
+config/*.json
+*service-account*.json
 
 # OS
 .DS_Store
