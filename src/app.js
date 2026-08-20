@@ -107,6 +107,12 @@ app.get('/', (_req, res) => {
 // Web Admin Dashboard UI
 app.use('/admin', adminRoutes);
 
+// Top-level email verification handler (for user-friendly links)
+app.get('/verify-email', (req, res, next) => {
+  const authController = require('./modules/auth/auth.controller');
+  return authController.verifyEmail(req, res, next);
+});
+
 // API feature routes with specialized rate limiters
 app.use('/api/v1/auth', authLimiter, authRoutes);
 app.use('/api/v1/boundaries', boundariesRoutes);

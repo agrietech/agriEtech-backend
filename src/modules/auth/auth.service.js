@@ -132,7 +132,7 @@ async function registerUser({
       }
     }
 
-    const verificationToken = resolvedEmail ? crypto.randomBytes(32).toString('hex') : null;
+    const verificationToken = resolvedEmail ? `${crypto.randomBytes(24).toString('hex')}_${Date.now()}` : null;
 
     const user = await prisma.user.create({
       data: {
@@ -177,7 +177,7 @@ async function registerUser({
   }
 
   const userId = `usr_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
-  const verificationToken = resolvedEmail ? crypto.randomBytes(32).toString('hex') : null;
+  const verificationToken = resolvedEmail ? `${crypto.randomBytes(24).toString('hex')}_${Date.now()}` : null;
   const mockUser = {
     id: userId,
     email: resolvedEmail,
@@ -455,7 +455,7 @@ async function resetPassword({ token, newPassword, email: _email }) {
 }
 
 /**
- * Verify Email with Verification Token
+ * Verify Email with Verification Token (checks 24-hour expiration)
  */
 async function verifyEmail(token) {
   if (!token) {
@@ -481,6 +481,16 @@ async function verifyEmail(token) {
     throw new BadRequestError('Invalid or expired verification token');
   }
 
+  // Enforce 24-hour token expiration if timestamp is embedded
+  if (user.verificationToken && user.verificationToken.includes('_')) {
+    const parts = user.verificationToken.split('_');
+    const timestamp = parseInt(parts[parts.length - 1], 10);
+    const maxAge = 24 * 60 * 60 * 1000; // 24 hours
+    if (!isNaN(timestamp) && Date.now() - timestamp > maxAge) {
+      throw new BadRequestError('Verification token has expired. Please request a new verification link.');
+    }
+  }
+
   if (isConnected()) {
     await prisma.user.update({
       where: { id: user.id },
@@ -496,6 +506,65 @@ async function verifyEmail(token) {
 
   return {
     message: 'Email address verified successfully',
+  };
+}
+
+/**
+ * Resend Email Verification Link
+ */
+async function resendVerificationEmail(email) {
+  const normalizedEmail = (email || '').trim().toLowerCase();
+  if (!normalizedEmail || !isValidEmail(normalizedEmail)) {
+    throw new BadRequestError('A valid email address is required');
+  }
+
+  let user = null;
+
+  if (isConnected()) {
+    user = await prisma.user.findFirst({
+      where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
+    });
+  } else {
+    for (const u of mockUsers.values()) {
+      if (u.email && u.email.toLowerCase() === normalizedEmail) {
+        user = u;
+        break;
+      }
+    }
+  }
+
+  // Security best practice: Don't leak whether an account exists or not
+  if (!user) {
+    return {
+      message: 'If an account exists with this email, a verification link has been sent.',
+    };
+  }
+
+  if (user.isEmailVerified) {
+    return {
+      message: 'This email address is already verified. You can proceed to log in.',
+    };
+  }
+
+  const newToken = `${crypto.randomBytes(24).toString('hex')}_${Date.now()}`;
+
+  if (isConnected()) {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { verificationToken: newToken },
+    });
+  } else {
+    user.verificationToken = newToken;
+  }
+
+  try {
+    await _sendVerificationEmail(user.email, newToken);
+  } catch (emailErr) {
+    console.error('[Auth Service] Resend verification email failed:', emailErr.message);
+  }
+
+  return {
+    message: 'A new verification link has been sent to your email address.',
   };
 }
 
@@ -612,6 +681,7 @@ module.exports = {
   forgotPassword,
   resetPassword,
   verifyEmail,
+  resendVerificationEmail,
   refreshAccessToken,
   logoutUser,
   getUserProfile,
