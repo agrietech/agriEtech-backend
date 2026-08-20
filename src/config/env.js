@@ -12,6 +12,8 @@ const env = {
   DATABASE_URL:
     process.env.DATABASE_URL ||
     'postgresql://agrietech_user:agrietech_password@localhost:5432/agrietech_db?schema=public',
+  SUPABASE_URL: process.env.SUPABASE_URL || '',
+  SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || '',
   REDIS_HOST: process.env.REDIS_HOST || 'localhost',
   REDIS_PORT: parseInt(process.env.REDIS_PORT, 10) || 6379,
   REDIS_PASSWORD: process.env.REDIS_PASSWORD || '',
