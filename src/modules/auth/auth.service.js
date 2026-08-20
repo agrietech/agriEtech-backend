@@ -132,6 +132,8 @@ async function registerUser({
       }
     }
 
+    const verificationToken = resolvedEmail ? crypto.randomBytes(32).toString('hex') : null;
+
     const user = await prisma.user.create({
       data: {
         email: resolvedEmail,
@@ -141,8 +143,18 @@ async function registerUser({
         role,
         woredaId: woredaId || null,
         preferredLang,
+        verificationToken,
       },
     });
+
+    if (resolvedEmail && verificationToken) {
+      try {
+        await _sendVerificationEmail(resolvedEmail, verificationToken);
+      } catch (emailErr) {
+        // Log error but allow registration to complete
+        console.error('[Auth Service] Verification email failed to send:', emailErr.message);
+      }
+    }
 
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
@@ -165,6 +177,7 @@ async function registerUser({
   }
 
   const userId = `usr_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+  const verificationToken = resolvedEmail ? crypto.randomBytes(32).toString('hex') : null;
   const mockUser = {
     id: userId,
     email: resolvedEmail,
@@ -176,9 +189,18 @@ async function registerUser({
     woredaId: woredaId || null,
     preferredLang,
     isEmailVerified: false,
+    verificationToken,
     passwordHash,
     createdAt: new Date().toISOString(),
   };
+
+  if (resolvedEmail && verificationToken) {
+    try {
+      await _sendVerificationEmail(resolvedEmail, verificationToken);
+    } catch (emailErr) {
+      console.error('[Auth Service Mock] Verification email failed to send:', emailErr.message);
+    }
+  }
 
   const primaryKey = resolvedEmail || resolvedPhone || userId;
   mockUsers.set(primaryKey, mockUser);

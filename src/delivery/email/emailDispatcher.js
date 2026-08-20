@@ -1,12 +1,32 @@
+const nodemailer = require('nodemailer');
 const logger = require('../../utils/logger');
 const env = require('../../config/env');
 
 // In-memory record of sent emails for testing / dev inspection
 const sentEmailsLog = [];
 
+// Initialize Nodemailer transporter if SMTP credentials are provided
+let transporter = null;
+if (env.SMTP_USER && env.SMTP_PASS) {
+  const isSecure = Number(env.SMTP_PORT) === 465;
+  transporter = nodemailer.createTransport({
+    host: env.SMTP_HOST || 'smtp.gmail.com',
+    port: Number(env.SMTP_PORT) || (isSecure ? 465 : 587),
+    secure: isSecure,
+    auth: {
+      user: env.SMTP_USER,
+      pass: env.SMTP_PASS,
+    },
+    tls: {
+      rejectUnauthorized: false, // Prevents self-signed/proxy cert issues
+    },
+  });
+  logger.info(`[Email Dispatcher] Initialized SMTP transporter for ${env.SMTP_USER} on ${env.SMTP_HOST}:${env.SMTP_PORT}`);
+}
+
 /**
  * Send an email message.
- * Supports direct SMTP transport if configured, with logger/in-memory fallback for local dev & testing.
+ * Uses real SMTP transport if configured, with logger/in-memory fallback.
  *
  * @param {object} options
  * @param {string} options.to - Recipient email address
@@ -20,11 +40,32 @@ async function sendEmail({ to, subject, text, html }) {
     throw new Error('Recipient email address is required');
   }
 
-  const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+  const from = env.EMAIL_FROM || (env.SMTP_USER ? `AgriEtech <${env.SMTP_USER}>` : 'no-reply@agrietech.et');
+  let messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+
+  if (transporter) {
+    try {
+      const info = await transporter.sendMail({
+        from,
+        to,
+        subject,
+        text,
+        html: html || text,
+      });
+      messageId = info.messageId;
+      logger.info(`[Email Dispatcher] Sent real email to ${to} (MessageId: ${messageId})`);
+    } catch (error) {
+      logger.error(`[Email Dispatcher] Failed to send email to ${to}: ${error.message}`);
+      throw error;
+    }
+  } else {
+    logger.info(`[Email Dispatcher Mock] To: ${to} | Subject: "${subject}" | MessageId: ${messageId}`);
+  }
+
   const record = {
     messageId,
     to,
-    from: env.EMAIL_FROM || 'no-reply@agrietech.et',
+    from,
     subject,
     text,
     html: html || text,
@@ -33,8 +74,6 @@ async function sendEmail({ to, subject, text, html }) {
 
   sentEmailsLog.push(record);
   if (sentEmailsLog.length > 100) sentEmailsLog.shift();
-
-  logger.info(`[Email Dispatcher] To: ${to} | Subject: "${subject}" | MessageId: ${messageId}`);
 
   return {
     success: true,
