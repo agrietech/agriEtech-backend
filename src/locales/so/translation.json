@@ -1,0 +1,49 @@
+{
+  "alerts": {
+    "drought_warning": "Digniin Abaar",
+    "drought_message": "Roob yari ayaa laga dareemay deegaankaaga. Diyaarso waraab dheeri ah oo biyaha ilaali.",
+    "flood_warning": "Digniin Fatahaad",
+    "flood_message": "Roob xooggan ayaa la filayaa. Xoolaha u rar meelaha sare oo dalagyada ilaali.",
+    "locust_warning": "Digniin Ayax",
+    "locust_message": "Ayax ayaa lagu arkay masaafo {{distance}}km u jirta deegaankaaga. Diyaarso tallaabooyinka xakameynta.",
+    "heatwave_warning": "Digniin Kuleyl Daran",
+    "heatwave_message": "Heerkul aad u sarreeya ayaa la filayaa. Dalagyada iyo xoolaha u diyaari har iyo biyo.",
+    "frost_warning": "Digniin Qabow Daran",
+    "frost_message": "Heerkulku wuxuu hoos ugu dhici karaa 0°C. Ilaali dalagyada jilicsan.",
+    "pest_warning": "Digniin Cayayaan",
+    "pest_message": "Dhaqdhaqaaq cayayaan oo kordhay ayaa laga dareemay deegaankaaga.",
+    "disease_warning": "Digniin Cudurka Dalagga",
+    "disease_message": "Khatarta cudurku way sarreysaa cimilada darteed."
+  },
+  "severity": {
+    "CRITICAL": "Aad u daran",
+    "HIGH": "Sare",
+    "MODERATE": "Dhexdhexaad",
+    "LOW": "Hoose",
+    "INFO": "Xog"
+  },
+  "recommendations": {
+    "delay_planting": "Dib u dhig beerista ilaa qoyaanka carradu ka hagaagayo",
+    "apply_irrigation": "Si degdeg ah u waraabi",
+    "harvest_early": "Ka fikir goosashada hore ka hor roobabka xooggan",
+    "apply_pesticide": "Isticmaal daawada cayayaanka ee ku habboon",
+    "protect_crops": "Dalagyada ka ilaali cimilada daran",
+    "conserve_water": "Ilaali khayraadka biyaha",
+    "monitor_closely": "Si dhow ula soco xaaladda"
+  },
+  "ussd": {
+    "main_menu": "CON Ku soo dhawoow AgriEtech\n1. Cimilada Maanta\n2. Digniinaha Firfircoon\n3. Warbixinta Cayayaanka\n4. Talada Dalagga\n5. Luuqadda",
+    "weather_forecast": "Saadaasha Cimilada",
+    "no_alerts": "Ma jiraan digniino deegaankaaga ah",
+    "recent_alerts": "Digniinaha Dhowaa",
+    "back": "0. Ku noqo liiska hore"
+  },
+  "crops": {
+    "wheat": "Qamadi",
+    "barley": "Shaciir",
+    "teff": "Teff",
+    "maize": "Galey",
+    "sorghum": "Masago",
+    "coffee": "Bun"
+  }
+}

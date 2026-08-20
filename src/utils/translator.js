@@ -5,7 +5,7 @@ class Translator {
   constructor() {
     this.translations = {};
     this.defaultLang = 'en';
-    this.supportedLanguages = ['en', 'am'];
+    this.supportedLanguages = ['en', 'am', 'om', 'ti', 'so'];
     this.loadTranslations();
   }
 

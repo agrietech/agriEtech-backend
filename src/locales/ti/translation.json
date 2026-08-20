@@ -1,0 +1,49 @@
+{
+  "alerts": {
+    "drought_warning": "ናይ ድርቂ መጠንቀቕታ",
+    "drought_message": "ኣብ ከባቢኹም ትሑት መጠን ዝናብ ተመዝጊቡ። ተወሳኺ መስኖ ኣዳልዉ ማይ ድማ ቆጥቡ።",
+    "flood_warning": "ናይ ውሕጅ መጠንቀቕታ",
+    "flood_message": "ሓያል ዝናብ ትፅቢት ይግበር። እንስሳታት ናብ በሪኽ ቦታ ኣዘዋውሩ እኽሊ ድማ ሓልዉ።",
+    "locust_warning": "ናይ ኣንበጣ ምድረበዳ መጠንቀቕታ",
+    "locust_message": "ኣንበጣ ካብ ከባቢኹም {{distance}} ኪሜ ርሕቐት ተራእዩ ኣሎ። ናይ ምክልኻል ስጉምቲ ብቕልጡፍ ውሰዱ።",
+    "heatwave_warning": "ናይ ረስኒ መጠንቀቕታ",
+    "heatwave_message": "ልዑል ሙቐት ትፅቢት ይግበር። ንሰብልን እንስሳታትን ፅላልን ማይን ኣቕርቡ።",
+    "frost_warning": "ናይ ኣስሓይታ መጠንቀቕታ",
+    "frost_message": "ሙቐት ትሕቲ 0°ሴ ክወርድ ይኽእል እዩ። ተነቀፍቲ ሰብሊ ሓልዉ።",
+    "pest_warning": "ናይ ባልዕ መጠንቀቕታ",
+    "pest_message": "ኣብ ከባቢኹም ልዑል ምንቅስቓስ ባልዕ ተራእዩ ኣሎ።",
+    "disease_warning": "ናይ ሕማም ሰብሊ መጠንቀቕታ",
+    "disease_message": "ብምኽንያት ኩነታት ኣየር ሓደጋ ሕማም ልዑል እዩ።"
+  },
+  "severity": {
+    "CRITICAL": "ወሳኒ",
+    "HIGH": "ልዑል",
+    "MODERATE": "ማእኸላይ",
+    "LOW": "ትሑት",
+    "INFO": "ሓበሬታ"
+  },
+  "recommendations": {
+    "delay_planting": "ርጥበት ሓመድ ክሳብ ዝመሓየሽ ምዝራእ ኣደንጉዩ",
+    "apply_irrigation": "ብቕልጡፍ ተወሳኺ መስኖ ግበሩ",
+    "harvest_early": "ቅድሚ ሓያል ዝናብ ምእካብ ሕሰቡሉ",
+    "apply_pesticide": "ግቡእ ናይ ባልዕ መከላኸሊ ተጠቐሙ",
+    "protect_crops": "ሰብልታት ካብ ሓያል ኩነታት ኣየር ሓልዉ",
+    "conserve_water": "ሃፍቲ ማይ ቆጥቡ",
+    "monitor_closely": "ኩነታት ብቐረባ ተኸታተሉ"
+  },
+  "ussd": {
+    "main_menu": "CON ናብ ኣግሪኢቴክ ብደሓን መፁ\n1. ናይ ሎሚ ኩነታት ኣየር\n2. ዘለዉ መጠንቀቕታታት\n3. ፀብፃብ ባልዕ\n4. ምኽሪ ሰብሊ\n5. ቋንቋ",
+    "weather_forecast": "ትንበያ ኩነታት ኣየር",
+    "no_alerts": "ንኸባቢኹም ዝተዋህበ መጠንቀቕታ የለን",
+    "recent_alerts": "ናይ ቀረባ መጠንቀቕታታት",
+    "back": "0. ናብ ዝሓለፈ ተመለስ"
+  },
+  "crops": {
+    "wheat": "ስርናይ",
+    "barley": "ስገም",
+    "teff": "ጣፍ",
+    "maize": "ዕፉን",
+    "sorghum": "መሸላ",
+    "coffee": "ቡን"
+  }
+}

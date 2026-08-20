@@ -1,0 +1,49 @@
+{
+  "alerts": {
+    "drought_warning": "Akeekkachiisa Oolaa",
+    "drought_message": "Naannoo keessanitti roobni gahaan hin jiru. Bishaan qusadhaa, misooma jallisiitiif qophaa'aa.",
+    "flood_warning": "Akeekkachiisa Lolaa",
+    "flood_message": "Roobni cimaan ni eeggama. Horii gara bakka olka'aatti dabarsaa, midhaan eegaa.",
+    "locust_warning": "Akeekkachiisa Hawaannisa Gammoojjii",
+    "locust_message": "Hawaannisni naannoo keessanirraa km {{distance}} irratti argameera. Tarkaanfii ittisaa yeroodhaan fudhaa.",
+    "heatwave_warning": "Akeekkachiisa Ho’a Cimaa",
+    "heatwave_message": "Ho'i guddaan ni eeggama. Midhaanii fi beelladaaf gaaddisaa fi bishaan dhiyeessaa.",
+    "frost_warning": "Akeekkachiisa Cabbii / Qorra Cimaa",
+    "frost_message": "Ho'i 0°C gadi bu'uu danda'a. Midhaan qorra hin dandeenye eegaa.",
+    "pest_warning": "Akeekkachiisa Raammoo fi Ilbiisotaa",
+    "pest_message": "Naannoo keessanitti baay'inni ilbiisotaa dabaleera.",
+    "disease_warning": "Akeekkachiisa Dhukkuba Midhaanii",
+    "disease_message": "Sababa haala qilleensaatiin balaan dhukkubaa olaanaadha."
+  },
+  "severity": {
+    "CRITICAL": "Murteessaa",
+    "HIGH": "Olaanaa",
+    "MODERATE": "Giddu-galeessa",
+    "LOW": "Gadi-aanaa",
+    "INFO": "Oodeeffannoo"
+  },
+  "recommendations": {
+    "delay_planting": "Hanga jiidhinni biyyoo fooyya'utti facaasaa tursiisaa",
+    "apply_irrigation": "Hojii jallisii dabalataa yeroodhaan gaggeessaa",
+    "harvest_early": "Rooba cimaa dura dafaa haamaa",
+    "apply_pesticide": "Qoricha farra ilbiisotaa sirrii ta'e fayyadamaa",
+    "protect_crops": "Midhaan qilleensa hamaarraa eegaa",
+    "conserve_water": "Qabeenya bishaanii qusadhaa",
+    "monitor_closely": "Haalasaa dhiyootti hordofaa"
+  },
+  "ussd": {
+    "main_menu": "CON Baga Gara AgriEtech Dhuftan\n1. Haala Qilleensaa Har'aa\n2. Akeekkachiisa Jiru\n3. Raammoo Gabaasuu\n4. Gorsa Midhaanii\n5. Afaan",
+    "weather_forecast": "Raaga Haala Qilleensaa",
+    "no_alerts": "Akeekkachiisni naannoo keessaniif hin jiru",
+    "recent_alerts": "Akeekkachiisa Dhiyoo",
+    "back": "0. Gara duraatti deebi'i"
+  },
+  "crops": {
+    "wheat": "Qamadii",
+    "barley": "Garbuu",
+    "teff": "Xaafii",
+    "maize": "Boqqolloo",
+    "sorghum": "Mishingaa",
+    "coffee": "Buna"
+  }
+}
