@@ -3,15 +3,26 @@ const logger = require('./logger');
 const env = require('../config/env');
 
 /**
- * Cache Manager with Redis
- * Provides caching utilities with TTL, compression, and automatic key generation
+ * Cache Manager with Redis and In-Memory Fallback
+ * Provides seamless caching utilities with TTL, compression, and automated fallback
  */
 class CacheManager {
   constructor() {
     this.redis = null;
     this.isConnected = false;
+    this.memoryStore = new Map();
     this.keyPrefix = env.REDIS_KEY_PREFIX || 'agrietech:';
     this.defaultTTL = 3600; // 1 hour in seconds
+
+    // Periodic memory cleanup (every 60s)
+    setInterval(() => {
+      const now = Date.now();
+      for (const [k, item] of this.memoryStore.entries()) {
+        if (now > item.expiresAt) {
+          this.memoryStore.delete(k);
+        }
+      }
+    }, 60000).unref();
   }
 
   /**
@@ -21,14 +32,15 @@ class CacheManager {
     try {
       this.redis = new Redis({
         host: env.REDIS_HOST || 'localhost',
-        port: parseInt(env.REDIS_PORT) || 6379,
+        port: parseInt(env.REDIS_PORT, 10) || 6379,
         password: env.REDIS_PASSWORD || undefined,
-        db: parseInt(env.REDIS_DB) || 0,
+        db: parseInt(env.REDIS_DB, 10) || 0,
         retryStrategy: (times) => {
-          const delay = Math.min(times * 50, 2000);
-          return delay;
+          if (times > 3) return null;
+          return Math.min(times * 50, 1000);
         },
-        maxRetriesPerRequest: parseInt(env.REDIS_MAX_RETRIES) || 3,
+        maxRetriesPerRequest: parseInt(env.REDIS_MAX_RETRIES, 10) || 3,
+        lazyConnect: true,
       });
 
       this.redis.on('connect', () => {
@@ -36,139 +48,134 @@ class CacheManager {
         logger.info('Redis cache connected successfully');
       });
 
-      this.redis.on('error', (err) => {
+      this.redis.on('error', (_err) => {
         this.isConnected = false;
-        logger.error('Redis cache error', { error: err.message });
       });
 
       this.redis.on('close', () => {
         this.isConnected = false;
-        logger.warn('Redis cache connection closed');
       });
 
-      // Test connection
-      await this.redis.ping();
+      await this.redis.connect();
       return true;
-    } catch (error) {
-      logger.error('Failed to connect to Redis cache', { error: error.message });
+    } catch (_error) {
+      this.isConnected = false;
       return false;
     }
   }
 
   /**
    * Set cache value
-   * @param {string} key - Cache key
-   * @param {any} value - Value to cache (will be JSON stringified)
-   * @param {number} ttl - Time to live in seconds
    */
   async set(key, value, ttl = null) {
+    const expiryTime = ttl || this.defaultTTL;
+
     if (!this.isConnected) {
-      logger.warn('Cache not connected, skipping set operation');
-      return false;
+      this.memoryStore.set(this.keyPrefix + key, {
+        value,
+        expiresAt: Date.now() + expiryTime * 1000,
+      });
+      return true;
     }
 
     try {
       const fullKey = this.keyPrefix + key;
       const serialized = JSON.stringify(value);
-      const expiryTime = ttl || this.defaultTTL;
-
       await this.redis.setex(fullKey, expiryTime, serialized);
-      logger.debug(`Cache set: ${key} (TTL: ${expiryTime}s)`);
       return true;
     } catch (error) {
-      logger.error('Cache set error', { key, error: error.message });
-      return false;
+      this.memoryStore.set(this.keyPrefix + key, {
+        value,
+        expiresAt: Date.now() + expiryTime * 1000,
+      });
+      return true;
     }
   }
 
   /**
    * Get cache value
-   * @param {string} key - Cache key
-   * @returns {any} - Cached value or null
    */
   async get(key) {
+    const fullKey = this.keyPrefix + key;
+
     if (!this.isConnected) {
-      logger.warn('Cache not connected, skipping get operation');
-      return null;
+      const item = this.memoryStore.get(fullKey);
+      if (!item) return null;
+      if (Date.now() > item.expiresAt) {
+        this.memoryStore.delete(fullKey);
+        return null;
+      }
+      return item.value;
     }
 
     try {
-      const fullKey = this.keyPrefix + key;
       const cached = await this.redis.get(fullKey);
-
       if (cached) {
-        logger.debug(`Cache hit: ${key}`);
         return JSON.parse(cached);
       }
-
-      logger.debug(`Cache miss: ${key}`);
       return null;
-    } catch (error) {
-      logger.error('Cache get error', { key, error: error.message });
-      return null;
+    } catch (_error) {
+      const item = this.memoryStore.get(fullKey);
+      if (!item) return null;
+      if (Date.now() > item.expiresAt) {
+        this.memoryStore.delete(fullKey);
+        return null;
+      }
+      return item.value;
     }
   }
 
   /**
    * Delete cache value
-   * @param {string} key - Cache key
    */
   async delete(key) {
-    if (!this.isConnected) {
-      return false;
-    }
+    const fullKey = this.keyPrefix + key;
+    this.memoryStore.delete(fullKey);
 
-    try {
-      const fullKey = this.keyPrefix + key;
-      await this.redis.del(fullKey);
-      logger.debug(`Cache deleted: ${key}`);
-      return true;
-    } catch (error) {
-      logger.error('Cache delete error', { key, error: error.message });
-      return false;
+    if (this.isConnected) {
+      try {
+        await this.redis.del(fullKey);
+      } catch (_e) {}
     }
+    return true;
   }
 
   /**
    * Delete multiple keys matching pattern
-   * @param {string} pattern - Pattern to match (e.g., 'risk:*')
    */
   async deletePattern(pattern) {
-    if (!this.isConnected) {
-      return 0;
-    }
-
-    try {
-      const fullPattern = this.keyPrefix + pattern;
-      const keys = await this.redis.keys(fullPattern);
-
-      if (keys.length === 0) {
-        return 0;
+    let count = 0;
+    const regex = new RegExp(`^${(this.keyPrefix + pattern).replace('*', '.*')}`);
+    for (const k of this.memoryStore.keys()) {
+      if (regex.test(k)) {
+        this.memoryStore.delete(k);
+        count++;
       }
-
-      await this.redis.del(...keys);
-      logger.info(`Cache pattern deleted: ${pattern} (${keys.length} keys)`);
-      return keys.length;
-    } catch (error) {
-      logger.error('Cache delete pattern error', { pattern, error: error.message });
-      return 0;
     }
+
+    if (this.isConnected) {
+      try {
+        const fullPattern = this.keyPrefix + pattern;
+        const keys = await this.redis.keys(fullPattern);
+        if (keys.length > 0) {
+          await this.redis.del(...keys);
+          count += keys.length;
+        }
+      } catch (_e) {}
+    }
+
+    return count;
   }
 
   /**
    * Get or set cache value (with lazy loading)
-   * @param {string} key - Cache key
-   * @param {Function} fetchFn - Async function to fetch value if not cached
-   * @param {number} ttl - Time to live in seconds
    */
   async getOrSet(key, fetchFn, ttl = null) {
-    // Try to get from cache
     const cached = await this.get(key);
     if (cached !== null) {
       return cached;
     }
 
-    // Fetch fresh data
     try {
       const value = await fetchFn();
       if (value !== null && value !== undefined) {
@@ -182,88 +189,65 @@ class CacheManager {
   }
 
   /**
-   * Generate cache key for risk assessment
+   * Increment counter with expiry
    */
+  async increment(key, ttl = 3600) {
+    const fullKey = this.keyPrefix + key;
+
+    if (!this.isConnected) {
+      const item = this.memoryStore.get(fullKey);
+      let count = 1;
+      if (item && Date.now() <= item.expiresAt) {
+        count = (typeof item.value === 'number' ? item.value : 0) + 1;
+      }
+      this.memoryStore.set(fullKey, {
+        value: count,
+        expiresAt: Date.now() + ttl * 1000,
+      });
+      return count;
+    }
+
+    try {
+      const count = await this.redis.incr(fullKey);
+      if (count === 1) {
+        await this.redis.expire(fullKey, ttl);
+      }
+      return count;
+    } catch (_error) {
+      return 1;
+    }
+  }
+
   riskKey(woredaId, date, hazardType) {
     return `risk:${woredaId}:${date}:${hazardType}`;
   }
 
-  /**
-   * Generate cache key for weather forecast
-   */
   weatherKey(lat, lng, days) {
     return `weather:${lat}:${lng}:${days}`;
   }
 
-  /**
-   * Generate cache key for boundary data
-   */
   boundaryKey(type, id) {
     return `boundary:${type}:${id}`;
   }
 
-  /**
-   * Increment counter with expiry
-   */
-  async increment(key, ttl = 3600) {
-    if (!this.isConnected) {
-      return 0;
-    }
-
-    try {
-      const fullKey = this.keyPrefix + key;
-      const count = await this.redis.incr(fullKey);
-
-      if (count === 1) {
-        // First increment, set expiry
-        await this.redis.expire(fullKey, ttl);
-      }
-
-      return count;
-    } catch (error) {
-      logger.error('Cache increment error', { key, error: error.message });
-      return 0;
-    }
-  }
-
-  /**
-   * Get cache statistics
-   */
   async getStats() {
-    if (!this.isConnected) {
-      return { connected: false };
-    }
-
-    try {
-      const info = await this.redis.info('stats');
-      const keyspace = await this.redis.info('keyspace');
-      const memory = await this.redis.info('memory');
-
-      return {
-        connected: true,
-        keyspace,
-        memory,
-        stats: info,
-      };
-    } catch (error) {
-      logger.error('Cache stats error', { error: error.message });
-      return { connected: false, error: error.message };
-    }
+    return {
+      connected: this.isConnected,
+      memoryKeysCount: this.memoryStore.size,
+      mode: this.isConnected ? 'REDIS' : 'IN_MEMORY_FALLBACK',
+    };
   }
 
-  /**
-   * Close Redis connection
-   */
   async disconnect() {
     if (this.redis) {
-      await this.redis.quit();
+      try {
+        await this.redis.quit();
+      } catch (_e) {}
       this.isConnected = false;
-      logger.info('Redis cache disconnected');
     }
   }
 }
 
-// Create singleton instance
 const cacheManager = new CacheManager();
 
 module.exports = cacheManager;
