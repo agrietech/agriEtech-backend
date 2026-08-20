@@ -3,6 +3,7 @@ const router = express.Router();
 const controller = require('./boundaries.controller');
 
 router.get('/regions', controller.getRegions);
+router.get('/zones', controller.getZones);
 router.get('/woredas', controller.getWoredas);
 router.get('/woredas/:id', controller.getWoredaDetails);
 
