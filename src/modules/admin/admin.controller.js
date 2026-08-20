@@ -252,7 +252,31 @@ function renderDashboard(_req, res) {
     .dot-green { background: #22c55e; box-shadow: 0 0 8px #22c55e; }
     .dot-amber { background: #f59e0b; box-shadow: 0 0 8px #f59e0b; }
     
-    .sync-btn-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 1000;
+    }
+    .toast {
+      padding: 12px 20px;
+      border-radius: 10px;
+      color: white;
+      font-size: 13px;
+      font-weight: 600;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      animation: slideIn 0.3s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .toast-success { background: rgba(34, 197, 94, 0.9); border: 1px solid #22c55e; }
+    .toast-error { background: rgba(239, 68, 68, 0.9); border: 1px solid #ef4444; }
+    @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
   </style>
 </head>
 <body>
@@ -265,8 +289,9 @@ function renderDashboard(_req, res) {
         <div style="font-size: 11px; color: var(--text-muted);">Enterprise Early Warning & Operations Center</div>
       </div>
     </div>
-    <div style="display: flex; align-items: center; gap: 16px;">
+    <div style="display: flex; align-items: center; gap: 14px;">
       <div class="status-pill"><div class="dot dot-green"></div> System Live</div>
+      <button class="btn-action" onclick="promptToken()" id="btn-token" title="Set or update your Admin JWT Token">🔑 Set Token</button>
       <span class="badge-admin">Admin Portal</span>
     </div>
   </header>
@@ -307,9 +332,20 @@ function renderDashboard(_req, res) {
       
       <!-- Left Column: User Management -->
       <div class="panel">
-        <div class="panel-header">
+        <div class="panel-header" style="flex-wrap: wrap; gap: 10px;">
           <div class="panel-title">👥 User Management & Access Control</div>
-          <button class="btn-action" onclick="fetchUsers()">🔄 Refresh</button>
+          <div style="display: flex; gap: 8px;">
+            <input type="text" id="user-search" placeholder="Search user..." class="input-field" style="width: 160px; padding: 6px 10px; font-size: 12px;" oninput="fetchUsers()" />
+            <select id="user-role-filter" class="input-field" style="width: 130px; padding: 6px 10px; font-size: 12px;" onchange="fetchUsers()">
+              <option value="">All Roles</option>
+              <option value="FARMER">FARMER</option>
+              <option value="DEVELOPMENT_AGENT">DEV AGENT</option>
+              <option value="WOREDA_OFFICER">OFFICER</option>
+              <option value="RESEARCHER">RESEARCHER</option>
+              <option value="ADMIN">ADMIN</option>
+            </select>
+            <button class="btn-action" onclick="fetchUsers()">🔄 Refresh</button>
+          </div>
         </div>
         <div class="table-container">
           <table>
@@ -363,7 +399,7 @@ function renderDashboard(_req, res) {
               <option value="HIGH">HIGH (ከፍተኛ)</option>
               <option value="MODERATE">MODERATE (መካከለኛ)</option>
             </select>
-            <button type="submit" class="btn-danger">🚨 Broadcast to Woredas</button>
+            <button type="submit" class="btn-danger">🚨 Broadcast to Regional Delivery</button>
           </form>
         </div>
 
@@ -395,10 +431,46 @@ function renderDashboard(_req, res) {
 
   </div>
 
+  <div class="toast-container" id="toast-container"></div>
+
   <script>
+    function getAuthHeaders() {
+      const headers = { 'Content-Type': 'application/json' };
+      const token = localStorage.getItem('agrietech_admin_token') || localStorage.getItem('token');
+      if (token) {
+        headers['Authorization'] = 'Bearer ' + token;
+      }
+      return headers;
+    }
+
+    function showToast(message, isError = false) {
+      const c = document.getElementById('toast-container');
+      const t = document.createElement('div');
+      t.className = 'toast ' + (isError ? 'toast-error' : 'toast-success');
+      t.innerText = (isError ? '❌ ' : '✅ ') + message;
+      c.appendChild(t);
+      setTimeout(() => t.remove(), 4000);
+    }
+
+    function promptToken() {
+      const current = localStorage.getItem('agrietech_admin_token') || '';
+      const input = prompt('Enter your Admin JWT Bearer Token (optional for local dev):', current);
+      if (input !== null) {
+        if (input.trim()) {
+          localStorage.setItem('agrietech_admin_token', input.trim());
+          showToast('Admin Token saved!');
+        } else {
+          localStorage.removeItem('agrietech_admin_token');
+          showToast('Admin Token cleared');
+        }
+        loadOverview();
+        fetchUsers();
+      }
+    }
+
     async function loadOverview() {
       try {
-        const res = await fetch('/api/v1/admin/overview');
+        const res = await fetch('/api/v1/admin/overview', { headers: getAuthHeaders() });
         const json = await res.json();
         if (json.success) {
           const m = json.data.metrics;
@@ -413,7 +485,7 @@ function renderDashboard(_req, res) {
             auditBody.innerHTML = json.data.recentAuditLogs.map(a => \`
               <tr>
                 <td><strong>\${a.action}</strong></td>
-                <td>\${a.adminEmail}</td>
+                <td>\${a.adminEmail || 'admin@agrietech.et'}</td>
                 <td>\${a.details}</td>
                 <td style="color: var(--text-muted);">\${new Date(a.timestamp).toLocaleString()}</td>
               </tr>
@@ -427,24 +499,38 @@ function renderDashboard(_req, res) {
 
     async function fetchUsers() {
       try {
-        const res = await fetch('/api/v1/admin/users');
+        const search = document.getElementById('user-search').value.trim();
+        const role = document.getElementById('user-role-filter').value;
+        const queryParams = new URLSearchParams();
+        if (search) queryParams.set('search', search);
+        if (role) queryParams.set('role', role);
+
+        const res = await fetch('/api/v1/admin/users?' + queryParams.toString(), { headers: getAuthHeaders() });
         const json = await res.json();
         if (json.success) {
           const tbody = document.getElementById('users-table-body');
+          if (!json.data.users || json.data.users.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">No users found.</td></tr>';
+            return;
+          }
           tbody.innerHTML = json.data.users.map(u => \`
             <tr>
               <td><strong>\${u.fullName}</strong></td>
               <td>\${u.phoneNumber || u.email || 'N/A'}</td>
               <td><span class="badge badge-role-\${u.role}">\${u.role}</span></td>
-              <td>\${u.isEmailVerified ? '✅ Verified' : '⏳ Pending'}</td>
+              <td>
+                <button onclick="toggleVerification('\${u.id}', \${!u.isEmailVerified})" class="btn-action" style="font-size: 11px; padding: 3px 8px;">
+                  \${u.isEmailVerified ? '✅ Verified' : '⏳ Pending'}
+                </button>
+              </td>
               <td>
                 <select onchange="changeRole('\${u.id}', this.value)" style="padding: 4px; font-size: 11px; width: auto; background: #1a2721; border-color: rgba(255,255,255,0.2);">
                   <option value="">Switch Role...</option>
-                  <option value="FARMER">FARMER</option>
-                  <option value="DEVELOPMENT_AGENT">DEV AGENT</option>
-                  <option value="WOREDA_OFFICER">OFFICER</option>
-                  <option value="RESEARCHER">RESEARCHER</option>
-                  <option value="ADMIN">ADMIN</option>
+                  <option value="FARMER" \${u.role === 'FARMER' ? 'selected' : ''}>FARMER</option>
+                  <option value="DEVELOPMENT_AGENT" \${u.role === 'DEVELOPMENT_AGENT' ? 'selected' : ''}>DEV AGENT</option>
+                  <option value="WOREDA_OFFICER" \${u.role === 'WOREDA_OFFICER' ? 'selected' : ''}>OFFICER</option>
+                  <option value="RESEARCHER" \${u.role === 'RESEARCHER' ? 'selected' : ''}>RESEARCHER</option>
+                  <option value="ADMIN" \${u.role === 'ADMIN' ? 'selected' : ''}>ADMIN</option>
                 </select>
               </td>
             </tr>
@@ -455,24 +541,44 @@ function renderDashboard(_req, res) {
       }
     }
 
+    async function toggleVerification(userId, newStatus) {
+      try {
+        const res = await fetch(\`/api/v1/admin/users/\${userId}/status\`, {
+          method: 'PATCH',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ isEmailVerified: newStatus })
+        });
+        const json = await res.json();
+        if (json.success) {
+          showToast('Verification status updated');
+          fetchUsers();
+          loadOverview();
+        } else {
+          showToast(json.error?.message || 'Update failed', true);
+        }
+      } catch (e) {
+        showToast('Request failed', true);
+      }
+    }
+
     async function changeRole(userId, newRole) {
       if (!newRole) return;
       try {
         const res = await fetch(\`/api/v1/admin/users/\${userId}/role\`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders(),
           body: JSON.stringify({ role: newRole })
         });
         const json = await res.json();
         if (json.success) {
-          alert('User role updated to ' + newRole);
+          showToast('Role updated to ' + newRole);
           fetchUsers();
           loadOverview();
         } else {
-          alert('Error: ' + (json.error?.message || json.message));
+          showToast(json.error?.message || 'Failed to update role', true);
         }
       } catch (e) {
-        alert('Failed to update role');
+        showToast('Failed to update role', true);
       }
     }
 
@@ -482,17 +588,21 @@ function renderDashboard(_req, res) {
       try {
         const res = await fetch('/api/v1/admin/ingestion/trigger', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders(),
           body: JSON.stringify({ jobType })
         });
         const json = await res.json();
         if (json.success) {
           msg.innerText = '✅ Job ' + jobType + ' scheduled! (ID: ' + json.data.jobId + ')';
+          showToast('Job ' + jobType + ' dispatched successfully');
+          loadOverview();
         } else {
           msg.innerText = '❌ Failed: ' + (json.error?.message || json.message);
+          showToast(json.error?.message || 'Job trigger failed', true);
         }
       } catch (e) {
         msg.innerText = '❌ Request failed';
+        showToast('Request failed', true);
       }
     }
 
@@ -506,19 +616,19 @@ function renderDashboard(_req, res) {
       try {
         const res = await fetch('/api/v1/admin/broadcast-alert', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders(),
           body: JSON.stringify({ titleEn, titleAm, messageEn, severity })
         });
         const json = await res.json();
         if (json.success) {
-          alert('🚨 Emergency Alert successfully broadcasted to regional delivery channels!');
+          showToast('🚨 Emergency Alert broadcasted to all channels!');
           loadOverview();
           e.target.reset();
         } else {
-          alert('Broadcast failed: ' + (json.error?.message || json.message));
+          showToast(json.error?.message || 'Broadcast failed', true);
         }
       } catch (err) {
-        alert('Broadcast failed');
+        showToast('Broadcast failed', true);
       }
     }
 
