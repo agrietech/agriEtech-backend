@@ -2,15 +2,26 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// Ensure upload directories exist
-const uploadDir = path.join(__dirname, '../../uploads/diagnoses');
-const audioUploadDir = path.join(__dirname, '../../uploads/audio');
+const os = require('os');
+const logger = require('../utils/logger');
 
-[uploadDir, audioUploadDir].forEach((dir) => {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-});
+// Ensure upload directories exist
+let uploadDir = path.join(__dirname, '../../uploads/diagnoses');
+let audioUploadDir = path.join(__dirname, '../../uploads/audio');
+
+try {
+  if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+  if (!fs.existsSync(audioUploadDir)) fs.mkdirSync(audioUploadDir, { recursive: true });
+} catch (err) {
+  // If container restricts /app/uploads, fallback gracefully to OS temporary directory
+  logger.warn(`[Upload Middleware] Notice: ${err.message}. Using OS temp directory fallback.`);
+  uploadDir = path.join(os.tmpdir(), 'agrietech/uploads/diagnoses');
+  audioUploadDir = path.join(os.tmpdir(), 'agrietech/uploads/audio');
+  try {
+    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+    if (!fs.existsSync(audioUploadDir)) fs.mkdirSync(audioUploadDir, { recursive: true });
+  } catch (_e) {}
+}
 
 // Disk storage configuration for general & vision uploads
 const storage = multer.diskStorage({
