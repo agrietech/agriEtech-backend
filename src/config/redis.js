@@ -22,10 +22,12 @@ if (redisConfigured) {
     host: env.REDIS_HOST,
     port: env.REDIS_PORT,
     password: env.REDIS_PASSWORD || undefined,
-    tls: useTls ? {} : undefined,
+    tls: useTls ? { rejectUnauthorized: false } : undefined,
+    keepAlive: 10000,
+    connectTimeout: 10000,
     retryStrategy: (times) => {
-      if (times > 3) return null;
-      return Math.min(times * 100, 1000);
+      if (times > 5) return null;
+      return Math.min(times * 200, 2000);
     },
     maxRetriesPerRequest: null,
     enableOfflineQueue: true,
@@ -38,6 +40,10 @@ if (redisConfigured) {
   redis.on('connect', () => {
     isRedisAvailable = true;
     logger.info(`Redis connected successfully (${env.REDIS_HOST})`);
+  });
+
+  redis.on('ready', () => {
+    isRedisAvailable = true;
   });
 
   redis.on('close', () => {

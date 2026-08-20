@@ -19,6 +19,7 @@ const env = {
   REDIS_PASSWORD: process.env.REDIS_PASSWORD || '',
   JWT_SECRET: process.env.JWT_SECRET || 'dev_secret_key_change_in_production',
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '7d',
+  JWT_REFRESH_EXPIRES_IN: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
   AFRICAS_TALKING_API_KEY: process.env.AFRICAS_TALKING_API_KEY,
   AFRICAS_TALKING_USERNAME: process.env.AFRICAS_TALKING_USERNAME || 'sandbox',
   AFRICAS_TALKING_SENDER_ID: process.env.AFRICAS_TALKING_SENDER_ID || 'AgriEtech',
@@ -40,6 +41,8 @@ const env = {
   SMTP_USER: process.env.SMTP_USER || '',
   SMTP_PASS: process.env.SMTP_PASS || '',
   EMAIL_FROM: process.env.EMAIL_FROM || 'no-reply@agrietech.et',
+  CHIRPS_BASE_URL: process.env.CHIRPS_BASE_URL || 'https://data.chc.ucsb.edu/products/CHIRPS-2.0',
+  FAO_LOCUST_API_URL: process.env.FAO_LOCUST_API_URL || 'https://locust-hub-hqfao.hub.arcgis.com/api/v3',
 };
 
 // Validate critical variables in production
@@ -49,10 +52,15 @@ if (env.NODE_ENV === 'production') {
   if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'dev_secret_key_change_in_production') {
     missing.push('JWT_SECRET (must be securely generated in production)');
   }
+  if (!process.env.REDIS_HOST || process.env.REDIS_HOST === 'localhost') {
+    missing.push('REDIS_HOST (production requires a configured Redis instance)');
+  }
+  if (!process.env.REDIS_PASSWORD) {
+    missing.push('REDIS_PASSWORD (required for production Redis)');
+  }
   if (missing.length > 0) {
     throw new Error(`[FATAL] Missing required production environment variables: ${missing.join(', ')}`);
   }
 }
 
 module.exports = env;
-

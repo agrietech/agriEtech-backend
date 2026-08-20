@@ -4,31 +4,87 @@ const logger = require('../utils/logger');
 function errorHandler(err, req, res, _next) {
   logger.error(`${req.method} ${req.originalUrl} - ${err.message}`);
 
-  const statusCode = err.statusCode || err.status || 500;
-  const message = err.message || 'Internal Server Error';
-  const defaultCode =
-    statusCode === 409
-      ? 'CONFLICT'
-      : statusCode === 404
-        ? 'NOT_FOUND'
-        : statusCode === 401
-          ? 'UNAUTHORIZED'
-          : statusCode === 403
-            ? 'FORBIDDEN'
-            : statusCode === 422
-              ? 'VALIDATION_ERROR'
-              : statusCode === 400
-                ? 'BAD_REQUEST'
-                : 'INTERNAL_ERROR';
+  let statusCode = err.statusCode || err.status || 500;
+  let message = err.message || 'Internal Server Error';
+  let code = err.errorCode || err.code;
+  let details = err.details || null;
 
-  const code = err.errorCode || err.code || defaultCode;
+  // Handle Prisma Database Errors gracefully
+  if (err.name === 'PrismaClientKnownRequestError') {
+    switch (err.code) {
+      case 'P1000':
+      case 'P1001':
+      case 'P1002':
+      case 'P1003':
+      case 'P1008':
+      case 'P1017':
+        statusCode = 503;
+        code = 'SERVICE_UNAVAILABLE';
+        message = 'Database is temporarily unreachable. Please try again shortly.';
+        break;
+      case 'P2002':
+        statusCode = 409;
+        code = 'CONFLICT';
+        message = `A record with this ${Array.isArray(err.meta?.target) ? err.meta.target.join(', ') : 'unique field'} already exists.`;
+        break;
+      case 'P2025':
+        statusCode = 404;
+        code = 'NOT_FOUND';
+        message = 'Requested resource was not found.';
+        break;
+      case 'P2003':
+        statusCode = 400;
+        code = 'FOREIGN_KEY_VIOLATION';
+        message = 'Related resource record was not found.';
+        break;
+      default:
+        statusCode = 500;
+        code = 'DATABASE_ERROR';
+        message = 'A database operation error occurred.';
+        break;
+    }
+  } else if (err.name === 'PrismaClientInitializationError') {
+    statusCode = 503;
+    code = 'SERVICE_UNAVAILABLE';
+    message = 'Database connection could not be established.';
+  } else if (err.name === 'PrismaClientValidationError') {
+    statusCode = 422;
+    code = 'VALIDATION_ERROR';
+    message = 'Invalid data provided for database operation.';
+  } else if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
+    statusCode = 401;
+    code = err.name === 'TokenExpiredError' ? 'TOKEN_EXPIRED' : 'INVALID_TOKEN';
+    message = 'Authentication token is invalid or has expired.';
+  }
+
+  // Default fallback error codes if not set
+  if (!code) {
+    code =
+      statusCode === 409
+        ? 'CONFLICT'
+        : statusCode === 404
+          ? 'NOT_FOUND'
+          : statusCode === 401
+            ? 'UNAUTHORIZED'
+            : statusCode === 403
+              ? 'FORBIDDEN'
+              : statusCode === 422
+                ? 'VALIDATION_ERROR'
+                : statusCode === 400
+                  ? 'BAD_REQUEST'
+                  : statusCode === 429
+                    ? 'RATE_LIMIT_EXCEEDED'
+                    : statusCode === 503
+                      ? 'SERVICE_UNAVAILABLE'
+                      : 'INTERNAL_ERROR';
+  }
 
   res.status(statusCode).json({
     success: false,
     error: {
       code,
       message,
-      ...(err.details && { details: err.details }),
+      ...(details && { details }),
     },
     message, // for legacy flat format compatibility
     ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),

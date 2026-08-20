@@ -1,10 +1,11 @@
 const winston = require('winston');
-const env = require('../config/env');
+
+const logLevel = process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'info');
 
 const logger = winston.createLogger({
-  level: env.NODE_ENV === 'development' ? 'debug' : 'info',
+  level: logLevel,
   format: winston.format.combine(
-    winston.format.timestamp(),
+    winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
     winston.format.errors({ stack: true }),
     winston.format.json()
   ),
@@ -19,5 +20,14 @@ const logger = winston.createLogger({
     }),
   ],
 });
+
+// Helper for HTTP client API telemetry logging
+logger.logApiCall = function (serviceName, url, durationMs, success = true, error = null) {
+  if (success) {
+    logger.info(`[External API] ${serviceName} -> ${url} (${durationMs}ms) - SUCCESS`);
+  } else {
+    logger.warn(`[External API] ${serviceName} -> ${url} (${durationMs}ms) - FAILED: ${error?.message || 'Unknown error'}`);
+  }
+};
 
 module.exports = logger;

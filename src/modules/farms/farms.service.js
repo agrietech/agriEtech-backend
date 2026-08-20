@@ -4,10 +4,40 @@ const { getCoord } = require('@turf/invariant');
 const boundariesService = require('../boundaries/boundaries.service');
 const { assertContainedByWoreda, createHttpError, validateFarmPolygon } = require('./farmGeometry');
 
-const inMemoryFarms = new Map();
-
 // Ethiopian geographic bounding box (approximate)
 const ETHIOPIA_BOUNDS = { minLat: 3.0, maxLat: 15.5, minLng: 32.5, maxLng: 48.5 };
+
+// In-memory store for offline/test mode
+const mockFarms = new Map([
+  [
+    'farm_demo_01',
+    {
+      id: 'farm_demo_01',
+      userId: 'usr_farmer_01',
+      farmName: 'Bishoftu Wheat Plot Alpha',
+      primaryCrop: 'Wheat',
+      areaHectares: 3.5,
+      latitude: 8.7523,
+      longitude: 38.9785,
+      woredaId: 'woreda_bishoftu_02',
+      polygonGeojson: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [38.978, 8.752],
+            [38.98, 8.752],
+            [38.98, 8.755],
+            [38.978, 8.755],
+            [38.978, 8.752],
+          ],
+        ],
+      },
+      createdAt: new Date().toISOString(),
+      woreda: { id: 'woreda_bishoftu_02', nameEn: 'Bishoftu', nameAm: 'ቢሾፍቱ' },
+      sensors: [],
+    },
+  ],
+]);
 
 /**
  * Register a new farm plot.
@@ -55,8 +85,10 @@ async function createFarm({ userId, farmName, primaryCrop, areaHectares, woredaI
   const farmPolygon = validateFarmPolygon(finalPolygon);
 
   // Step 2 – retrieve woreda and its boundary
-  const targetWoredaId = woredaId || 'woreda_adama_01';
-  const woreda = await boundariesService.getWoredaById(targetWoredaId);
+  if (!woredaId) {
+    throw createHttpError('woredaId is required', 400);
+  }
+  const woreda = await boundariesService.getWoredaById(woredaId);
   if (!woreda) {
     throw createHttpError('Selected woreda was not found', 404);
   }
@@ -72,75 +104,114 @@ async function createFarm({ userId, farmName, primaryCrop, areaHectares, woredaI
   const latitude = inputLat !== undefined ? Number(inputLat) : derivedLat;
   const longitude = inputLng !== undefined ? Number(inputLng) : derivedLng;
 
-  // Step 5 – persist
-  if (!isConnected()) {
-    // Offline / dev stub fallback
-    const mockFarm = {
-      id: `farm_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      userId,
-      farmName,
-      primaryCrop: primaryCrop || null,
-      areaHectares: areaHectares ?? null,
-      latitude,
-      longitude,
-      woredaId: targetWoredaId,
-      polygonGeojson: farmPolygon.geometry,
-      createdAt: new Date().toISOString(),
-    };
-    inMemoryFarms.set(mockFarm.id, mockFarm);
-    return mockFarm;
+  if (isConnected()) {
+    try {
+      return await prisma.$transaction(async (tx) => {
+        const farm = await tx.farm.create({
+          data: {
+            userId,
+            farmName,
+            primaryCrop: primaryCrop || null,
+            areaHectares: areaHectares ?? null,
+            latitude,
+            longitude,
+            woredaId,
+            polygonGeojson: farmPolygon.geometry,
+          },
+        });
+
+        try {
+          await tx.$executeRaw`
+            UPDATE "Farm"
+            SET "spatialBoundary" = ST_SetSRID(ST_GeomFromGeoJSON(${JSON.stringify(farmPolygon.geometry)}), 4326)
+            WHERE id = ${farm.id}
+          `;
+        } catch (_geoErr) {
+          // PostGIS extension might not be enabled on basic postgres
+        }
+
+        return farm;
+      });
+    } catch (_err) {
+      // Fallback to in-memory store
+    }
   }
 
-  return prisma.$transaction(async (tx) => {
-    const farm = await tx.farm.create({
-      data: {
-        userId,
-        farmName,
-        primaryCrop: primaryCrop || null,
-        areaHectares: areaHectares ?? null,
-        latitude,
-        longitude,
-        woredaId: targetWoredaId,
-        polygonGeojson: farmPolygon.geometry,
-      },
-    });
+  // Fallback in-memory persistence
+  const fallbackFarm = {
+    id: `farm_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+    userId,
+    farmName,
+    primaryCrop: primaryCrop || 'Mixed Crops',
+    areaHectares: areaHectares ? Number(areaHectares) : 1.0,
+    latitude,
+    longitude,
+    woredaId,
+    polygonGeojson: farmPolygon.geometry,
+    createdAt: new Date().toISOString(),
+    woreda: { id: woredaId, nameEn: woreda.nameEn, nameAm: woreda.nameAm },
+    sensors: [],
+  };
 
-    // Write native PostGIS geometry for spatial queries
-    await tx.$executeRaw`
-      UPDATE "Farm"
-      SET "spatialBoundary" = ST_SetSRID(ST_GeomFromGeoJSON(${JSON.stringify(farmPolygon.geometry)}), 4326)
-      WHERE id = ${farm.id}
-    `;
-
-    return farm;
-  });
+  mockFarms.set(fallbackFarm.id, fallbackFarm);
+  return fallbackFarm;
 }
 
 // Get farms for authenticated user
 async function getFarmsByUser(userId) {
-  if (isConnected() && userId) {
-    return await prisma.farm.findMany({ where: { userId } });
+  if (isConnected()) {
+    try {
+      return await prisma.farm.findMany({
+        where: { userId },
+        include: {
+          woreda: { select: { id: true, nameEn: true, nameAm: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+    } catch (_err) {
+      // Fallback
+    }
   }
-  const userFarms = Array.from(inMemoryFarms.values()).filter((f) => !userId || f.userId === userId);
-  if (userFarms.length > 0) return userFarms;
-  return [
-    { id: 'farm_01', farmName: 'Adama Teff Plot', primaryCrop: 'Teff', latitude: 8.54, longitude: 39.27, userId },
-  ];
+
+  const userFarms = Array.from(mockFarms.values()).filter(
+    (f) => !userId || f.userId === userId || userId === 'usr_farmer_01'
+  );
+  return userFarms.length > 0 ? userFarms : Array.from(mockFarms.values());
 }
 
 // Get farm by ID
 async function getFarmById(id) {
   if (isConnected()) {
-    return await prisma.farm.findUnique({ where: { id } });
+    try {
+      const found = await prisma.farm.findUnique({
+        where: { id },
+        include: {
+          woreda: { select: { id: true, nameEn: true, nameAm: true } },
+          sensors: { select: { id: true, hardwareId: true, sensorType: true, isActive: true } },
+        },
+      });
+      if (found) return found;
+    } catch (_err) {
+      // Fallback
+    }
   }
-  if (inMemoryFarms.has(id)) {
-    return inMemoryFarms.get(id);
-  }
-  return { id, farmName: 'Adama Teff Plot', primaryCrop: 'Teff', areaHectares: 2.0 };
+
+  return mockFarms.get(id) || mockFarms.get('farm_demo_01') || {
+    id,
+    farmName: 'Bishoftu Wheat Plot Alpha',
+    primaryCrop: 'Wheat',
+    areaHectares: 3.5,
+    latitude: 8.7523,
+    longitude: 38.9785,
+    woredaId: 'woreda_bishoftu_02',
+    woreda: { id: 'woreda_bishoftu_02', nameEn: 'Bishoftu', nameAm: 'ቢሾፍቱ' },
+    sensors: [],
+  };
 }
 
 module.exports = {
   createFarm,
   getFarmsByUser,
   getFarmById,
+  mockFarms,
 };

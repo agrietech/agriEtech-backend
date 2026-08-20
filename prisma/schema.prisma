@@ -44,9 +44,11 @@ enum DeliveryChannel {
 
 enum AlertStatus {
   DRAFT
+  ACTIVE
   DISPATCHED
   DELIVERED
   FAILED
+  RESOLVED
 }
 
 model User {
@@ -56,10 +58,10 @@ model User {
   fullName              String
   passwordHash          String?
   role                  Role              @default(FARMER)
-  preferredLang         String            @default("am") // 'am' for Amharic, 'en' for English
+  preferredLang         String            @default("am") // 'am' for Amharic, 'en' for English, 'om' for Afaan Oromoo
   isEmailVerified       Boolean           @default(false)
   resetPasswordToken    String?
-  resetPasswordExpires DateTime?
+  resetPasswordExpires  DateTime?
   verificationToken     String?
   woredaId              String?
   woreda                Woreda?           @relation(fields: [woredaId], references: [id])
@@ -178,18 +180,23 @@ model SatelliteObservation {
   woredaId         String
   woreda           Woreda            @relation(fields: [woredaId], references: [id], onDelete: Cascade)
   observationDate  DateTime
-  source           String            // CHIRPS, MODIS, SENTINEL_1, SENTINEL_2, NASA_POWER, GLOFAS, FAO_WAPOR
+  source           String            // CHIRPS, MODIS, MODIS_NDVI, SENTINEL_1, SENTINEL_2, NASA_POWER, OPEN_METEO, GLOFAS, FAO_LOCUST, FAO_WAPOR
   chirpsRainfallMm Float?
   nasaPowerTempMax Float?
   nasaPowerTempMin Float?
+  nasaPowerHumidity Float?
+  nasaPowerSolarMJ Float?
   modisNdvi        Float?
   sentinel2Ndvi    Float?
   glofasDischarge  Float?
   soilMoistureSat  Float?
   locustPresence   Boolean           @default(false)
+  locustDensity    Float?
+  ingestionStatus  String?           @default("SUCCESS") // SUCCESS, PARTIAL, FAILED
   rawPayload       Json?
   createdAt        DateTime          @default(now())
 
+  @@unique([woredaId, observationDate, source], name: "woredaId_observationDate_source")
   @@index([woredaId, observationDate])
   @@index([source])
 }
@@ -199,9 +206,15 @@ model RiskAssessment {
   woredaId         String
   woreda           Woreda            @relation(fields: [woredaId], references: [id], onDelete: Cascade)
   assessmentDate   DateTime
-  hazardType       HazardType
-  riskLevel        RiskLevel
-  riskScore        Float             // 0.0 to 1.0 composite index
+  hazardType       HazardType?
+  riskLevel        RiskLevel?
+  riskScore        Float?            // 0.0 to 1.0 composite index
+  droughtScore     Float?            // Individual hazard score 0.0-1.0
+  floodScore       Float?
+  locustScore      Float?
+  vegetationScore  Float?
+  compositeScore   Float?            // Weighted aggregate of all hazard scores
+  alertLevel       String?           // GREEN, YELLOW, ORANGE, RED, CRITICAL
   spi30Day         Float?            // Standardized Precipitation Index 30-day
   spi90Day         Float?            // Standardized Precipitation Index 90-day
   dischargeAnomaly Float?
@@ -209,10 +222,12 @@ model RiskAssessment {
   locustRiskRadius Float?
   recommendationsEn String?
   recommendationsAm String?
+  assessedAt       DateTime?         // When the assessment computation completed
   createdAt        DateTime          @default(now())
 
   @@index([woredaId, assessmentDate])
   @@index([hazardType, riskLevel])
+  @@index([alertLevel])
 }
 
 model Alert {
@@ -221,14 +236,21 @@ model Alert {
   woreda           Woreda            @relation(fields: [woredaId], references: [id])
   hazardType       HazardType
   severity         RiskLevel
+  headline         String?           // Short summary headline
+  status           AlertStatus       @default(ACTIVE)
+  isRead           Boolean           @default(false)
   titleEn          String
-  titleAm          String
+  titleAm          String            @default("")
+  titleOm          String?           // Afaan Oromoo title
   messageEn        String
-  messageAm        String
+  messageAm        String            @default("")
+  messageOm        String?           // Afaan Oromoo message
+  sentAt           DateTime?
   deliveryLogs     AlertDeliveryLog[]
   createdAt        DateTime          @default(now())
 
   @@index([woredaId, severity])
+  @@index([status])
 }
 
 model AlertDeliveryLog {
@@ -269,4 +291,18 @@ model DiseaseDiagnosis {
   createdAt        DateTime          @default(now())
 
   @@index([farmId])
+}
+
+model AuditLog {
+  id               String            @id @default(uuid())
+  action           String            // SYSTEM_BOOT, USER_ROLE_UPDATED, MANUAL_INGESTION_TRIGGERED, etc.
+  adminId          String?
+  adminEmail       String?
+  details          String?
+  ipAddress        String?
+  createdAt        DateTime          @default(now())
+
+  @@index([action])
+  @@index([adminId])
+  @@index([createdAt])
 }

@@ -3,6 +3,8 @@ const app = require('../src/app');
 const request = require('supertest');
 const env = require('../src/config/env');
 
+const { connectDB, disconnectDB } = require('../src/config/db');
+
 const testToken = jwt.sign(
   { id: 'usr_test_farmer_01', email: 'farmer@agrietech.et', role: 'ADMIN' },
   env.JWT_SECRET,
@@ -10,6 +12,7 @@ const testToken = jwt.sign(
 );
 
 async function testSuite() {
+  await connectDB();
   console.log('====================================================');
   console.log('       AGRIETECH FULL SYSTEM SERVICE SMOKE TEST');
   console.log('====================================================\n');
@@ -71,6 +74,7 @@ async function testSuite() {
   console.log('\n====================================================');
   console.log(`  RESULTS: ${passed} PASSED | ${failed} FAILED`);
   console.log('====================================================');
+  await disconnectDB();
   process.exit(failed > 0 ? 1 : 0);
 }
 

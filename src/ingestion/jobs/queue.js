@@ -34,8 +34,8 @@ if (env.NODE_ENV !== 'test' && redisConfigured) {
       });
 
       ingestionQueue.on('error', (err) => {
-        if (err.message) {
-          logger.warn(`[IngestionQueue] Queue error: ${err.message}`);
+        if (err && err.code !== 'ECONNRESET' && err.code !== 'ETIMEDOUT') {
+          logger.warn(`[IngestionQueue] Queue notice: ${err.message}`);
         }
       });
 
@@ -98,7 +98,7 @@ async function getQueueStats() {
       // Return fallback stats
     }
   }
-  return { waiting: 0, active: 0, completed: 142, failed: 0, delayed: 0, paused: false };
+  return { waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0, paused: false };
 }
 
 // Get failed jobs

@@ -22,7 +22,7 @@ class CacheWarmer {
       ]);
 
       const duration = Date.now() - startTime;
-      logger.info('Cache warming completed', { duration });
+      logger.info(`Cache warming completed in ${duration}ms`);
     } catch (error) {
       logger.error('Cache warming failed', { error: error.message });
     }
@@ -33,7 +33,7 @@ class CacheWarmer {
    */
   async warmBoundaries() {
     if (!isConnected()) {
-      logger.warn('Database not connected, skipping boundary warming');
+      logger.debug('Database not connected, skipping boundary warming');
       return;
     }
 
@@ -45,7 +45,8 @@ class CacheWarmer {
         select: {
           id: true,
           code: true,
-          name: true,
+          nameEn: true,
+          nameAm: true,
         },
       });
 
@@ -56,7 +57,8 @@ class CacheWarmer {
         select: {
           id: true,
           regionId: true,
-          name: true,
+          nameEn: true,
+          nameAm: true,
         },
       });
 
@@ -67,7 +69,8 @@ class CacheWarmer {
         select: {
           id: true,
           zoneId: true,
-          name: true,
+          nameEn: true,
+          nameAm: true,
           centerLat: true,
           centerLng: true,
         },
@@ -91,7 +94,7 @@ class CacheWarmer {
    */
   async warmRecentRisks() {
     if (!isConnected()) {
-      logger.warn('Database not connected, skipping risk warming');
+      logger.debug('Database not connected, skipping risk warming');
       return;
     }
 
@@ -112,7 +115,8 @@ class CacheWarmer {
           woreda: {
             select: {
               id: true,
-              name: true,
+              nameEn: true,
+              nameAm: true,
               centerLat: true,
               centerLng: true,
             },
@@ -156,7 +160,7 @@ class CacheWarmer {
    */
   async warmPopularWoredas() {
     if (!isConnected()) {
-      logger.warn('Database not connected, skipping woreda warming');
+      logger.debug('Database not connected, skipping woreda warming');
       return;
     }
 
@@ -167,7 +171,8 @@ class CacheWarmer {
       const popularWoredas = await prisma.woreda.findMany({
         select: {
           id: true,
-          name: true,
+          nameEn: true,
+          nameAm: true,
           centerLat: true,
           centerLng: true,
           geojson: true,
@@ -214,7 +219,8 @@ class CacheWarmer {
           zone: {
             select: {
               id: true,
-              name: true,
+              nameEn: true,
+              nameAm: true,
               regionId: true,
             },
           },

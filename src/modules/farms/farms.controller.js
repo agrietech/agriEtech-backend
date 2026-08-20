@@ -4,7 +4,7 @@ async function createFarm(req, res, next) {
   try {
     const { farmName, primaryCrop, areaHectares, woredaId, polygonGeojson, latitude, longitude } = req.body;
     const farm = await farmsService.createFarm({
-      userId: req.user?.id || 'usr_default',
+      userId: req.user.id,
       farmName,
       primaryCrop,
       areaHectares,
