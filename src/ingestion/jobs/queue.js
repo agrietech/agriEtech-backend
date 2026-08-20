@@ -7,7 +7,12 @@ const QUEUE_NAME = 'ingestionQueue';
 let ingestionQueue = null;
 let ingestionWorker = null;
 
-if (env.NODE_ENV !== 'test') {
+// Only create BullMQ queue if Redis is explicitly configured (not default localhost)
+const redisConfigured =
+  (env.REDIS_HOST && env.REDIS_HOST !== 'localhost' && env.REDIS_HOST !== '127.0.0.1') ||
+  env.REDIS_PASSWORD;
+
+if (env.NODE_ENV !== 'test' && redisConfigured) {
   try {
     if (redis && redis.options) {
       ingestionQueue = new Queue(QUEUE_NAME, {
@@ -29,12 +34,18 @@ if (env.NODE_ENV !== 'test') {
       });
 
       ingestionQueue.on('error', (err) => {
-        logger.warn(`[IngestionQueue] Queue error: ${err.message}`);
+        if (err.message) {
+          logger.warn(`[IngestionQueue] Queue error: ${err.message}`);
+        }
       });
+
+      logger.info('[IngestionQueue] BullMQ queue initialized with Redis');
     }
   } catch (err) {
     logger.warn(`[IngestionQueue] Initialization notice: ${err.message}`);
   }
+} else if (env.NODE_ENV !== 'test') {
+  logger.info('[IngestionQueue] Running in direct-execution mode (no Redis configured)');
 }
 
 // Add job to queue or mock
