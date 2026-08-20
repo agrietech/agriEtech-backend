@@ -4,41 +4,54 @@ const logger = require('../utils/logger');
 
 let isRedisAvailable = false;
 
-const redisConfig = {
-  host: env.REDIS_HOST,
-  port: env.REDIS_PORT,
-  password: env.REDIS_PASSWORD || undefined,
-  retryStrategy: (times) => {
-    if (times > 3) {
-      return null;
-    }
-    return Math.min(times * 100, 1000);
-  },
-  maxRetriesPerRequest: null,
-  lazyConnect: true,
-  enableOfflineQueue: false,
-};
+// Detect if TLS is required (Upstash, Redis Cloud, etc.)
+const useTls =
+  process.env.REDIS_TLS === 'true' ||
+  (env.REDIS_HOST && env.REDIS_HOST.includes('upstash.io')) ||
+  (env.REDIS_HOST && env.REDIS_HOST.includes('redis-cloud'));
 
-const redis = new Redis(redisConfig);
+// Detect if Redis is explicitly configured
+const redisConfigured =
+  (env.REDIS_HOST && env.REDIS_HOST !== 'localhost' && env.REDIS_HOST !== '127.0.0.1') ||
+  env.REDIS_PASSWORD;
 
-// Silence and handle connection errors gracefully
-redis.on('error', (_err) => {
-  isRedisAvailable = false;
-});
+let redis;
 
-redis.on('connect', () => {
-  isRedisAvailable = true;
-  logger.info('Redis connected successfully');
-});
+if (redisConfigured) {
+  redis = new Redis({
+    host: env.REDIS_HOST,
+    port: env.REDIS_PORT,
+    password: env.REDIS_PASSWORD || undefined,
+    tls: useTls ? {} : undefined,
+    retryStrategy: (times) => {
+      if (times > 3) return null;
+      return Math.min(times * 100, 1000);
+    },
+    maxRetriesPerRequest: null,
+    enableOfflineQueue: true,
+  });
 
-redis.on('close', () => {
-  isRedisAvailable = false;
-});
-
-if (env.NODE_ENV !== 'test') {
-  redis.connect().catch((_err) => {
+  redis.on('error', (_err) => {
     isRedisAvailable = false;
   });
+
+  redis.on('connect', () => {
+    isRedisAvailable = true;
+    logger.info(`Redis connected successfully (${env.REDIS_HOST})`);
+  });
+
+  redis.on('close', () => {
+    isRedisAvailable = false;
+  });
+} else {
+  // Create a dummy Redis instance that won't attempt connections
+  redis = new Redis({
+    lazyConnect: true,
+    enableOfflineQueue: false,
+    retryStrategy: () => null,
+    maxRetriesPerRequest: null,
+  });
+  redis.on('error', () => {});
 }
 
 function isConnected() {
