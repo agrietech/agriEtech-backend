@@ -4,6 +4,7 @@ const controller = require('./admin.controller');
 const { authenticate, authorize } = require('../../middleware/auth.middleware');
 
 // Public dashboard console view (serves HTML admin interface)
+router.get('/', (_req, res) => res.redirect('/admin/dashboard'));
 router.get('/dashboard', controller.renderDashboard);
 
 // In development or when explicitly requested, optional middleware or admin check
