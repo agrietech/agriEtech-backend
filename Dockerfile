@@ -7,6 +7,7 @@ WORKDIR /app
 RUN apk add --no-cache python3 make g++
 
 COPY package*.json ./
+COPY prisma.config.* ./
 COPY prisma ./prisma/
 
 # Install all dependencies (including dev for prisma CLI)
@@ -32,6 +33,7 @@ RUN apk add --no-cache curl wget
 # Copy dependencies and generated prisma artifacts
 COPY --from=builder --chown=node:node /app/node_modules ./node_modules
 COPY --from=builder --chown=node:node /app/package*.json ./
+COPY --from=builder --chown=node:node /app/prisma.config.* ./
 COPY --from=builder --chown=node:node /app/prisma ./prisma
 
 # Copy application source code
