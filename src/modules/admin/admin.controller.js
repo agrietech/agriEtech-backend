@@ -1,7 +1,7 @@
 const adminService = require('./admin.service');
 
 /**
- * Admin Controller with Full CRUD Operations & Sky Blue Dashboard
+ * Admin Controller with Full Interactive CRUD (Create, Read, Update, Delete) & Sky Blue Dashboard
  */
 
 async function getOverview(_req, res, next) {
@@ -469,7 +469,7 @@ function renderDashboard(_req, res) {
   <nav class="navbar">
     <div class="brand">
       <span>🌿 AgriEtech</span>
-      <span class="brand-badge">SKY-BLUE ADMIN</span>
+      <span class="brand-badge">SKY-BLUE ADMIN (FULL CRUD)</span>
     </div>
     <div class="nav-actions">
       <button class="btn-sky" onclick="showModal('broadcastModal')">📢 Broadcast Alert</button>
@@ -481,10 +481,10 @@ function renderDashboard(_req, res) {
     <!-- Sidebar -->
     <aside class="sidebar">
       <div class="nav-item active" onclick="switchTab('overview')">📊 Overview & Metrics</div>
-      <div class="nav-item" onclick="switchTab('users')">👥 Users (CRUD)</div>
-      <div class="nav-item" onclick="switchTab('farms')">🌾 Farm Plots (CRUD)</div>
-      <div class="nav-item" onclick="switchTab('sensors')">📡 IoT Sensors (CRUD)</div>
-      <div class="nav-item" onclick="switchTab('alerts')">⚠️ Alerts & Broadcasts</div>
+      <div class="nav-item" onclick="switchTab('users')">👥 Users (Create, Read, Update, Delete)</div>
+      <div class="nav-item" onclick="switchTab('farms')">🌾 Farm Plots (Create, Read, Update, Delete)</div>
+      <div class="nav-item" onclick="switchTab('sensors')">📡 IoT Sensors (Create, Read, Delete)</div>
+      <div class="nav-item" onclick="switchTab('alerts')">⚠️ Early Warning Alerts</div>
       <div class="nav-item" onclick="switchTab('diagnoses')">🔬 Crop Diagnoses</div>
       <div class="nav-item" onclick="switchTab('ingestion')">⚡ Data Pipelines</div>
       <div class="nav-item" onclick="switchTab('system')">🛡️ Health & Audit Logs</div>
@@ -516,7 +516,7 @@ function renderDashboard(_req, res) {
       <div id="users" class="tab-pane">
         <div class="panel-card">
           <div class="panel-header">
-            <div class="panel-title">👥 User Directory & Role Control</div>
+            <div class="panel-title">👥 User Directory (Create, Read, Update, Delete)</div>
             <button class="btn-sky" onclick="showModal('userModal')">➕ Create User</button>
           </div>
           <div class="table-container">
@@ -532,7 +532,7 @@ function renderDashboard(_req, res) {
       <div id="farms" class="tab-pane">
         <div class="panel-card">
           <div class="panel-header">
-            <div class="panel-title">🌾 Registered Farm Plots</div>
+            <div class="panel-title">🌾 Registered Farm Plots (Create, Read, Update, Delete)</div>
             <button class="btn-sky" onclick="showModal('farmModal')">➕ Register Farm</button>
           </div>
           <div class="table-container">
@@ -631,7 +631,7 @@ function renderDashboard(_req, res) {
   </div>
 
   <!-- MODALS -->
-  <!-- User Modal -->
+  <!-- User Create Modal -->
   <div id="userModal" class="modal-overlay">
     <div class="modal-box">
       <h3 style="margin-bottom:1rem; color:var(--sky-300)">➕ Create New User</h3>
@@ -654,7 +654,31 @@ function renderDashboard(_req, res) {
     </div>
   </div>
 
-  <!-- Farm Modal -->
+  <!-- User Edit Modal -->
+  <div id="editUserModal" class="modal-overlay">
+    <div class="modal-box">
+      <h3 style="margin-bottom:1rem; color:var(--sky-300)">✏️ Edit User Details</h3>
+      <input type="hidden" id="editUserId">
+      <div class="form-group"><label>Full Name</label><input id="editUName" class="form-control"></div>
+      <div class="form-group"><label>Phone Number</label><input id="editUPhone" class="form-control"></div>
+      <div class="form-group"><label>Email</label><input id="editUEmail" class="form-control"></div>
+      <div class="form-group"><label>Role</label>
+        <select id="editURole" class="form-control">
+          <option value="FARMER">FARMER</option>
+          <option value="DEVELOPMENT_AGENT">DEVELOPMENT_AGENT</option>
+          <option value="WOREDA_OFFICER">WOREDA_OFFICER</option>
+          <option value="RESEARCHER">RESEARCHER</option>
+          <option value="ADMIN">ADMIN</option>
+        </select>
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:1rem;">
+        <button class="btn-secondary" onclick="hideModal('editUserModal')">Cancel</button>
+        <button class="btn-sky" onclick="submitEditUser()">Update User</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Farm Create Modal -->
   <div id="farmModal" class="modal-overlay">
     <div class="modal-box">
       <h3 style="margin-bottom:1rem; color:var(--sky-300)">🌾 Register Farm Plot</h3>
@@ -666,6 +690,23 @@ function renderDashboard(_req, res) {
       <div style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:1rem;">
         <button class="btn-secondary" onclick="hideModal('farmModal')">Cancel</button>
         <button class="btn-sky" onclick="submitCreateFarm()">Save Farm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Farm Edit Modal -->
+  <div id="editFarmModal" class="modal-overlay">
+    <div class="modal-box">
+      <h3 style="margin-bottom:1rem; color:var(--sky-300)">✏️ Edit Farm Plot</h3>
+      <input type="hidden" id="editFarmId">
+      <div class="form-group"><label>Farm Plot Name</label><input id="editFName" class="form-control"></div>
+      <div class="form-group"><label>Primary Crop</label><input id="editFCrop" class="form-control"></div>
+      <div class="form-group"><label>Area (Hectares)</label><input id="editFArea" type="number" step="0.1" class="form-control"></div>
+      <div class="form-group"><label>Latitude</label><input id="editFLat" type="number" step="0.001" class="form-control"></div>
+      <div class="form-group"><label>Longitude</label><input id="editFLng" type="number" step="0.001" class="form-control"></div>
+      <div style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:1rem;">
+        <button class="btn-secondary" onclick="hideModal('editFarmModal')">Cancel</button>
+        <button class="btn-sky" onclick="submitEditFarm()">Update Farm</button>
       </div>
     </div>
   </div>
@@ -702,6 +743,8 @@ function renderDashboard(_req, res) {
 
   <script>
     let activeTab = 'overview';
+    let usersData = [];
+    let farmsData = [];
 
     function showToast(msg) {
       const t = document.getElementById('toast');
@@ -764,20 +807,54 @@ function renderDashboard(_req, res) {
         const res = await fetch('/api/v1/admin/users');
         const json = await res.json();
         if (json.success) {
+          usersData = json.data.users;
           const tbody = document.getElementById('usersTableBody');
-          tbody.innerHTML = json.data.users.map(u => \`
+          tbody.innerHTML = usersData.map(u => \`
             <tr>
               <td><strong>\${u.fullName}</strong></td>
               <td>\${u.phoneNumber || u.email || 'N/A'}</td>
               <td><span class="badge badge-sky">\${u.role}</span></td>
               <td><span class="badge \${u.isEmailVerified ? 'badge-green' : 'badge-red'}">\${u.isEmailVerified ? 'VERIFIED' : 'PENDING'}</span></td>
               <td>
+                <button class="btn-secondary" onclick="openEditUser('\${u.id}')">✏️ Edit</button>
                 <button class="btn-danger" onclick="deleteUser('\${u.id}')">🗑️ Delete</button>
               </td>
             </tr>
           \`).join('');
         }
       } catch (e) { showToast('Failed to load users'); }
+    }
+
+    function openEditUser(id) {
+      const u = usersData.find(x => x.id === id);
+      if (!u) return;
+      document.getElementById('editUserId').value = u.id;
+      document.getElementById('editUName').value = u.fullName || '';
+      document.getElementById('editUPhone').value = u.phoneNumber || '';
+      document.getElementById('editUEmail').value = u.email || '';
+      document.getElementById('editURole').value = u.role || 'FARMER';
+      showModal('editUserModal');
+    }
+
+    async function submitEditUser() {
+      const id = document.getElementById('editUserId').value;
+      const payload = {
+        fullName: document.getElementById('editUName').value,
+        phoneNumber: document.getElementById('editUPhone').value,
+        email: document.getElementById('editUEmail').value,
+        role: document.getElementById('editURole').value,
+      };
+      const res = await fetch('/api/v1/admin/users/' + id, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const json = await res.json();
+      if (json.success) {
+        hideModal('editUserModal');
+        showToast('User updated successfully!');
+        loadUsers();
+      }
     }
 
     async function submitCreateUser() {
@@ -813,18 +890,56 @@ function renderDashboard(_req, res) {
         const res = await fetch('/api/v1/admin/farms');
         const json = await res.json();
         if (json.success) {
+          farmsData = json.data.farms;
           const tbody = document.getElementById('farmsTableBody');
-          tbody.innerHTML = json.data.farms.map(f => \`
+          tbody.innerHTML = farmsData.map(f => \`
             <tr>
               <td><strong>\${f.farmName}</strong></td>
               <td>\${f.primaryCrop}</td>
               <td>\${f.areaHectares} Ha</td>
               <td>\${f.latitude}, \${f.longitude}</td>
-              <td><button class="btn-danger" onclick="deleteFarm('\${f.id}')">🗑️ Delete</button></td>
+              <td>
+                <button class="btn-secondary" onclick="openEditFarm('\${f.id}')">✏️ Edit</button>
+                <button class="btn-danger" onclick="deleteFarm('\${f.id}')">🗑️ Delete</button>
+              </td>
             </tr>
           \`).join('');
         }
       } catch (e) { showToast('Failed to load farms'); }
+    }
+
+    function openEditFarm(id) {
+      const f = farmsData.find(x => x.id === id);
+      if (!f) return;
+      document.getElementById('editFarmId').value = f.id;
+      document.getElementById('editFName').value = f.farmName || '';
+      document.getElementById('editFCrop').value = f.primaryCrop || '';
+      document.getElementById('editFArea').value = f.areaHectares || 1.0;
+      document.getElementById('editFLat').value = f.latitude || 8.54;
+      document.getElementById('editFLng').value = f.longitude || 39.27;
+      showModal('editFarmModal');
+    }
+
+    async function submitEditFarm() {
+      const id = document.getElementById('editFarmId').value;
+      const payload = {
+        farmName: document.getElementById('editFName').value,
+        primaryCrop: document.getElementById('editFCrop').value,
+        areaHectares: document.getElementById('editFArea').value,
+        latitude: document.getElementById('editFLat').value,
+        longitude: document.getElementById('editFLng').value,
+      };
+      const res = await fetch('/api/v1/admin/farms/' + id, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const json = await res.json();
+      if (json.success) {
+        hideModal('editFarmModal');
+        showToast('Farm updated successfully!');
+        loadFarms();
+      }
     }
 
     async function submitCreateFarm() {
