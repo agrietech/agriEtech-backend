@@ -10,10 +10,34 @@ const env = require('./env');
 const logger = require('../utils/logger');
 
 /**
- * Prisma 7 requires a driver adapter. This module always initializes
- * PrismaClient with @prisma/adapter-pg, which is a production dependency.
+ * Ensures DATABASE_URL always uses IPv4-compatible endpoints.
+ * Supabase direct 'db.<project>.supabase.co' is IPv6-only and fails on Render.
+ * We automatically rewrite it to the IPv4-compatible Supabase Pooler.
  */
-const connectionString = env.DATABASE_URL || process.env.DATABASE_URL || '';
+function resolveIpv4DatabaseUrl(url) {
+  if (!url || typeof url !== 'string') return url;
+
+  let cleanUrl = url.trim();
+
+  // If using direct Supabase URL (db.<project>.supabase.co), convert to Supavisor Pooler URL
+  if (cleanUrl.includes('db.') && cleanUrl.includes('.supabase.co')) {
+    const match = cleanUrl.match(/postgresql:\/\/([^:]+):([^@]+)@db\.([^.]+)\.supabase\.co:(\d+)\/([^?]+)(\?.*)?/);
+    if (match) {
+      const user = match[1];
+      const pass = match[2];
+      const projectRef = match[3];
+      const dbName = match[5];
+      const queryParams = match[6] || '';
+      const poolerUser = user.includes('.') ? user : `${user}.${projectRef}`;
+      cleanUrl = `postgresql://${poolerUser}:${pass}@aws-0-ap-northeast-2.pooler.supabase.com:5432/${dbName}${queryParams}`;
+      logger.info('[DB Config] Automatically converted IPv6-only Supabase direct host to IPv4 Pooler host');
+    }
+  }
+
+  return cleanUrl;
+}
+
+const connectionString = resolveIpv4DatabaseUrl(env.DATABASE_URL || process.env.DATABASE_URL || '');
 
 const isRemote =
   connectionString.includes('supabase') ||
