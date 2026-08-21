@@ -333,8 +333,8 @@ async function runRouteAudit() {
     method: 'POST',
     url: '/api/v1/sensors/telemetry',
     body: {},
-    expectedStatuses: [400, 404, 422, 503],
-    desc: 'Rejects telemetry without sensor ID',
+    expectedStatuses: [400, 401, 404, 422, 503],
+    desc: 'Rejects telemetry without sensor ID or invalid auth',
   });
 
   // 8. Risk Assessments

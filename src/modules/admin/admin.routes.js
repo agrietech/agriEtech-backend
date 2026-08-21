@@ -52,6 +52,7 @@ router.delete('/diagnoses/:id', adminAuth, controller.deleteDiagnosis);
 
 // System Health, Ingestion Trigger & Audit Logs
 router.get('/system/health', adminAuth, controller.getSystemHealth);
+router.get('/health', adminAuth, controller.getSystemHealth);
 router.post('/ingestion/trigger', adminAuth, controller.triggerIngestion);
 router.get('/audit-logs', adminAuth, controller.getAuditLogs);
 

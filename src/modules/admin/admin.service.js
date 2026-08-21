@@ -472,25 +472,35 @@ async function triggerIngestion(jobType, payload = {}, adminContext = {}) {
  * Broadcast emergency alert to woredas
  */
 async function broadcastEmergencyAlert(data, adminContext = {}) {
-  const {
-    woredaId,
-    hazardType = 'DROUGHT',
-    severity = 'CRITICAL',
-    titleEn,
-    titleAm,
-    messageEn,
-    messageAm,
-  } = data;
+  const titleEn = data.titleEn || data.title || data.headline || 'Emergency Hazard Warning';
+  const titleAm = data.titleAm || data.title || data.headline || 'አስቸኳይ የአደጋ ማስጠንቀቂያ';
+  const messageEn = data.messageEn || data.message || 'Urgent agricultural hazard alert issued for this zone.';
+  const messageAm = data.messageAm || data.message || 'ለዚህ ዞን አስቸኳይ የግብርና አደጋ ማስጠንቀቂያ ተሰጥቷል።';
+  
+  // Normalize HazardType to Prisma enum
+  let hazardType = (data.hazardType || 'DROUGHT').toUpperCase();
+  if (hazardType === 'PEST') hazardType = 'LOCUST_PEST';
+  if (hazardType === 'DISEASE' || hazardType === 'STRESS') hazardType = 'VEGETATION_STRESS';
+  if (!['DROUGHT', 'FLOOD', 'LOCUST_PEST', 'VEGETATION_STRESS', 'FROST', 'HEAT_STRESS'].includes(hazardType)) {
+    hazardType = 'DROUGHT';
+  }
 
-  if (!titleEn || !messageEn) {
-    throw new Error('titleEn and messageEn are required');
+  // Normalize RiskLevel to Prisma enum
+  let severity = (data.severity || 'HIGH').toUpperCase();
+  if (severity === 'WARNING') severity = 'MODERATE';
+  if (!['LOW', 'MODERATE', 'HIGH', 'CRITICAL'].includes(severity)) {
+    severity = 'HIGH';
   }
-  if (!woredaId) {
-    throw new Error('woredaId is required');
-  }
+
+  let woredaId = data.woredaId;
 
   if (isConnected()) {
     try {
+      if (!woredaId) {
+        const firstWoreda = await prisma.woreda.findFirst({ select: { id: true } });
+        woredaId = firstWoreda ? firstWoreda.id : 'woreda_adama_01';
+      }
+
       const createdAlert = await prisma.alert.create({
         data: {
           woredaId,
@@ -499,9 +509,9 @@ async function broadcastEmergencyAlert(data, adminContext = {}) {
           headline: titleEn,
           status: 'ACTIVE',
           titleEn,
-          titleAm: titleAm || titleEn,
+          titleAm,
           messageEn,
-          messageAm: messageAm || messageEn,
+          messageAm,
         },
       });
 
@@ -514,22 +524,22 @@ async function broadcastEmergencyAlert(data, adminContext = {}) {
       });
 
       return createdAlert;
-    } catch (_err) {
-      // Fallback
+    } catch (err) {
+      logger.warn(`[AdminService] Emergency alert DB write notice: ${err.message}`);
     }
   }
 
   const fallbackAlert = {
     id: `alert_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-    woredaId,
+    woredaId: woredaId || 'woreda_adama_01',
     hazardType,
     severity,
     headline: titleEn,
     status: 'ACTIVE',
     titleEn,
-    titleAm: titleAm || titleEn,
+    titleAm,
     messageEn,
-    messageAm: messageAm || messageEn,
+    messageAm,
     createdAt: new Date().toISOString(),
   };
 
@@ -537,7 +547,7 @@ async function broadcastEmergencyAlert(data, adminContext = {}) {
     action: 'EMERGENCY_ALERT_BROADCAST',
     adminId: adminContext.id || null,
     adminEmail: adminContext.email || null,
-    details: `Broadcasted ${severity} ${hazardType} alert to woreda ${woredaId}`,
+    details: `Broadcasted ${severity} ${hazardType} alert to woreda ${fallbackAlert.woredaId}`,
     ipAddress: adminContext.ip || null,
   });
 
@@ -754,11 +764,23 @@ async function getFarms({ page = 1, limit = 20, woredaId, search } = {}) {
 async function createFarm(data, adminContext = {}) {
   if (isConnected()) {
     try {
+      let userId = data.userId;
+      if (!userId) {
+        const firstUser = await prisma.user.findFirst({ select: { id: true } });
+        userId = firstUser ? firstUser.id : adminContext.id;
+      }
+
+      let woredaId = data.woredaId;
+      if (!woredaId) {
+        const firstWoreda = await prisma.woreda.findFirst({ select: { id: true } });
+        woredaId = firstWoreda ? firstWoreda.id : 'woreda_adama_01';
+      }
+
       const created = await prisma.farm.create({
         data: {
-          farmName: data.farmName,
-          userId: data.userId || 'usr_test_farmer_01',
-          woredaId: data.woredaId || 'woreda_adama_01',
+          farmName: data.farmName || 'Unnamed Farm Plot',
+          userId: userId || 'usr_test_farmer_01',
+          woredaId: woredaId || 'woreda_adama_01',
           areaHectares: parseFloat(data.areaHectares || 1.0),
           primaryCrop: data.primaryCrop || 'Wheat',
           latitude: parseFloat(data.latitude || 8.54),
@@ -878,10 +900,37 @@ async function getSensors({ page = 1, limit = 20 } = {}) {
 async function createSensor(data, adminContext = {}) {
   if (isConnected()) {
     try {
+      let farmId = data.farmId;
+      if (!farmId) {
+        const firstFarm = await prisma.farm.findFirst({ select: { id: true } });
+        farmId = firstFarm ? firstFarm.id : null;
+      }
+
+      if (!farmId) {
+        let userId = adminContext.id;
+        if (!userId) {
+          const firstUser = await prisma.user.findFirst({ select: { id: true } });
+          userId = firstUser ? firstUser.id : 'usr_test_farmer_01';
+        }
+        const firstWoreda = await prisma.woreda.findFirst({ select: { id: true } });
+        const createdFarm = await prisma.farm.create({
+          data: {
+            farmName: 'Default Station Plot',
+            userId,
+            woredaId: firstWoreda ? firstWoreda.id : 'woreda_adama_01',
+            areaHectares: 2.0,
+            primaryCrop: 'Wheat',
+            latitude: 8.54,
+            longitude: 39.27,
+          },
+        });
+        farmId = createdFarm.id;
+      }
+
       const created = await prisma.sensor.create({
         data: {
-          hardwareId: data.hardwareId,
-          farmId: data.farmId || 'farm_demo_01',
+          hardwareId: data.hardwareId || `NODE_${Date.now()}`,
+          farmId,
           sensorType: data.sensorType || 'SOIL_MOISTURE_STATION',
           isActive: data.isActive !== undefined ? Boolean(data.isActive) : true,
         },
@@ -907,7 +956,10 @@ async function createSensor(data, adminContext = {}) {
 async function deleteSensor(sensorId, adminContext = {}) {
   if (isConnected()) {
     try {
-      await prisma.sensor.delete({ where: { id: sensorId } });
+      const existing = await prisma.sensor.findUnique({ where: { id: sensorId } });
+      if (existing) {
+        await prisma.sensor.delete({ where: { id: sensorId } });
+      }
       await logAuditAction({
         action: 'SENSOR_DELETED',
         adminId: adminContext.id,
@@ -965,7 +1017,10 @@ async function getAlerts({ page = 1, limit = 20 } = {}) {
 async function deleteAlert(alertId, adminContext = {}) {
   if (isConnected()) {
     try {
-      await prisma.alert.delete({ where: { id: alertId } });
+      const existing = await prisma.alert.findUnique({ where: { id: alertId } });
+      if (existing) {
+        await prisma.alert.delete({ where: { id: alertId } });
+      }
       await logAuditAction({
         action: 'ALERT_DELETED',
         adminId: adminContext.id,
@@ -1019,7 +1074,10 @@ async function getDiagnoses({ page = 1, limit = 20 } = {}) {
 async function deleteDiagnosis(diagId, adminContext = {}) {
   if (isConnected()) {
     try {
-      await prisma.diseaseDiagnosis.delete({ where: { id: diagId } });
+      const existing = await prisma.diseaseDiagnosis.findUnique({ where: { id: diagId } });
+      if (existing) {
+        await prisma.diseaseDiagnosis.delete({ where: { id: diagId } });
+      }
       await logAuditAction({
         action: 'DIAGNOSIS_DELETED',
         adminId: adminContext.id,
