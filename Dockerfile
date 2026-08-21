@@ -26,6 +26,7 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV PORT=5000
+ENV NODE_OPTIONS="--dns-result-order=ipv4first"
 
 # Install curl/wget for container healthchecks
 RUN apk add --no-cache curl wget

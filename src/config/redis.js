@@ -21,6 +21,7 @@ if (redisConfigured) {
   redis = new Redis({
     host: env.REDIS_HOST,
     port: env.REDIS_PORT,
+    family: 4,
     password: env.REDIS_PASSWORD || undefined,
     tls: useTls ? { rejectUnauthorized: false } : undefined,
     keepAlive: 10000,

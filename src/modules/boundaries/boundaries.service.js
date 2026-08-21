@@ -133,7 +133,41 @@ const FALLBACK_ZONES = [
   { id: 'zone_dire_dawa_city', nameEn: 'Dire Dawa City', nameAm: 'ድሬዳዋ ከተማ', regionId: 'ET15' },
 ];
 
-// Major Woredas (expanded list)
+// Major Woredas (expanded fallback list)
+const FALLBACK_WOREDAS = [
+  {
+    id: 'ET040101',
+    zoneId: 'zone_oromia_east_shewa',
+    nameEn: 'Adama Zuria',
+    nameAm: 'አዳማ ዙሪያ',
+    centerLat: 8.54,
+    centerLng: 39.27,
+  },
+  {
+    id: 'ET040102',
+    zoneId: 'zone_oromia_east_shewa',
+    nameEn: 'Bishoftu',
+    nameAm: 'ቢሾፍቱ',
+    centerLat: 8.75,
+    centerLng: 38.98,
+  },
+  {
+    id: 'ET040103',
+    zoneId: 'zone_oromia_east_shewa',
+    nameEn: 'Mojo',
+    nameAm: 'ሞጆ',
+    centerLat: 8.6,
+    centerLng: 39.12,
+  },
+  {
+    id: 'ET040104',
+    zoneId: 'zone_oromia_east_shewa',
+    nameEn: 'Dukem',
+    nameAm: 'ዱከም',
+    centerLat: 8.8,
+    centerLng: 38.9,
+  },
+];
 
 /**
  * List all administrative regions with their zones
