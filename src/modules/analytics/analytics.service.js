@@ -438,10 +438,585 @@ async function getAiInsights({ woredaId, timeframe = 'DAILY', language = 'am', m
   }
 }
 
+// Location-specific map and analytics functions
+async function getLocationMap(userId) {
+  if (!isConnected()) {
+    return {
+      error: 'Database not connected',
+      fallback: true,
+    };
+  }
+
+  try {
+    // Get user with location info
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        woreda: {
+          include: {
+            zone: {
+              include: {
+                region: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!user || !user.woreda) {
+      return {
+        error: 'User location not found',
+        message: 'Please update your profile with location information',
+      };
+    }
+
+    const { woreda, role } = user;
+    const zone = woreda.zone;
+    const region = zone?.region;
+
+    // Determine what map data to return based on role
+    if (role === 'WOREDA_OFFICER') {
+      return await getWoredaMap(woreda.id);
+    } else if (role === 'ZONE_OFFICER' && zone) {
+      return await getZoneMap(zone.id);
+    } else if (role === 'REGIONAL_OFFICER' && region) {
+      return await getRegionMap(region.id);
+    } else {
+      // Default to woreda map for farmers and other roles
+      return await getWoredaMap(woreda.id);
+    }
+  } catch (error) {
+    console.error('Error getting location map:', error);
+    return {
+      error: 'Failed to retrieve location map',
+      message: error.message,
+    };
+  }
+}
+
+async function getLocationAnalytics(userId) {
+  if (!isConnected()) {
+    return {
+      error: 'Database not connected',
+      fallback: true,
+    };
+  }
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        woreda: {
+          include: {
+            zone: {
+              include: {
+                region: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!user || !user.woreda) {
+      return {
+        error: 'User location not found',
+      };
+    }
+
+    const { woreda, role } = user;
+    const zone = woreda.zone;
+    const region = zone?.region;
+
+    if (role === 'WOREDA_OFFICER') {
+      return await getWoredaAnalytics(woreda.id);
+    } else if (role === 'ZONE_OFFICER' && zone) {
+      return await getZoneAnalytics(zone.id);
+    } else if (role === 'REGIONAL_OFFICER' && region) {
+      return await getRegionAnalytics(region.id);
+    } else {
+      return await getWoredaAnalytics(woreda.id);
+    }
+  } catch (error) {
+    console.error('Error getting location analytics:', error);
+    return {
+      error: 'Failed to retrieve location analytics',
+    };
+  }
+}
+
+async function getRegionMap(regionId) {
+  if (!isConnected()) {
+    return { error: 'Database not connected', fallback: true };
+  }
+
+  try {
+    const region = await prisma.region.findUnique({
+      where: { id: regionId },
+      include: {
+        zones: {
+          include: {
+            woredas: {
+              select: {
+                id: true,
+                nameEn: true,
+                nameAm: true,
+                pcode: true,
+                boundaries: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!region) {
+      return { error: 'Region not found' };
+    }
+
+    // Format zones with boundaries
+    const zones = region.zones.map(zone => ({
+      id: zone.id,
+      nameEn: zone.nameEn,
+      nameAm: zone.nameAm,
+      pcode: zone.pcode,
+      boundaries: zone.boundaries,
+      woredaCount: zone.woredas.length,
+      woredas: zone.woredas,
+    }));
+
+    return {
+      type: 'region',
+      region: {
+        id: region.id,
+        nameEn: region.nameEn,
+        nameAm: region.nameAm,
+        code: region.code,
+        boundaries: region.boundaries,
+      },
+      zones,
+      zoneCount: zones.length,
+      woredaCount: zones.reduce((sum, z) => sum + z.woredaCount, 0),
+    };
+  } catch (error) {
+    console.error('Error getting region map:', error);
+    return { error: 'Failed to retrieve region map' };
+  }
+}
+
+async function getRegionAnalytics(regionId) {
+  if (!isConnected()) {
+    return { error: 'Database not connected', fallback: true };
+  }
+
+  try {
+    const region = await prisma.region.findUnique({
+      where: { id: regionId },
+      include: {
+        zones: {
+          include: {
+            woredas: {
+              select: {
+                id: true,
+                nameEn: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!region) {
+      return { error: 'Region not found' };
+    }
+
+    const woredaIds = region.zones.flatMap(z => z.woredas.map(w => w.id));
+
+    const [
+      totalFarms,
+      activeSensors,
+      totalSensors,
+      activeAlerts,
+      latestRisks,
+    ] = await Promise.all([
+      prisma.farm.count({ where: { woredaId: { in: woredaIds } } }),
+      prisma.sensor.count({ where: { farm: { woredaId: { in: woredaIds } }, isActive: true } }),
+      prisma.sensor.count({ where: { farm: { woredaId: { in: woredaIds } } } }),
+      prisma.alert.count({ where: { woredaId: { in: woredaIds }, status: 'ACTIVE' } }),
+      prisma.riskAssessment.findMany({
+        where: { woredaId: { in: woredaIds } },
+        orderBy: { assessedAt: 'desc' },
+        take: 100,
+      }),
+    ]);
+
+    const riskDistribution = {
+      green: 0,
+      yellow: 0,
+      orange: 0,
+      red: 0,
+    };
+
+    latestRisks.forEach(risk => {
+      const level = (risk.alertLevel || '').toUpperCase();
+      if (level === 'GREEN' || level === 'LOW') riskDistribution.green++;
+      else if (level === 'YELLOW' || level === 'MODERATE') riskDistribution.yellow++;
+      else if (level === 'ORANGE') riskDistribution.orange++;
+      else if (level === 'RED' || level === 'CRITICAL') riskDistribution.red++;
+    });
+
+    return {
+      type: 'region',
+      region: {
+        id: region.id,
+        nameEn: region.nameEn,
+        nameAm: region.nameAm,
+        code: region.code,
+      },
+      statistics: {
+        totalZones: region.zones.length,
+        totalWoredas: woredaIds.length,
+        totalFarms,
+        activeSensors,
+        totalSensors,
+        activeAlerts,
+      },
+      riskDistribution,
+      zoneBreakdown: await Promise.all(
+        region.zones.map(async zone => {
+          const zoneWoredaIds = zone.woredas.map(w => w.id);
+          const zoneFarms = await prisma.farm.count({ where: { woredaId: { in: zoneWoredaIds } } });
+          const zoneAlerts = await prisma.alert.count({ where: { woredaId: { in: zoneWoredaIds }, status: 'ACTIVE' } });
+
+          return {
+            zoneId: zone.id,
+            zoneName: zone.nameEn,
+            woredaCount: zone.woredas.length,
+            farmCount: zoneFarms,
+            alertCount: zoneAlerts,
+          };
+        })
+      ),
+    };
+  } catch (error) {
+    console.error('Error getting region analytics:', error);
+    return { error: 'Failed to retrieve region analytics' };
+  }
+}
+
+async function getZoneMap(zoneId) {
+  if (!isConnected()) {
+    return { error: 'Database not connected', fallback: true };
+  }
+
+  try {
+    const zone = await prisma.zone.findUnique({
+      where: { id: zoneId },
+      include: {
+        region: true,
+        woredas: {
+          select: {
+            id: true,
+            nameEn: true,
+            nameAm: true,
+            pcode: true,
+            boundaries: true,
+          },
+        },
+      },
+    });
+
+    if (!zone) {
+      return { error: 'Zone not found' };
+    }
+
+    return {
+      type: 'zone',
+      zone: {
+        id: zone.id,
+        nameEn: zone.nameEn,
+        nameAm: zone.nameAm,
+        pcode: zone.pcode,
+        boundaries: zone.boundaries,
+      },
+      region: {
+        id: zone.region.id,
+        nameEn: zone.region.nameEn,
+        code: zone.region.code,
+      },
+      woredas: zone.woredas,
+      woredaCount: zone.woredas.length,
+    };
+  } catch (error) {
+    console.error('Error getting zone map:', error);
+    return { error: 'Failed to retrieve zone map' };
+  }
+}
+
+async function getZoneAnalytics(zoneId) {
+  if (!isConnected()) {
+    return { error: 'Database not connected', fallback: true };
+  }
+
+  try {
+    const zone = await prisma.zone.findUnique({
+      where: { id: zoneId },
+      include: {
+        region: true,
+        woredas: {
+          select: {
+            id: true,
+            nameEn: true,
+          },
+        },
+      },
+    });
+
+    if (!zone) {
+      return { error: 'Zone not found' };
+    }
+
+    const woredaIds = zone.woredas.map(w => w.id);
+
+    const [
+      totalFarms,
+      activeSensors,
+      totalSensors,
+      activeAlerts,
+      latestRisks,
+    ] = await Promise.all([
+      prisma.farm.count({ where: { woredaId: { in: woredaIds } } }),
+      prisma.sensor.count({ where: { farm: { woredaId: { in: woredaIds } }, isActive: true } }),
+      prisma.sensor.count({ where: { farm: { woredaId: { in: woredaIds } } } }),
+      prisma.alert.count({ where: { woredaId: { in: woredaIds }, status: 'ACTIVE' } }),
+      prisma.riskAssessment.findMany({
+        where: { woredaId: { in: woredaIds } },
+        orderBy: { assessedAt: 'desc' },
+        take: 50,
+      }),
+    ]);
+
+    const riskDistribution = {
+      green: 0,
+      yellow: 0,
+      orange: 0,
+      red: 0,
+    };
+
+    latestRisks.forEach(risk => {
+      const level = (risk.alertLevel || '').toUpperCase();
+      if (level === 'GREEN' || level === 'LOW') riskDistribution.green++;
+      else if (level === 'YELLOW' || level === 'MODERATE') riskDistribution.yellow++;
+      else if (level === 'ORANGE') riskDistribution.orange++;
+      else if (level === 'RED' || level === 'CRITICAL') riskDistribution.red++;
+    });
+
+    return {
+      type: 'zone',
+      zone: {
+        id: zone.id,
+        nameEn: zone.nameEn,
+        nameAm: zone.nameAm,
+        pcode: zone.pcode,
+      },
+      region: {
+        id: zone.region.id,
+        nameEn: zone.region.nameEn,
+      },
+      statistics: {
+        totalWoredas: woredaIds.length,
+        totalFarms,
+        activeSensors,
+        totalSensors,
+        activeAlerts,
+      },
+      riskDistribution,
+      woredaBreakdown: await Promise.all(
+        zone.woredas.map(async woreda => {
+          const woredaFarms = await prisma.farm.count({ where: { woredaId: woreda.id } });
+          const woredaAlerts = await prisma.alert.count({ where: { woredaId: woreda.id, status: 'ACTIVE' } });
+
+          return {
+            woredaId: woreda.id,
+            woredaName: woreda.nameEn,
+            farmCount: woredaFarms,
+            alertCount: woredaAlerts,
+          };
+        })
+      ),
+    };
+  } catch (error) {
+    console.error('Error getting zone analytics:', error);
+    return { error: 'Failed to retrieve zone analytics' };
+  }
+}
+
+async function getWoredaMap(woredaId) {
+  if (!isConnected()) {
+    return { error: 'Database not connected', fallback: true };
+  }
+
+  try {
+    const woreda = await prisma.woreda.findUnique({
+      where: { id: woredaId },
+      include: {
+        zone: {
+          include: {
+            region: true,
+          },
+        },
+        farms: {
+          select: {
+            id: true,
+            farmName: true,
+            latitude: true,
+            longitude: true,
+            areaHectares: true,
+            primaryCrop: true,
+          },
+        },
+      },
+    });
+
+    if (!woreda) {
+      return { error: 'Woreda not found' };
+    }
+
+    return {
+      type: 'woreda',
+      woreda: {
+        id: woreda.id,
+        nameEn: woreda.nameEn,
+        nameAm: woreda.nameAm,
+        pcode: woreda.pcode,
+        boundaries: woreda.boundaries,
+      },
+      zone: {
+        id: woreda.zone.id,
+        nameEn: woreda.zone.nameEn,
+      },
+      region: {
+        id: woreda.zone.region.id,
+        nameEn: woreda.zone.region.nameEn,
+      },
+      farms: woreda.farms,
+      farmCount: woreda.farms.length,
+    };
+  } catch (error) {
+    console.error('Error getting woreda map:', error);
+    return { error: 'Failed to retrieve woreda map' };
+  }
+}
+
+async function getWoredaAnalytics(woredaId) {
+  if (!isConnected()) {
+    return { error: 'Database not connected', fallback: true };
+  }
+
+  try {
+    const woreda = await prisma.woreda.findUnique({
+      where: { id: woredaId },
+      include: {
+        zone: {
+          include: {
+            region: true,
+          },
+        },
+      },
+    });
+
+    if (!woreda) {
+      return { error: 'Woreda not found' };
+    }
+
+    const [
+      totalFarms,
+      activeSensors,
+      totalSensors,
+      activeAlerts,
+      latestRisk,
+      recentObservations,
+    ] = await Promise.all([
+      prisma.farm.count({ where: { woredaId } }),
+      prisma.sensor.count({ where: { farm: { woredaId }, isActive: true } }),
+      prisma.sensor.count({ where: { farm: { woredaId } } }),
+      prisma.alert.count({ where: { woredaId, status: 'ACTIVE' } }),
+      prisma.riskAssessment.findFirst({
+        where: { woredaId },
+        orderBy: { assessedAt: 'desc' },
+      }),
+      prisma.satelliteObservation.findMany({
+        where: {
+          woredaId,
+          observationDate: { gte: new Date(Date.now() - 30 * 86400000) },
+        },
+        orderBy: { observationDate: 'desc' },
+        take: 30,
+      }),
+    ]);
+
+    const avgRainfall = recentObservations
+      .filter(o => o.chirpsRainfallMm !== null)
+      .reduce((sum, o) => sum + (o.chirpsRainfallMm || 0), 0) / Math.max(recentObservations.length, 1);
+
+    const avgNdvi = recentObservations
+      .filter(o => o.modisNdvi !== null)
+      .reduce((sum, o) => sum + (o.modisNdvi || 0), 0) / Math.max(recentObservations.length, 1);
+
+    return {
+      type: 'woreda',
+      woreda: {
+        id: woreda.id,
+        nameEn: woreda.nameEn,
+        nameAm: woreda.nameAm,
+        pcode: woreda.pcode,
+      },
+      zone: {
+        id: woreda.zone.id,
+        nameEn: woreda.zone.nameEn,
+      },
+      region: {
+        id: woreda.zone.region.id,
+        nameEn: woreda.zone.region.nameEn,
+      },
+      statistics: {
+        totalFarms,
+        activeSensors,
+        totalSensors,
+        activeAlerts,
+      },
+      currentConditions: {
+        avgRainfallLast30Days: Math.round(avgRainfall * 10) / 10,
+        avgNdvi: Math.round(avgNdvi * 1000) / 1000,
+        alertLevel: latestRisk?.alertLevel || 'NORMAL',
+        lastAssessed: latestRisk?.assessedAt || null,
+      },
+      recentObservations: recentObservations.slice(0, 10).map(obs => ({
+        date: obs.observationDate,
+        rainfall: obs.chirpsRainfallMm,
+        ndvi: obs.modisNdvi,
+        source: obs.source,
+      })),
+    };
+  } catch (error) {
+    console.error('Error getting woreda analytics:', error);
+    return { error: 'Failed to retrieve woreda analytics' };
+  }
+}
+
 module.exports = {
   getDashboardSummary,
   getRegionalBreakdown,
   getTemporalTrends,
   getAgronomicAdvisories,
   getAiInsights,
+  getLocationMap,
+  getLocationAnalytics,
+  getRegionMap,
+  getRegionAnalytics,
+  getZoneMap,
+  getZoneAnalytics,
+  getWoredaMap,
+  getWoredaAnalytics,
 };

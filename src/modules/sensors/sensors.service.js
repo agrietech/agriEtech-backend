@@ -31,25 +31,20 @@ async function registerSensor({ farmId, hardwareId, serialNumber, sensorType, de
   }
 
   if (isConnected()) {
-    try {
-      // Verify farm exists
-      const farm = await prisma.farm.findUnique({ where: { id: farmId } });
-      if (!farm) {
-        throw new NotFoundError(`Farm with ID ${farmId} not found`);
-      }
-
-      return await prisma.sensor.create({
-        data: {
-          farmId,
-          hardwareId: finalHardwareId,
-          sensorType: finalSensorType,
-          isActive: true,
-        },
-      });
-    } catch (err) {
-      if (err instanceof NotFoundError) throw err;
-      // Fallback to in-memory store
+    // Verify farm exists
+    const farm = await prisma.farm.findUnique({ where: { id: farmId } });
+    if (!farm) {
+      throw new NotFoundError(`Farm with ID ${farmId} not found`);
     }
+
+    return await prisma.sensor.create({
+      data: {
+        farmId,
+        hardwareId: finalHardwareId,
+        sensorType: finalSensorType,
+        isActive: true,
+      },
+    });
   }
 
   const newSensor = {
@@ -82,37 +77,32 @@ async function recordTelemetry({
   const timestamp = recordedAt ? new Date(recordedAt) : new Date();
 
   if (isConnected()) {
-    try {
-      let actualSensorId = sensorId;
-      if (hardwareId && !sensorId) {
-        const sensor = await prisma.sensor.findFirst({
-          where: { hardwareId },
-        });
-        if (sensor) actualSensorId = sensor.id;
-      }
-
-      if (!actualSensorId) {
-        throw new NotFoundError(
-          'Sensor not found. Provide a valid sensorId or hardwareId that matches a registered sensor.'
-        );
-      }
-
-      return await prisma.sensorReading.create({
-        data: {
-          sensorId: actualSensorId,
-          soilMoisture: soilMoisture !== undefined ? Number(soilMoisture) : null,
-          soilTemp: soilTemp !== undefined ? Number(soilTemp) : null,
-          ambientTemp: ambientTemp !== undefined ? Number(ambientTemp) : null,
-          humidity: humidity !== undefined ? Number(humidity) : null,
-          rainfallMm: rainfallMm !== undefined ? Number(rainfallMm) : null,
-          batteryLevel: batteryLevel !== undefined ? Number(batteryLevel) : null,
-          recordedAt: timestamp,
-        },
+    let actualSensorId = sensorId;
+    if (hardwareId && !sensorId) {
+      const sensor = await prisma.sensor.findFirst({
+        where: { hardwareId },
       });
-    } catch (err) {
-      if (err instanceof NotFoundError) throw err;
-      // Fallback
+      if (sensor) actualSensorId = sensor.id;
     }
+
+    if (!actualSensorId) {
+      throw new NotFoundError(
+        'Sensor not found. Provide a valid sensorId or hardwareId that matches a registered sensor.'
+      );
+    }
+
+    return await prisma.sensorReading.create({
+      data: {
+        sensorId: actualSensorId,
+        soilMoisture: soilMoisture !== undefined ? Number(soilMoisture) : null,
+        soilTemp: soilTemp !== undefined ? Number(soilTemp) : null,
+        ambientTemp: ambientTemp !== undefined ? Number(ambientTemp) : null,
+        humidity: humidity !== undefined ? Number(humidity) : null,
+        rainfallMm: rainfallMm !== undefined ? Number(rainfallMm) : null,
+        batteryLevel: batteryLevel !== undefined ? Number(batteryLevel) : null,
+        recordedAt: timestamp,
+      },
+    });
   }
 
   const fallbackReading = {
@@ -134,19 +124,15 @@ async function recordTelemetry({
 // Get sensors by farm
 async function getSensorsByFarm(farmId) {
   if (isConnected()) {
-    try {
-      if (!farmId) return [];
-      return await prisma.sensor.findMany({
-        where: { farmId },
-        include: { readings: { take: 5, orderBy: { recordedAt: 'desc' } } },
-      });
-    } catch (_err) {
-      // Fallback
-    }
+    if (!farmId) return [];
+    return await prisma.sensor.findMany({
+      where: { farmId },
+      include: { readings: { take: 5, orderBy: { recordedAt: 'desc' } } },
+    });
   }
 
   const list = Array.from(mockSensors.values()).filter(
-    (s) => !farmId || s.farmId === farmId || farmId === 'farm_demo_01'
+    (s) => !farmId || s.farmId === farmId
   );
   return list.length > 0 ? list : [mockSensors.get('sensor_demo_01')];
 }

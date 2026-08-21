@@ -1,7 +1,10 @@
 const farmsService = require('./farms.service');
+const { validateFarmData } = require('../../validation/schemas');
 
 async function createFarm(req, res, next) {
   try {
+    validateFarmData(req.body);
+    
     const { farmName, primaryCrop, areaHectares, woredaId, polygonGeojson, latitude, longitude } = req.body;
     const farm = await farmsService.createFarm({
       userId: req.user.id,
