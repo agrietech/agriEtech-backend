@@ -1,3 +1,8 @@
+const dns = require('node:dns');
+if (dns.setDefaultResultOrder) {
+  dns.setDefaultResultOrder('ipv4first');
+}
+
 const { PrismaClient } = require('@prisma/client');
 const { PrismaPg } = require('@prisma/adapter-pg');
 const { Pool } = require('pg');
@@ -20,6 +25,10 @@ const isRemote =
 const pool = new Pool({
   connectionString: connectionString || 'postgresql://localhost:5432/postgres',
   ssl: isRemote ? { rejectUnauthorized: false } : undefined,
+  family: 4, // Enforce IPv4 socket connection
+  lookup: (hostname, _options, callback) => {
+    dns.lookup(hostname, { family: 4 }, callback);
+  },
   max: 10, // Maximum pool size (safely within Supabase pool limit)
   min: 2,  // Minimum pool size
   idleTimeoutMillis: 30000,

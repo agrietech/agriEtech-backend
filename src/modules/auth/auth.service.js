@@ -88,6 +88,8 @@ function generateRefreshToken(user) {
   );
 }
 
+const VALID_ROLES = ['FARMER', 'DEVELOPMENT_AGENT', 'WOREDA_OFFICER', 'RESEARCHER', 'ADMIN'];
+
 /**
  * Register a new user with Email (Phone Number Optional)
  */
@@ -105,6 +107,10 @@ async function registerUser({
   const resolvedEmail = (email || '').trim().toLowerCase() || null;
   const resolvedPhone = (phoneNumber || phone || '').trim() || null;
   const resolvedName = (fullName || name || '').trim();
+
+  // Normalize role to valid Prisma Enum (e.g. 'farmer' -> 'FARMER')
+  const requestedRole = (role || 'FARMER').toString().trim().toUpperCase();
+  const resolvedRole = VALID_ROLES.includes(requestedRole) ? requestedRole : 'FARMER';
 
   if (!resolvedName || !password) {
     throw new BadRequestError('Full name and password are required');
@@ -145,18 +151,27 @@ async function registerUser({
       }
     }
 
-    const user = await prisma.user.create({
-      data: {
-        email: resolvedEmail,
-        phoneNumber: resolvedPhone || null,
-        fullName: resolvedName,
-        passwordHash,
-        role,
-        woredaId: woredaId || null,
-        preferredLang,
-        verificationToken,
-      },
-    });
+    let user;
+    try {
+      user = await prisma.user.create({
+        data: {
+          email: resolvedEmail,
+          phoneNumber: resolvedPhone || null,
+          fullName: resolvedName,
+          passwordHash,
+          role: resolvedRole,
+          woredaId: (woredaId && String(woredaId).trim()) || null,
+          preferredLang: (preferredLang && String(preferredLang).trim()) || 'en',
+          verificationToken,
+        },
+      });
+    } catch (dbErr) {
+      if (dbErr.code === 'P2002') {
+        const targetField = Array.isArray(dbErr.meta?.target) ? dbErr.meta.target.join(', ') : 'email or phone';
+        throw new ConflictError(`User with this ${targetField} already exists`);
+      }
+      throw dbErr;
+    }
 
     // Send verification email asynchronously (non-blocking)
     setImmediate(async () => {
