@@ -19,7 +19,8 @@
     "load-boundaries": "node scripts/loadHdxBoundaries.js",
     "backfill": "node scripts/backfillHistoricalWeather.js",
     "test": "jest --runInBand --forceExit",
-    "test:smoke": "node scripts/smoke_test_services.js"
+    "test:smoke": "node scripts/smoke_test_services.js",
+    "make-admin": "node scripts/create_admin_user.js"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.9.1",
