@@ -1,4 +1,4 @@
-﻿# AgriEtech Backend API Documentation
+# AgriEtech Backend API Documentation
 
 **Base URL:** \http://localhost:5000\ (Development)  
 **Production:** \https://agrietech.onrender.com\  
@@ -645,26 +645,63 @@ Response (200):
 
 ## 🔟 Admin Management APIs
 
-### GET /admin
-**Admin dashboard** (Protected: ADMIN)
+### GET /admin/dashboard
+**Sky-Blue Enterprise Interactive Dashboard UI** (Protected: ADMIN)
+- Returns complete HTML interactive admin dashboard.
 
-Returns full HTML admin interface
-
-### GET /admin/api/stats
-**System statistics** (Protected: ADMIN)
-
-\\\json
+### GET /api/v1/admin/overview
+**System overview & metrics** (Protected: ADMIN)
+```json
 Response (200):
 {
   "success": true,
   "data": {
-    "users": { "total": 142350, "farmers": 140000, "agents": 2000 },
-    "farms": { "total": 156789, "avgSize": 1.2 },
-    "alerts": { "today": 15, "thisWeek": 102 },
-    "sensors": { "active": 1250, "offline": 48 }
+    "metrics": {
+      "totalUsers": 125,
+      "totalFarms": 85,
+      "totalSensors": 42,
+      "activeSensors": 38,
+      "totalAlerts": 12,
+      "totalDiagnoses": 56
+    },
+    "recentAlerts": [...],
+    "recentAuditLogs": [...]
   }
 }
-\\\
+```
+
+### 👥 User CRUD APIs (`/api/v1/admin/users`)
+- **GET `/api/v1/admin/users`**: List paginated users (`?page=1&limit=20&search=abebe`)
+- **POST `/api/v1/admin/users`**: Create user (`{fullName, phoneNumber, email, role, woredaId}`)
+- **PUT `/api/v1/admin/users/:id`**: Update user details (`{fullName, phoneNumber, email, role}`)
+- **PATCH `/api/v1/admin/users/:id/role`**: Update role (`{role: "DEVELOPMENT_AGENT"}`)
+- **PATCH `/api/v1/admin/users/:id/status`**: Update status (`{isEmailVerified: true}`)
+- **DELETE `/api/v1/admin/users/:id`**: Delete user account
+
+### 🌾 Farm Plot CRUD APIs (`/api/v1/admin/farms`)
+- **GET `/api/v1/admin/farms`**: List farm plots (`?page=1&limit=20`)
+- **POST `/api/v1/admin/farms`**: Register farm plot (`{farmName, primaryCrop, areaHectares, latitude, longitude}`)
+- **PUT `/api/v1/admin/farms/:id`**: Update farm plot
+- **DELETE `/api/v1/admin/farms/:id`**: Delete farm plot
+
+### 📡 IoT Sensor Network CRUD APIs (`/api/v1/admin/sensors`)
+- **GET `/api/v1/admin/sensors`**: List IoT sensors
+- **POST `/api/v1/admin/sensors`**: Register sensor hardware (`{hardwareId, sensorType}`)
+- **DELETE `/api/v1/admin/sensors/:id`**: Delete sensor hardware
+
+### ⚠️ Alert Dispatch & Management (`/api/v1/admin/alerts`)
+- **GET `/api/v1/admin/alerts`**: List active early warning alerts
+- **POST `/api/v1/admin/broadcast-alert`**: Dispatch emergency warning (`{woredaId, hazardType, severity, titleEn, messageEn}`)
+- **DELETE `/api/v1/admin/alerts/:id`**: Dismiss / Delete alert
+
+### 🔬 Crop Disease Diagnoses (`/api/v1/admin/diagnoses`)
+- **GET `/api/v1/admin/diagnoses`**: List crop diagnosis history
+- **DELETE `/api/v1/admin/diagnoses/:id`**: Delete diagnosis record
+
+### 🛡️ System Health & Audit Trail
+- **GET `/api/v1/admin/system/health`**: Deep memory, CPU, DB & Redis ping health
+- **POST `/api/v1/admin/ingestion/trigger`**: Trigger pipeline pull (`{jobType: "pullChirpsRainfall"}`)
+- **GET `/api/v1/admin/audit-logs`**: Get audit logs (`?limit=50`)
 
 ---
 
