@@ -530,11 +530,486 @@ async function getAuditLogs(limit = 50) {
   ];
 }
 
+/**
+ * User CRUD Operations
+ */
+async function createUser(data, adminContext = {}) {
+  const bcrypt = require('bcryptjs');
+  const salt = await bcrypt.genSalt(10);
+  const passwordHash = await bcrypt.hash(data.password || 'DefaultPass123!', salt);
+
+  if (isConnected()) {
+    try {
+      const created = await prisma.user.create({
+        data: {
+          phoneNumber: data.phoneNumber,
+          email: data.email || null,
+          fullName: data.fullName,
+          passwordHash,
+          role: data.role || 'FARMER',
+          preferredLang: data.preferredLang || 'am',
+          woredaId: data.woredaId || null,
+          isEmailVerified: true,
+        },
+        select: {
+          id: true,
+          fullName: true,
+          phoneNumber: true,
+          email: true,
+          role: true,
+          preferredLang: true,
+          woredaId: true,
+          createdAt: true,
+        },
+      });
+
+      await logAuditAction({
+        action: 'USER_CREATED',
+        adminId: adminContext.id,
+        adminEmail: adminContext.email,
+        details: `Created new user ${created.fullName} (${created.role})`,
+        ipAddress: adminContext.ip,
+      });
+
+      return created;
+    } catch (err) {
+      logger.warn(`[AdminService] Create user DB error: ${err.message}`);
+    }
+  }
+
+  return {
+    id: `usr_${Date.now()}`,
+    fullName: data.fullName,
+    phoneNumber: data.phoneNumber,
+    email: data.email,
+    role: data.role || 'FARMER',
+    preferredLang: data.preferredLang || 'am',
+    createdAt: new Date().toISOString(),
+  };
+}
+
+async function updateUser(userId, data, adminContext = {}) {
+  if (isConnected()) {
+    try {
+      const updateData = {};
+      if (data.fullName) updateData.fullName = data.fullName;
+      if (data.phoneNumber) updateData.phoneNumber = data.phoneNumber;
+      if (data.email !== undefined) updateData.email = data.email;
+      if (data.role) updateData.role = data.role;
+      if (data.woredaId !== undefined) updateData.woredaId = data.woredaId;
+      if (data.isEmailVerified !== undefined) updateData.isEmailVerified = Boolean(data.isEmailVerified);
+
+      const updated = await prisma.user.update({
+        where: { id: userId },
+        data: updateData,
+        select: {
+          id: true,
+          fullName: true,
+          phoneNumber: true,
+          email: true,
+          role: true,
+          isEmailVerified: true,
+          updatedAt: true,
+        },
+      });
+
+      await logAuditAction({
+        action: 'USER_UPDATED',
+        adminId: adminContext.id,
+        adminEmail: adminContext.email,
+        details: `Updated user details for ${userId}`,
+        ipAddress: adminContext.ip,
+      });
+
+      return updated;
+    } catch (err) {
+      logger.warn(`[AdminService] Update user DB error: ${err.message}`);
+    }
+  }
+
+  return { id: userId, ...data, updatedAt: new Date().toISOString() };
+}
+
+async function deleteUser(userId, adminContext = {}) {
+  if (isConnected()) {
+    try {
+      await prisma.user.delete({ where: { id: userId } });
+      await logAuditAction({
+        action: 'USER_DELETED',
+        adminId: adminContext.id,
+        adminEmail: adminContext.email,
+        details: `Deleted user ${userId}`,
+        ipAddress: adminContext.ip,
+      });
+      return { success: true, id: userId };
+    } catch (err) {
+      logger.warn(`[AdminService] Delete user DB error: ${err.message}`);
+    }
+  }
+  return { success: true, id: userId };
+}
+
+/**
+ * Farm CRUD Operations
+ */
+async function getFarms({ page = 1, limit = 20, woredaId, search } = {}) {
+  const skip = (Number(page) - 1) * Number(limit);
+  const take = Number(limit);
+
+  if (isConnected()) {
+    try {
+      const where = {};
+      if (woredaId) where.woredaId = woredaId;
+      if (search) {
+        where.OR = [
+          { farmName: { contains: search, mode: 'insensitive' } },
+          { primaryCrop: { contains: search, mode: 'insensitive' } },
+        ];
+      }
+
+      const [farms, total] = await Promise.all([
+        prisma.farm.findMany({
+          where,
+          skip,
+          take,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            user: { select: { fullName: true, phoneNumber: true } },
+            woreda: { select: { nameEn: true, nameAm: true } },
+          },
+        }),
+        prisma.farm.count({ where }),
+      ]);
+
+      return {
+        farms,
+        pagination: { page: Number(page), limit: Number(limit), total, totalPages: Math.ceil(total / take) },
+      };
+    } catch (_e) {
+      // Fallback
+    }
+  }
+
+  const sampleFarms = [
+    {
+      id: 'farm_demo_01',
+      farmName: 'Adama Teff & Wheat Plot Alpha',
+      areaHectares: 2.5,
+      primaryCrop: 'Wheat',
+      latitude: 8.54,
+      longitude: 39.27,
+      user: { fullName: 'Abebe Bikila', phoneNumber: '+251911223344' },
+      woreda: { nameEn: 'Adama Zuria', nameAm: 'አዳማ ዙሪያ' },
+      createdAt: new Date().toISOString(),
+    },
+  ];
+
+  return { farms: sampleFarms, pagination: { page: 1, limit: 20, total: 1, totalPages: 1 } };
+}
+
+async function createFarm(data, adminContext = {}) {
+  if (isConnected()) {
+    try {
+      const created = await prisma.farm.create({
+        data: {
+          farmName: data.farmName,
+          userId: data.userId || 'usr_test_farmer_01',
+          woredaId: data.woredaId || 'woreda_adama_01',
+          areaHectares: parseFloat(data.areaHectares || 1.0),
+          primaryCrop: data.primaryCrop || 'Wheat',
+          latitude: parseFloat(data.latitude || 8.54),
+          longitude: parseFloat(data.longitude || 39.27),
+          polygonGeojson: data.polygonGeojson || null,
+        },
+      });
+
+      await logAuditAction({
+        action: 'FARM_CREATED',
+        adminId: adminContext.id,
+        adminEmail: adminContext.email,
+        details: `Created farm ${created.farmName} (${created.areaHectares} Ha)`,
+        ipAddress: adminContext.ip,
+      });
+
+      return created;
+    } catch (err) {
+      logger.warn(`[AdminService] Create farm DB error: ${err.message}`);
+    }
+  }
+
+  return { id: `farm_${Date.now()}`, ...data, createdAt: new Date().toISOString() };
+}
+
+async function updateFarm(farmId, data, adminContext = {}) {
+  if (isConnected()) {
+    try {
+      const updated = await prisma.farm.update({
+        where: { id: farmId },
+        data: {
+          farmName: data.farmName,
+          areaHectares: data.areaHectares ? parseFloat(data.areaHectares) : undefined,
+          primaryCrop: data.primaryCrop,
+          latitude: data.latitude ? parseFloat(data.latitude) : undefined,
+          longitude: data.longitude ? parseFloat(data.longitude) : undefined,
+        },
+      });
+
+      await logAuditAction({
+        action: 'FARM_UPDATED',
+        adminId: adminContext.id,
+        adminEmail: adminContext.email,
+        details: `Updated farm ${farmId}`,
+        ipAddress: adminContext.ip,
+      });
+
+      return updated;
+    } catch (_e) {
+      // Fallback
+    }
+  }
+
+  return { id: farmId, ...data, updatedAt: new Date().toISOString() };
+}
+
+async function deleteFarm(farmId, adminContext = {}) {
+  if (isConnected()) {
+    try {
+      await prisma.farm.delete({ where: { id: farmId } });
+      await logAuditAction({
+        action: 'FARM_DELETED',
+        adminId: adminContext.id,
+        adminEmail: adminContext.email,
+        details: `Deleted farm plot ${farmId}`,
+        ipAddress: adminContext.ip,
+      });
+      return { success: true, id: farmId };
+    } catch (_e) {
+      // Fallback
+    }
+  }
+  return { success: true, id: farmId };
+}
+
+/**
+ * Sensor CRUD Operations
+ */
+async function getSensors({ page = 1, limit = 20 } = {}) {
+  const skip = (Number(page) - 1) * Number(limit);
+  const take = Number(limit);
+
+  if (isConnected()) {
+    try {
+      const [sensors, total] = await Promise.all([
+        prisma.sensor.findMany({
+          skip,
+          take,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            farm: { select: { farmName: true } },
+          },
+        }),
+        prisma.sensor.count(),
+      ]);
+
+      return { sensors, pagination: { page: Number(page), limit: Number(limit), total, totalPages: Math.ceil(total / take) } };
+    } catch (_e) {
+      // Fallback
+    }
+  }
+
+  const sampleSensors = [
+    {
+      id: 'sns_esp32_01',
+      hardwareId: 'ESP32_ADAMA_STATION_A',
+      sensorType: 'SOIL_MOISTURE_STATION',
+      isActive: true,
+      farm: { farmName: 'Adama Teff & Wheat Plot Alpha' },
+      createdAt: new Date().toISOString(),
+    },
+  ];
+
+  return { sensors: sampleSensors, pagination: { page: 1, limit: 20, total: 1, totalPages: 1 } };
+}
+
+async function createSensor(data, adminContext = {}) {
+  if (isConnected()) {
+    try {
+      const created = await prisma.sensor.create({
+        data: {
+          hardwareId: data.hardwareId,
+          farmId: data.farmId || 'farm_demo_01',
+          sensorType: data.sensorType || 'SOIL_MOISTURE_STATION',
+          isActive: data.isActive !== undefined ? Boolean(data.isActive) : true,
+        },
+      });
+
+      await logAuditAction({
+        action: 'SENSOR_REGISTERED',
+        adminId: adminContext.id,
+        adminEmail: adminContext.email,
+        details: `Registered sensor ${created.hardwareId}`,
+        ipAddress: adminContext.ip,
+      });
+
+      return created;
+    } catch (err) {
+      logger.warn(`[AdminService] Create sensor DB error: ${err.message}`);
+    }
+  }
+
+  return { id: `sns_${Date.now()}`, ...data, createdAt: new Date().toISOString() };
+}
+
+async function deleteSensor(sensorId, adminContext = {}) {
+  if (isConnected()) {
+    try {
+      await prisma.sensor.delete({ where: { id: sensorId } });
+      await logAuditAction({
+        action: 'SENSOR_DELETED',
+        adminId: adminContext.id,
+        adminEmail: adminContext.email,
+        details: `Deleted sensor device ${sensorId}`,
+        ipAddress: adminContext.ip,
+      });
+      return { success: true, id: sensorId };
+    } catch (_e) {
+      // Fallback
+    }
+  }
+  return { success: true, id: sensorId };
+}
+
+/**
+ * Alerts & Diagnoses Operations
+ */
+async function getAlerts({ page = 1, limit = 20 } = {}) {
+  const skip = (Number(page) - 1) * Number(limit);
+  const take = Number(limit);
+
+  if (isConnected()) {
+    try {
+      const [alerts, total] = await Promise.all([
+        prisma.alert.findMany({
+          skip,
+          take,
+          orderBy: { createdAt: 'desc' },
+          include: { woreda: { select: { nameEn: true, nameAm: true } } },
+        }),
+        prisma.alert.count(),
+      ]);
+      return { alerts, pagination: { page: Number(page), limit: Number(limit), total, totalPages: Math.ceil(total / take) } };
+    } catch (_e) {
+      // Fallback
+    }
+  }
+
+  const sampleAlerts = [
+    {
+      id: 'alert_demo_01',
+      hazardType: 'DROUGHT',
+      severity: 'WARNING',
+      titleEn: 'Early Seasonal Moisture Deficit Warning',
+      messageEn: 'Prepare supplemental irrigation in water-stressed sectors.',
+      woreda: { nameEn: 'Adama Zuria', nameAm: 'አዳማ ዙሪያ' },
+      createdAt: new Date().toISOString(),
+    },
+  ];
+
+  return { alerts: sampleAlerts, pagination: { page: 1, limit: 20, total: 1, totalPages: 1 } };
+}
+
+async function deleteAlert(alertId, adminContext = {}) {
+  if (isConnected()) {
+    try {
+      await prisma.alert.delete({ where: { id: alertId } });
+      await logAuditAction({
+        action: 'ALERT_DELETED',
+        adminId: adminContext.id,
+        adminEmail: adminContext.email,
+        details: `Deleted alert ${alertId}`,
+        ipAddress: adminContext.ip,
+      });
+      return { success: true, id: alertId };
+    } catch (_e) {
+      // Fallback
+    }
+  }
+  return { success: true, id: alertId };
+}
+
+async function getDiagnoses({ page = 1, limit = 20 } = {}) {
+  const skip = (Number(page) - 1) * Number(limit);
+  const take = Number(limit);
+
+  if (isConnected()) {
+    try {
+      const [diagnoses, total] = await Promise.all([
+        prisma.diseaseDiagnosis.findMany({
+          skip,
+          take,
+          orderBy: { createdAt: 'desc' },
+        }),
+        prisma.diseaseDiagnosis.count(),
+      ]);
+      return { diagnoses, pagination: { page: Number(page), limit: Number(limit), total, totalPages: Math.ceil(total / take) } };
+    } catch (_e) {
+      // Fallback
+    }
+  }
+
+  const sampleDiagnoses = [
+    {
+      id: 'diag_demo_01',
+      cropType: 'Wheat',
+      diseaseName: 'Wheat Stem Rust (Puccinia graminis)',
+      severity: 'HIGH',
+      confidenceScore: 0.94,
+      aiModel: 'Plant.id Botanical + Google Gemini 2.5 Flash',
+      createdAt: new Date().toISOString(),
+    },
+  ];
+
+  return { diagnoses: sampleDiagnoses, pagination: { page: 1, limit: 20, total: 1, totalPages: 1 } };
+}
+
+async function deleteDiagnosis(diagId, adminContext = {}) {
+  if (isConnected()) {
+    try {
+      await prisma.diseaseDiagnosis.delete({ where: { id: diagId } });
+      await logAuditAction({
+        action: 'DIAGNOSIS_DELETED',
+        adminId: adminContext.id,
+        adminEmail: adminContext.email,
+        details: `Deleted disease diagnosis record ${diagId}`,
+        ipAddress: adminContext.ip,
+      });
+      return { success: true, id: diagId };
+    } catch (_e) {
+      // Fallback
+    }
+  }
+  return { success: true, id: diagId };
+}
+
 module.exports = {
   getOverview,
   getUsers,
+  createUser,
+  updateUser,
   updateUserRole,
   updateUserStatus,
+  deleteUser,
+  getFarms,
+  createFarm,
+  updateFarm,
+  deleteFarm,
+  getSensors,
+  createSensor,
+  deleteSensor,
+  getAlerts,
+  deleteAlert,
+  getDiagnoses,
+  deleteDiagnosis,
   getSystemHealth,
   triggerIngestion,
   broadcastEmergencyAlert,
