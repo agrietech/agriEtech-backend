@@ -144,10 +144,23 @@ const telemetryLimiter = createRateLimiter({
   message: 'Telemetry ingestion rate limit exceeded.',
 });
 
+// Per-user auth limiter (account-based lockout)
+const userAuthLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5,
+  prefix: 'rl:auth:user',
+  keyGenerator: (req) => {
+    const identifier = req.body.email || req.body.phoneNumber || req.body.identifier || req.body.phone;
+    return `user:${identifier ? String(identifier).toLowerCase().trim() : req.ip}`;
+  },
+  message: 'Too many login attempts for this account. Please try again in 15 minutes.',
+});
+
 module.exports = {
   createRateLimiter,
   globalLimiter,
   authLimiter,
   ussdLimiter,
   telemetryLimiter,
+  userAuthLimiter,
 };

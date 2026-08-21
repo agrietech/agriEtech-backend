@@ -5,7 +5,7 @@ const compression = require('compression');
 const env = require('./config/env');
 const errorHandler = require('./middleware/errorHandler');
 const requestLogger = require('./middleware/requestLogger');
-const { correlationIdMiddleware, sanitizeInput } = require('./middleware/security');
+const { correlationIdMiddleware, sanitizeInput, requestTimeout } = require('./middleware/security');
 const {
   globalLimiter,
   authLimiter,
@@ -34,6 +34,7 @@ const app = express();
 app.use(helmet({
   contentSecurityPolicy: false, // Allows inline script/styles for admin dashboard
 }));
+app.use(requestTimeout(30)); // 30 second timeout for all requests
 
 // Configurable CORS whitelist
 const corsOptions = {

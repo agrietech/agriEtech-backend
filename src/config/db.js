@@ -20,6 +20,10 @@ const isRemote =
 const pool = new Pool({
   connectionString: connectionString || 'postgresql://localhost:5432/postgres',
   ssl: isRemote ? { rejectUnauthorized: false } : undefined,
+  max: 20, // Maximum pool size
+  min: 5,  // Minimum pool size
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
 });
 
 const adapter = new PrismaPg(pool);
@@ -28,6 +32,15 @@ const prisma = new PrismaClient({
   adapter,
   log: env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
 });
+
+// Log slow queries in development
+if (env.NODE_ENV === 'development') {
+  prisma.$on('query', (e) => {
+    if (e.duration > 1000) {
+      logger.warn(`[Prisma] Slow query detected (${e.duration}ms): ${e.query.substring(0, 100)}...`);
+    }
+  });
+}
 
 let isDbConnected = false;
 
