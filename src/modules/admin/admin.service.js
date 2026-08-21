@@ -571,7 +571,7 @@ async function getAuditLogs(limit = 50) {
 }
 
 /**
- * User CRUD Operations
+ * User Management Operations
  */
 async function createUser(data, adminContext = {}) {
   if (!data.password || data.password.trim().length < 8) {
@@ -694,7 +694,7 @@ async function deleteUser(userId, adminContext = {}) {
 }
 
 /**
- * Farm CRUD Operations
+ * Farm Management Operations
  */
 async function getFarms({ page = 1, limit = 20, woredaId, search } = {}) {
   const skip = (Number(page) - 1) * Number(limit);
@@ -835,7 +835,7 @@ async function deleteFarm(farmId, adminContext = {}) {
 }
 
 /**
- * Sensor CRUD Operations
+ * Sensor Management Operations
  */
 async function getSensors({ page = 1, limit = 20 } = {}) {
   const skip = (Number(page) - 1) * Number(limit);

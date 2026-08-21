@@ -1,0 +1,1367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgriEtech Admin</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      background: #f8faf9;
+      color: #1f2937;
+    }
+
+    /* Header */
+    .header {
+      background: white;
+      border-bottom: 2px solid #10b981;
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+
+    .brand {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #10b981;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 0.75rem;
+    }
+
+    /* Buttons */
+    .btn {
+      padding: 0.625rem 1.25rem;
+      border-radius: 0.375rem;
+      font-weight: 600;
+      font-size: 0.875rem;
+      border: none;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .btn-primary {
+      background: #10b981;
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: #059669;
+    }
+
+    .btn-secondary {
+      background: #f3f4f6;
+      color: #374151;
+      border: 1px solid #d1d5db;
+    }
+
+    .btn-secondary:hover {
+      background: #e5e7eb;
+    }
+
+    .btn-danger {
+      background: #ef4444;
+      color: white;
+      padding: 0.375rem 0.75rem;
+      font-size: 0.75rem;
+    }
+
+    .btn-edit {
+      background: #3b82f6;
+      color: white;
+      padding: 0.375rem 0.75rem;
+      font-size: 0.75rem;
+    }
+
+    /* Layout */
+    .container {
+      display: flex;
+      min-height: calc(100vh - 65px);
+    }
+
+    .sidebar {
+      width: 240px;
+      background: white;
+      border-right: 1px solid #e5e7eb;
+      padding: 1.5rem 0;
+    }
+
+    .nav-item {
+      padding: 0.75rem 1.5rem;
+      cursor: pointer;
+      color: #6b7280;
+      transition: all 0.15s;
+      font-weight: 500;
+    }
+
+    .nav-item:hover {
+      background: #f3f4f6;
+      color: #10b981;
+    }
+
+    .nav-item.active {
+      background: #ecfdf5;
+      color: #10b981;
+      border-left: 3px solid #10b981;
+    }
+
+    .content {
+      flex: 1;
+      padding: 2rem;
+      background: #f8faf9;
+    }
+
+    /* Tabs */
+    .tab {
+      display: none;
+    }
+
+    .tab.active {
+      display: block;
+    }
+
+    /* Stats */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .stat-card {
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 0.5rem;
+      padding: 1.5rem;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+
+    .stat-label {
+      font-size: 0.875rem;
+      color: #6b7280;
+      margin-bottom: 0.5rem;
+    }
+
+    .stat-value {
+      font-size: 2rem;
+      font-weight: 700;
+      color: #10b981;
+    }
+
+    /* Panel */
+    .panel {
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 0.5rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+
+    .panel-header {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid #e5e7eb;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .panel-title {
+      font-size: 1.125rem;
+      font-weight: 600;
+      color: #111827;
+    }
+
+    .panel-body {
+      padding: 1.5rem;
+    }
+
+    /* Tables */
+    .table-container {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th {
+      text-align: left;
+      padding: 0.75rem;
+      background: #f9fafb;
+      color: #6b7280;
+      font-weight: 600;
+      font-size: 0.875rem;
+      border-bottom: 2px solid #e5e7eb;
+    }
+
+    td {
+      padding: 0.75rem;
+      border-bottom: 1px solid #f3f4f6;
+    }
+
+    tr:hover td {
+      background: #f9fafb;
+    }
+
+    /* Badge */
+    .badge {
+      padding: 0.25rem 0.625rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    .badge-success { background: #d1fae5; color: #065f46; }
+    .badge-warning { background: #fef3c7; color: #92400e; }
+    .badge-danger { background: #fee2e2; color: #991b1b; }
+    .badge-info { background: #dbeafe; color: #1e40af; }
+
+    /* Modal */
+    .modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal.show {
+      display: flex;
+    }
+
+    .modal-content {
+      background: white;
+      border-radius: 0.5rem;
+      max-width: 500px;
+      width: 90%;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+
+    .modal-header {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid #e5e7eb;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-title {
+      font-size: 1.125rem;
+      font-weight: 600;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 1.5rem;
+      color: #9ca3af;
+      cursor: pointer;
+      padding: 0;
+      width: 2rem;
+      height: 2rem;
+    }
+
+    .modal-body {
+      padding: 1.5rem;
+    }
+
+    /* Form */
+    .form-group {
+      margin-bottom: 1rem;
+    }
+
+    .form-label {
+      display: block;
+      margin-bottom: 0.375rem;
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: #374151;
+    }
+
+    .form-input, .form-select, .form-textarea {
+      width: 100%;
+      padding: 0.625rem;
+      border: 1px solid #d1d5db;
+      border-radius: 0.375rem;
+      font-size: 0.875rem;
+    }
+
+    .form-input:focus, .form-select:focus, .form-textarea:focus {
+      outline: none;
+      border-color: #10b981;
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+    }
+
+    .form-textarea {
+      min-height: 80px;
+      resize: vertical;
+    }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 2rem;
+      right: 2rem;
+      background: #10b981;
+      color: white;
+      padding: 1rem 1.5rem;
+      border-radius: 0.375rem;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      display: none;
+      z-index: 2000;
+    }
+
+    .toast.show {
+      display: block;
+      animation: slideIn 0.3s;
+    }
+
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+
+    /* Map */
+    #mapContainer {
+      height: 500px;
+      border-radius: 0.375rem;
+    }
+
+    /* Actions Column */
+    .actions {
+      display: flex;
+      gap: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <header class="header">
+    <div class="brand">🌱 AgriEtech Admin</div>
+    <div class="header-actions">
+      <button class="btn btn-primary" onclick="openModal('userModal')">+ Add User</button>
+      <button class="btn btn-primary" onclick="openModal('alertModal')">📢 Broadcast Alert</button>
+      <button class="btn btn-secondary" onclick="location.reload()">↻ Refresh</button>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <div class="container">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="nav-item active" onclick="showTab('overview')">📊 Dashboard</div>
+      <div class="nav-item" onclick="showTab('users')">👥 Users</div>
+      <div class="nav-item" onclick="showTab('farms')">🌾 Farms</div>
+      <div class="nav-item" onclick="showTab('sensors')">📡 Sensors</div>
+      <div class="nav-item" onclick="showTab('alerts')">⚠️ Alerts</div>
+      <div class="nav-item" onclick="showTab('diagnoses')">🔬 Diagnoses</div>
+      <div class="nav-item" onclick="showTab('map')">🗺️ Map</div>
+      <div class="nav-item" onclick="showTab('system')">⚙️ System</div>
+    </aside>
+
+    <!-- Content -->
+    <main class="content">
+      <!-- Overview Tab -->
+      <div id="overview" class="tab active">
+        <div class="stats">
+          <div class="stat-card">
+            <div class="stat-label">Total Users</div>
+            <div class="stat-value" id="statUsers">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Farms</div>
+            <div class="stat-value" id="statFarms">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Sensors</div>
+            <div class="stat-value" id="statSensors">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Active Alerts</div>
+            <div class="stat-value" id="statAlerts">0</div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title">Recent Activity</div>
+          </div>
+          <div class="panel-body">
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Type</th>
+                    <th>Title</th>
+                    <th>Severity</th>
+                    <th>Location</th>
+                    <th>Date</th>
+                  </tr>
+                </thead>
+                <tbody id="recentActivity">
+                  <tr><td colspan="5">Loading...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Users Tab -->
+      <div id="users" class="tab">
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title">User Management</div>
+            <button class="btn btn-primary" onclick="openModal('userModal')">+ Add User</button>
+          </div>
+          <div class="panel-body">
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Full Name</th>
+                    <th>Email</th>
+                    <th>Phone</th>
+                    <th>Role</th>
+                    <th>Email Verified</th>
+                    <th>Woreda</th>
+                    <th>Language</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="usersTable">
+                  <tr><td colspan="10">Loading...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Farms Tab -->
+      <div id="farms" class="tab">
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title">Farm Registry</div>
+            <button class="btn btn-primary" onclick="openModal('farmModal')">+ Register Farm</button>
+          </div>
+          <div class="panel-body">
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Farm Name</th>
+                    <th>Crop</th>
+                    <th>Area (ha)</th>
+                    <th>Latitude</th>
+                    <th>Longitude</th>
+                    <th>Owner</th>
+                    <th>Woreda</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="farmsTable">
+                  <tr><td colspan="10">Loading...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sensors Tab -->
+      <div id="sensors" class="tab">
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title">IoT Sensor Network</div>
+            <button class="btn btn-primary" onclick="openModal('sensorModal')">+ Add Sensor</button>
+          </div>
+          <div class="panel-body">
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Hardware ID</th>
+                    <th>Type</th>
+                    <th>Farm</th>
+                    <th>Status</th>
+                    <th>Last Reading</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="sensorsTable">
+                  <tr><td colspan="8">Loading...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Alerts Tab -->
+      <div id="alerts" class="tab">
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title">Early Warning Alerts</div>
+            <button class="btn btn-primary" onclick="openModal('alertModal')">📢 Broadcast New Alert</button>
+          </div>
+          <div class="panel-body">
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Title</th>
+                    <th>Hazard Type</th>
+                    <th>Severity</th>
+                    <th>Target Scope</th>
+                    <th>Woreda</th>
+                    <th>Sent Via</th>
+                    <th>Date</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="alertsTable">
+                  <tr><td colspan="9">Loading...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Diagnoses Tab -->
+      <div id="diagnoses" class="tab">
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title">Crop Disease Diagnoses</div>
+          </div>
+          <div class="panel-body">
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Crop Type</th>
+                    <th>Disease</th>
+                    <th>Confidence</th>
+                    <th>User</th>
+                    <th>Location</th>
+                    <th>Image</th>
+                    <th>Date</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="diagnosesTable">
+                  <tr><td colspan="9">Loading...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Map Tab -->
+      <div id="map" class="tab">
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title">Ethiopia Administrative Boundaries</div>
+            <div style="display:flex;gap:0.5rem;">
+              <button class="btn btn-secondary" onclick="loadBoundaries('regions')">Regions</button>
+              <button class="btn btn-secondary" onclick="loadBoundaries('zones')">Zones</button>
+              <button class="btn btn-secondary" onclick="loadBoundaries('woredas')">Woredas</button>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div id="mapContainer"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- System Tab -->
+      <div id="system" class="tab">
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title">System Health</div>
+          </div>
+          <div class="panel-body">
+            <div id="systemHealth" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;">
+              <div><strong>Status:</strong> Loading...</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title">Admin Audit Logs</div>
+          </div>
+          <div class="panel-body">
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Action</th>
+                    <th>Admin Email</th>
+                    <th>Resource Type</th>
+                    <th>Resource ID</th>
+                    <th>IP Address</th>
+                    <th>Timestamp</th>
+                  </tr>
+                </thead>
+                <tbody id="auditLogs">
+                  <tr><td colspan="6">Loading...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- User Modal -->
+  <div id="userModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title" id="userModalTitle">Add New User</h3>
+        <button class="modal-close" onclick="closeModal('userModal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="userForm" onsubmit="event.preventDefault(); submitUser();">
+          <input type="hidden" id="userId">
+          <div class="form-group">
+            <label class="form-label">Full Name *</label>
+            <input type="text" class="form-input" id="userFullName" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Email *</label>
+            <input type="email" class="form-input" id="userEmail" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Phone Number</label>
+            <input type="tel" class="form-input" id="userPhone" placeholder="+251...">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Role *</label>
+            <select class="form-select" id="userRole" required>
+              <option value="FARMER">Farmer</option>
+              <option value="DEVELOPMENT_AGENT">Development Agent</option>
+              <option value="WOREDA_OFFICER">Woreda Officer</option>
+              <option value="ZONE_OFFICER">Zone Officer</option>
+              <option value="REGION_OFFICER">Region Officer</option>
+              <option value="ADMIN">Admin</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Language</label>
+            <select class="form-select" id="userLang">
+              <option value="en">English</option>
+              <option value="am">Amharic</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary" style="width:100%">Save User</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Farm Modal -->
+  <div id="farmModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title" id="farmModalTitle">Register New Farm</h3>
+        <button class="modal-close" onclick="closeModal('farmModal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="farmForm" onsubmit="event.preventDefault(); submitFarm();">
+          <input type="hidden" id="farmId">
+          <div class="form-group">
+            <label class="form-label">Farm Name *</label>
+            <input type="text" class="form-input" id="farmName" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Primary Crop *</label>
+            <input type="text" class="form-input" id="farmCrop" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Area (Hectares) *</label>
+            <input type="number" step="0.01" class="form-input" id="farmArea" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Latitude *</label>
+            <input type="number" step="any" class="form-input" id="farmLat" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Longitude *</label>
+            <input type="number" step="any" class="form-input" id="farmLng" required>
+          </div>
+          <button type="submit" class="btn btn-primary" style="width:100%">Save Farm</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sensor Modal -->
+  <div id="sensorModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">Add New Sensor</h3>
+        <button class="modal-close" onclick="closeModal('sensorModal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="sensorForm" onsubmit="event.preventDefault(); submitSensor();">
+          <div class="form-group">
+            <label class="form-label">Hardware ID *</label>
+            <input type="text" class="form-input" id="sensorHardwareId" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Sensor Type *</label>
+            <select class="form-select" id="sensorType" required>
+              <option value="SOIL_MOISTURE_STATION">Soil Moisture Station</option>
+              <option value="WEATHER_STATION">Weather Station</option>
+              <option value="CAMERA_TRAP">Camera Trap</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary" style="width:100%">Add Sensor</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Alert Modal -->
+  <div id="alertModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">Broadcast Emergency Alert</h3>
+        <button class="modal-close" onclick="closeModal('alertModal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="alertForm" onsubmit="event.preventDefault(); submitAlert();">
+          <div class="form-group">
+            <label class="form-label">Alert Title *</label>
+            <input type="text" class="form-input" id="alertTitle" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Hazard Type *</label>
+            <select class="form-select" id="alertHazardType" required>
+              <option value="DROUGHT">Drought</option>
+              <option value="FLOOD">Flood</option>
+              <option value="PEST">Pest Outbreak</option>
+              <option value="DISEASE">Disease</option>
+              <option value="STORM">Storm</option>
+              <option value="FROST">Frost</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Severity *</label>
+            <select class="form-select" id="alertSeverity" required>
+              <option value="LOW">Low</option>
+              <option value="MODERATE">Moderate</option>
+              <option value="HIGH">High</option>
+              <option value="CRITICAL">Critical</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Message *</label>
+            <textarea class="form-textarea" id="alertMessage" required></textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Target Scope *</label>
+            <select class="form-select" id="alertScope" required>
+              <option value="NATIONAL">National</option>
+              <option value="REGIONAL">Regional</option>
+              <option value="ZONAL">Zonal</option>
+              <option value="WOREDA">Woreda</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary" style="width:100%">Broadcast Alert</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast"></div>
+
+  <script>
+    let currentData = { users: [], farms: [], sensors: [], alerts: [], diagnoses: [] };
+    let map = null;
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+      loadOverview();
+      initMap();
+    });
+
+    // Tab Navigation
+    function showTab(tabName) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+      
+      document.getElementById(tabName).classList.add('active');
+      event.target.classList.add('active');
+
+      // Load data
+      if (tabName === 'users') loadUsers();
+      else if (tabName === 'farms') loadFarms();
+      else if (tabName === 'sensors') loadSensors();
+      else if (tabName === 'alerts') loadAlerts();
+      else if (tabName === 'diagnoses') loadDiagnoses();
+      else if (tabName === 'system') loadSystem();
+    }
+
+    // Modal Management
+    function openModal(id) {
+      document.getElementById(id).classList.add('show');
+      if (id === 'userModal') {
+        document.getElementById('userId').value = '';
+        document.getElementById('userModalTitle').textContent = 'Add New User';
+        document.getElementById('userForm').reset();
+      } else if (id === 'farmModal') {
+        document.getElementById('farmId').value = '';
+        document.getElementById('farmModalTitle').textContent = 'Register New Farm';
+        document.getElementById('farmForm').reset();
+      }
+    }
+
+    function closeModal(id) {
+      document.getElementById(id).classList.remove('show');
+    }
+
+    // Toast Notification
+    function showToast(message, type = 'success') {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.style.background = type === 'error' ? '#ef4444' : '#10b981';
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+
+    // API Functions
+    async function loadOverview() {
+      try {
+        const res = await fetch('/api/v1/admin/overview');
+        const json = await res.json();
+        if (json.success) {
+          document.getElementById('statUsers').textContent = json.data.totalUsers || 0;
+          document.getElementById('statFarms').textContent = json.data.totalFarms || 0;
+          document.getElementById('statSensors').textContent = json.data.totalSensors || 0;
+          document.getElementById('statAlerts').textContent = json.data.totalAlerts || 0;
+
+          const tbody = document.getElementById('recentActivity');
+          const alerts = json.data.recentAlerts || [];
+          tbody.innerHTML = alerts.slice(0, 10).map(a => \`
+            <tr>
+              <td><span class="badge badge-info">\${a.hazardType || 'Alert'}</span></td>
+              <td>\${a.title || 'N/A'}</td>
+              <td><span class="badge badge-\${getSeverityBadge(a.severity)}">\${a.severity || 'LOW'}</span></td>
+              <td>\${a.targetWoredaName || 'National'}</td>
+              <td>\${formatDate(a.createdAt)}</td>
+            </tr>
+          \`).join('') || '<tr><td colspan="5">No recent activity</td></tr>';
+        }
+      } catch (e) {
+        console.error('Failed to load overview', e);
+      }
+    }
+
+    async function loadUsers() {
+      try {
+        const res = await fetch('/api/v1/admin/users');
+        const json = await res.json();
+        if (json.success) {
+          currentData.users = json.data.users || [];
+          const tbody = document.getElementById('usersTable');
+          tbody.innerHTML = currentData.users.map(u => \`
+            <tr>
+              <td><small>\${u.id.substring(0, 8)}...</small></td>
+              <td>\${u.fullName || 'N/A'}</td>
+              <td>\${u.email || 'N/A'}</td>
+              <td>\${u.phoneNumber || 'N/A'}</td>
+              <td><span class="badge badge-info">\${u.role || 'FARMER'}</span></td>
+              <td><span class="badge badge-\${u.isEmailVerified ? 'success' : 'warning'}">\${u.isEmailVerified ? 'Yes' : 'No'}</span></td>
+              <td>\${u.woreda?.nameEn || 'N/A'}</td>
+              <td>\${u.preferredLang?.toUpperCase() || 'EN'}</td>
+              <td>\${formatDate(u.createdAt)}</td>
+              <td>
+                <div class="actions">
+                  <button class="btn btn-edit" onclick="editUser('\${u.id}')">Edit</button>
+                  <button class="btn btn-danger" onclick="deleteUser('\${u.id}')">Delete</button>
+                </div>
+              </td>
+            </tr>
+          \`).join('') || '<tr><td colspan="10">No users found</td></tr>';
+        }
+      } catch (e) {
+        showToast('Failed to load users', 'error');
+      }
+    }
+
+    async function loadFarms() {
+      try {
+        const res = await fetch('/api/v1/admin/farms');
+        const json = await res.json();
+        if (json.success) {
+          currentData.farms = json.data.farms || [];
+          const tbody = document.getElementById('farmsTable');
+          tbody.innerHTML = currentData.farms.map(f => \`
+            <tr>
+              <td><small>\${f.id.substring(0, 8)}...</small></td>
+              <td>\${f.farmName || 'N/A'}</td>
+              <td>\${f.primaryCrop || 'N/A'}</td>
+              <td>\${f.areaHectares || 0}</td>
+              <td>\${f.latitude?.toFixed(4) || 'N/A'}</td>
+              <td>\${f.longitude?.toFixed(4) || 'N/A'}</td>
+              <td>\${f.owner?.fullName || 'N/A'}</td>
+              <td>\${f.woreda?.nameEn || 'N/A'}</td>
+              <td>\${formatDate(f.createdAt)}</td>
+              <td>
+                <div class="actions">
+                  <button class="btn btn-edit" onclick="editFarm('\${f.id}')">Edit</button>
+                  <button class="btn btn-danger" onclick="deleteFarm('\${f.id}')">Delete</button>
+                </div>
+              </td>
+            </tr>
+          \`).join('') || '<tr><td colspan="10">No farms found</td></tr>';
+        }
+      } catch (e) {
+        showToast('Failed to load farms', 'error');
+      }
+    }
+
+    async function loadSensors() {
+      try {
+        const res = await fetch('/api/v1/admin/sensors');
+        const json = await res.json();
+        if (json.success) {
+          currentData.sensors = json.data.sensors || [];
+          const tbody = document.getElementById('sensorsTable');
+          tbody.innerHTML = currentData.sensors.map(s => \`
+            <tr>
+              <td><small>\${s.id.substring(0, 8)}...</small></td>
+              <td>\${s.hardwareId || 'N/A'}</td>
+              <td>\${s.sensorType || 'N/A'}</td>
+              <td>\${s.farm?.farmName || 'N/A'}</td>
+              <td><span class="badge badge-success">Active</span></td>
+              <td>\${s.lastReading ? formatDate(s.lastReading) : 'Never'}</td>
+              <td>\${formatDate(s.createdAt)}</td>
+              <td>
+                <button class="btn btn-danger" onclick="deleteSensor('\${s.id}')">Delete</button>
+              </td>
+            </tr>
+          \`).join('') || '<tr><td colspan="8">No sensors found</td></tr>';
+        }
+      } catch (e) {
+        showToast('Failed to load sensors', 'error');
+      }
+    }
+
+    async function loadAlerts() {
+      try {
+        const res = await fetch('/api/v1/admin/alerts');
+        const json = await res.json();
+        if (json.success) {
+          currentData.alerts = json.data.alerts || [];
+          const tbody = document.getElementById('alertsTable');
+          tbody.innerHTML = currentData.alerts.map(a => \`
+            <tr>
+              <td><small>\${a.id.substring(0, 8)}...</small></td>
+              <td>\${a.title || 'N/A'}</td>
+              <td><span class="badge badge-info">\${a.hazardType || 'N/A'}</span></td>
+              <td><span class="badge badge-\${getSeverityBadge(a.severity)}">\${a.severity || 'LOW'}</span></td>
+              <td>\${a.targetScope || 'N/A'}</td>
+              <td>\${a.targetWoredaName || 'All'}</td>
+              <td>\${a.deliveryChannels || 'SMS, Push'}</td>
+              <td>\${formatDate(a.createdAt)}</td>
+              <td>
+                <button class="btn btn-danger" onclick="deleteAlert('\${a.id}')">Delete</button>
+              </td>
+            </tr>
+          \`).join('') || '<tr><td colspan="9">No alerts found</td></tr>';
+        }
+      } catch (e) {
+        showToast('Failed to load alerts', 'error');
+      }
+    }
+
+    async function loadDiagnoses() {
+      try {
+        const res = await fetch('/api/v1/admin/diagnoses');
+        const json = await res.json();
+        if (json.success) {
+          currentData.diagnoses = json.data.diagnoses || [];
+          const tbody = document.getElementById('diagnosesTable');
+          tbody.innerHTML = currentData.diagnoses.map(d => \`
+            <tr>
+              <td><small>\${d.id.substring(0, 8)}...</small></td>
+              <td>\${d.cropType || 'N/A'}</td>
+              <td>\${d.disease || 'N/A'}</td>
+              <td>\${(d.confidence * 100).toFixed(0)}%</td>
+              <td>\${d.user?.fullName || 'N/A'}</td>
+              <td>\${d.location || 'N/A'}</td>
+              <td>\${d.imagePath ? '<a href="' + d.imagePath + '" target="_blank">View</a>' : 'N/A'}</td>
+              <td>\${formatDate(d.createdAt)}</td>
+              <td>
+                <button class="btn btn-danger" onclick="deleteDiagnosis('\${d.id}')">Delete</button>
+              </td>
+            </tr>
+          \`).join('') || '<tr><td colspan="9">No diagnoses found</td></tr>';
+        }
+      } catch (e) {
+        showToast('Failed to load diagnoses', 'error');
+      }
+    }
+
+    async function loadSystem() {
+      try {
+        const res = await fetch('/api/v1/admin/health');
+        const json = await res.json();
+        if (json.success) {
+          document.getElementById('systemHealth').innerHTML = \`
+            <div><strong>Database:</strong> <span class="badge badge-success">\${json.data.database || 'Connected'}</span></div>
+            <div><strong>Redis:</strong> <span class="badge badge-success">\${json.data.redis || 'Connected'}</span></div>
+            <div><strong>Uptime:</strong> \${Math.floor((json.data.uptime || 0) / 3600)}h \${Math.floor(((json.data.uptime || 0) % 3600) / 60)}m</div>
+            <div><strong>Memory:</strong> \${Math.floor((json.data.memory || 0) / 1024 / 1024)}MB</div>
+          \`;
+        }
+
+        const logsRes = await fetch('/api/v1/admin/audit-logs?limit=50');
+        const logsJson = await logsRes.json();
+        if (logsJson.success) {
+          const tbody = document.getElementById('auditLogs');
+          tbody.innerHTML = (logsJson.data.logs || []).map(l => \`
+            <tr>
+              <td><span class="badge badge-info">\${l.action || 'N/A'}</span></td>
+              <td>\${l.adminEmail || 'System'}</td>
+              <td>\${l.resourceType || 'N/A'}</td>
+              <td><small>\${l.resourceId?.substring(0, 8) || 'N/A'}</small></td>
+              <td>\${l.ipAddress || 'N/A'}</td>
+              <td>\${formatDateTime(l.createdAt)}</td>
+            </tr>
+          \`).join('') || '<tr><td colspan="6">No logs found</td></tr>';
+        }
+      } catch (e) {
+        showToast('Failed to load system info', 'error');
+      }
+    }
+
+    // Form Submissions
+    async function submitUser() {
+      const userId = document.getElementById('userId').value;
+      const payload = {
+        fullName: document.getElementById('userFullName').value,
+        email: document.getElementById('userEmail').value,
+        phoneNumber: document.getElementById('userPhone').value,
+        role: document.getElementById('userRole').value,
+        preferredLang: document.getElementById('userLang').value,
+        password: 'Password123!',
+      };
+
+      try {
+        const url = userId ? \`/api/v1/admin/users/\${userId}\` : '/api/v1/admin/users';
+        const method = userId ? 'PUT' : 'POST';
+        
+        const res = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        
+        const json = await res.json();
+        if (json.success) {
+          closeModal('userModal');
+          showToast(userId ? 'User updated successfully' : 'User created successfully');
+          loadUsers();
+        } else {
+          showToast(json.message || 'Failed to save user', 'error');
+        }
+      } catch (e) {
+        showToast('Error saving user', 'error');
+      }
+    }
+
+    async function submitFarm() {
+      const farmId = document.getElementById('farmId').value;
+      const payload = {
+        farmName: document.getElementById('farmName').value,
+        primaryCrop: document.getElementById('farmCrop').value,
+        areaHectares: parseFloat(document.getElementById('farmArea').value),
+        latitude: parseFloat(document.getElementById('farmLat').value),
+        longitude: parseFloat(document.getElementById('farmLng').value),
+        woredaId: 'woreda_adama_01',
+      };
+
+      try {
+        const url = farmId ? \`/api/v1/admin/farms/\${farmId}\` : '/api/v1/admin/farms';
+        const method = farmId ? 'PUT' : 'POST';
+        
+        const res = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        
+        const json = await res.json();
+        if (json.success) {
+          closeModal('farmModal');
+          showToast(farmId ? 'Farm updated successfully' : 'Farm registered successfully');
+          loadFarms();
+        } else {
+          showToast(json.message || 'Failed to save farm', 'error');
+        }
+      } catch (e) {
+        showToast('Error saving farm', 'error');
+      }
+    }
+
+    async function submitSensor() {
+      const payload = {
+        hardwareId: document.getElementById('sensorHardwareId').value,
+        sensorType: document.getElementById('sensorType').value,
+      };
+
+      try {
+        const res = await fetch('/api/v1/admin/sensors', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        
+        const json = await res.json();
+        if (json.success) {
+          closeModal('sensorModal');
+          showToast('Sensor added successfully');
+          loadSensors();
+          document.getElementById('sensorForm').reset();
+        } else {
+          showToast(json.message || 'Failed to add sensor', 'error');
+        }
+      } catch (e) {
+        showToast('Error adding sensor', 'error');
+      }
+    }
+
+    async function submitAlert() {
+      const payload = {
+        title: document.getElementById('alertTitle').value,
+        hazardType: document.getElementById('alertHazardType').value,
+        severity: document.getElementById('alertSeverity').value,
+        message: document.getElementById('alertMessage').value,
+        targetScope: document.getElementById('alertScope').value,
+      };
+
+      try {
+        const res = await fetch('/api/v1/admin/broadcast-alert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        
+        const json = await res.json();
+        if (json.success) {
+          closeModal('alertModal');
+          showToast('Alert broadcasted successfully');
+          loadAlerts();
+          document.getElementById('alertForm').reset();
+        } else {
+          showToast(json.message || 'Failed to broadcast alert', 'error');
+        }
+      } catch (e) {
+        showToast('Error broadcasting alert', 'error');
+      }
+    }
+
+    // Edit Functions
+    function editUser(id) {
+      const user = currentData.users.find(u => u.id === id);
+      if (!user) return;
+      
+      document.getElementById('userId').value = user.id;
+      document.getElementById('userFullName').value = user.fullName || '';
+      document.getElementById('userEmail').value = user.email || '';
+      document.getElementById('userPhone').value = user.phoneNumber || '';
+      document.getElementById('userRole').value = user.role || 'FARMER';
+      document.getElementById('userLang').value = user.preferredLang || 'en';
+      document.getElementById('userModalTitle').textContent = 'Edit User';
+      
+      openModal('userModal');
+    }
+
+    function editFarm(id) {
+      const farm = currentData.farms.find(f => f.id === id);
+      if (!farm) return;
+      
+      document.getElementById('farmId').value = farm.id;
+      document.getElementById('farmName').value = farm.farmName || '';
+      document.getElementById('farmCrop').value = farm.primaryCrop || '';
+      document.getElementById('farmArea').value = farm.areaHectares || '';
+      document.getElementById('farmLat').value = farm.latitude || '';
+      document.getElementById('farmLng').value = farm.longitude || '';
+      document.getElementById('farmModalTitle').textContent = 'Edit Farm';
+      
+      openModal('farmModal');
+    }
+
+    // Delete Functions
+    async function deleteUser(id) {
+      if (!confirm('Delete this user?')) return;
+      try {
+        const res = await fetch(\`/api/v1/admin/users/\${id}\`, { method: 'DELETE' });
+        const json = await res.json();
+        if (json.success) {
+          showToast('User deleted');
+          loadUsers();
+        } else {
+          showToast('Failed to delete user', 'error');
+        }
+      } catch (e) {
+        showToast('Error deleting user', 'error');
+      }
+    }
+
+    async function deleteFarm(id) {
+      if (!confirm('Delete this farm?')) return;
+      try {
+        const res = await fetch(\`/api/v1/admin/farms/\${id}\`, { method: 'DELETE' });
+        const json = await res.json();
+        if (json.success) {
+          showToast('Farm deleted');
+          loadFarms();
+        } else {
+          showToast('Failed to delete farm', 'error');
+        }
+      } catch (e) {
+        showToast('Error deleting farm', 'error');
+      }
+    }
+
+    async function deleteSensor(id) {
+      if (!confirm('Delete this sensor?')) return;
+      try {
+        const res = await fetch(\`/api/v1/admin/sensors/\${id}\`, { method: 'DELETE' });
+        const json = await res.json();
+        if (json.success) {
+          showToast('Sensor deleted');
+          loadSensors();
+        } else {
+          showToast('Failed to delete sensor', 'error');
+        }
+      } catch (e) {
+        showToast('Error deleting sensor', 'error');
+      }
+    }
+
+    async function deleteAlert(id) {
+      if (!confirm('Delete this alert?')) return;
+      try {
+        const res = await fetch(\`/api/v1/admin/alerts/\${id}\`, { method: 'DELETE' });
+        const json = await res.json();
+        if (json.success) {
+          showToast('Alert deleted');
+          loadAlerts();
+        } else {
+          showToast('Failed to delete alert', 'error');
+        }
+      } catch (e) {
+        showToast('Error deleting alert', 'error');
+      }
+    }
+
+    async function deleteDiagnosis(id) {
+      if (!confirm('Delete this diagnosis?')) return;
+      try {
+        const res = await fetch(\`/api/v1/admin/diagnoses/\${id}\`, { method: 'DELETE' });
+        const json = await res.json();
+        if (json.success) {
+          showToast('Diagnosis deleted');
+          loadDiagnoses();
+        } else {
+          showToast('Failed to delete diagnosis', 'error');
+        }
+      } catch (e) {
+        showToast('Error deleting diagnosis', 'error');
+      }
+    }
+
+    // Map Functions
+    function initMap() {
+      try {
+        map = L.map('mapContainer').setView([9.145, 40.489], 6);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+      } catch (e) {
+        console.error('Map initialization failed:', e);
+      }
+    }
+
+    async function loadBoundaries(type) {
+      showToast(\`Loading \${type}...\`);
+      try {
+        const res = await fetch(\`/api/v1/boundaries/\${type}\`);
+        const json = await res.json();
+        if (json.success && json.data) {
+          // Clear existing layers
+          map.eachLayer(layer => {
+            if (layer instanceof L.GeoJSON) map.removeLayer(layer);
+          });
+          
+          // Add new boundaries
+          const data = Array.isArray(json.data) ? json.data : [json.data];
+          data.forEach(item => {
+            if (item.geojson || item.boundary) {
+              L.geoJSON(item.geojson || item.boundary, {
+                style: { color: '#10b981', weight: 2, fillOpacity: 0.1 }
+              }).addTo(map).bindPopup(item.nameEn || item.name || 'Boundary');
+            }
+          });
+          
+          showToast(\`\${type} boundaries loaded\`);
+        }
+      } catch (e) {
+        showToast(\`Failed to load \${type}\`, 'error');
+      }
+    }
+
+    // Helper Functions
+    function formatDate(dateString) {
+      if (!dateString) return 'N/A';
+      const date = new Date(dateString);
+      return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    }
+
+    function formatDateTime(dateString) {
+      if (!dateString) return 'N/A';
+      const date = new Date(dateString);
+      return date.toLocaleString('en-US', { 
+        year: 'numeric', month: 'short', day: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+      });
+    }
+
+    function getSeverityBadge(severity) {
+      const map = { LOW: 'success', MODERATE: 'warning', HIGH: 'warning', CRITICAL: 'danger' };
+      return map[severity] || 'success';
+    }
+  </script>
+</body>
+</html>
