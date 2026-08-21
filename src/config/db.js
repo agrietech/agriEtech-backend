@@ -20,8 +20,8 @@ const isRemote =
 const pool = new Pool({
   connectionString: connectionString || 'postgresql://localhost:5432/postgres',
   ssl: isRemote ? { rejectUnauthorized: false } : undefined,
-  max: 20, // Maximum pool size
-  min: 5,  // Minimum pool size
+  max: 10, // Maximum pool size (safely within Supabase pool limit)
+  min: 2,  // Minimum pool size
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
 });

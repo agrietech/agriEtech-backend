@@ -119,7 +119,7 @@ app.get('/api/v1', (_req, res) => {
         header: 'Authorization: Bearer <token>',
       },
       modules: {
-        auth: { path: '/api/v1/auth', description: 'User registration, authentication, token refresh, password management' },
+        auth: { path: '/api/v1/auth', description: 'User registration, authentication, token refresh, password management, role upgrade requests' },
         boundaries: { path: '/api/v1/boundaries', description: 'Administrative regions, zones, and woredas with GeoJSON' },
         farms: { path: '/api/v1/farms', description: 'Farm plot registration, spatial boundaries, crop metadata' },
         sensors: { path: '/api/v1/sensors', description: 'IoT sensor registration, telemetry readings, telemetry history' },
@@ -131,7 +131,7 @@ app.get('/api/v1', (_req, res) => {
         ai: { path: '/api/v1/ai', description: 'Bilingual AI voice assistant, farmer Q&A, text-to-speech' },
         ingestion: { path: '/api/v1/ingestion', description: 'Data connector status, manual pipeline pull triggers' },
         ussd: { path: '/api/v1/delivery/ussd', description: 'Interactive USSD menu handler (*804#)' },
-        admin: { path: '/api/v1/admin', description: 'System administration, user roles, emergency broadcasts, audit logs' },
+        admin: { path: '/api/v1/admin', description: 'System administration, user roles, emergency broadcasts, audit logs, role request approvals' },
       },
       documentation: 'file:///c:/Users/a/Desktop/agriEtech-backend/docs/API_SPECIFICATION.md',
     },
@@ -148,7 +148,7 @@ app.get('/verify-email', (req, res, next) => {
 });
 
 // API feature routes with specialized rate limiters
-app.use('/api/v1/auth', authLimiter, authRoutes);
+app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/boundaries', boundariesRoutes);
 app.use('/api/v1/farms', farmsRoutes);
 app.use('/api/v1/sensors', telemetryLimiter, sensorsRoutes);

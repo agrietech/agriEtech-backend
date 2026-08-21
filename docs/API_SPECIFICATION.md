@@ -75,18 +75,30 @@ All API endpoints return standard JSON envelopes:
 ### 2.1 Register User
 - **Method:** `POST /api/v1/auth/register`
 - **Auth:** Public
+- **Description:** Register a new user with email-first authentication. Email is required for login and verification. Phone number is optional for SMS notifications.
 - **Request Body:**
   ```json
   {
-    "phoneNumber": "+251911223344",
+    "email": "abebe@agrietech.et",
     "fullName": "Abebe Bikila",
     "password": "SecurePassword123!",
-    "email": "farmer@agrietech.et",
+    "phoneNumber": "+251911223344",
     "role": "FARMER",
     "preferredLang": "am",
     "woredaId": "woreda_adama_01"
   }
   ```
+  **Required Fields:**
+  - `email` (string) - Valid email address (used for login)
+  - `fullName` (string) - User's full name
+  - `password` (string) - Minimum 6 characters
+  
+  **Optional Fields:**
+  - `phoneNumber` (string) - E.164 format (e.g., +251911223344)
+  - `role` (string) - FARMER (default), DEVELOPMENT_AGENT, WOREDA_OFFICER, ZONE_OFFICER, REGION_OFFICER, ADMIN
+  - `preferredLang` (string) - 'en' (default) or 'am' (Amharic)
+  - `woredaId` (string) - Woreda ID for location assignment
+
 - **Response (201 Created):**
   ```json
   {
@@ -94,41 +106,67 @@ All API endpoints return standard JSON envelopes:
     "data": {
       "user": {
         "id": "usr_78912",
-        "phoneNumber": "+251911223344",
+        "email": "abebe@agrietech.et",
         "fullName": "Abebe Bikila",
+        "phoneNumber": "+251911223344",
         "role": "FARMER",
-        "emailVerified": false
+        "isEmailVerified": false,
+        "preferredLang": "am"
       },
-      "token": "eyJhbGciOiJIUzI1NiIsIn..."
+      "token": "eyJhbGciOiJIUzI1NiIsIn...",
+      "accessToken": "eyJhbGciOiJIUzI1NiIsIn...",
+      "refreshToken": "ref_9823471928374"
     }
   }
   ```
+  **Notes:**
+  - Verification email sent automatically to the provided email address
+  - User receives JWT token immediately and can login
+  - Some features may require email verification (check `isEmailVerified` status)
 
 ### 2.2 User Login
 - **Method:** `POST /api/v1/auth/login`
 - **Auth:** Public
+- **Description:** Login with email and password. Returns JWT access token and refresh token.
 - **Request Body:**
   ```json
   {
-    "phoneNumber": "+251911223344",
+    "email": "abebe@agrietech.et",
     "password": "SecurePassword123!"
   }
   ```
+  **Required Fields:**
+  - `email` (string) - Registered email address
+  - `password` (string) - User password
+  
+  **Alternative Fields (for backward compatibility):**
+  - Can use `identifier` instead of `email`
+
 - **Response (200 OK):**
   ```json
   {
     "success": true,
     "data": {
       "token": "eyJhbGciOiJIUzI1NiIsIn...",
+      "accessToken": "eyJhbGciOiJIUzI1NiIsIn...",
       "refreshToken": "ref_9823471928374",
       "user": {
         "id": "usr_78912",
+        "email": "abebe@agrietech.et",
         "fullName": "Abebe Bikila",
-        "role": "FARMER"
+        "phoneNumber": "+251911223344",
+        "role": "FARMER",
+        "isEmailVerified": true,
+        "preferredLang": "am"
       }
     }
   }
   ```
+  **Notes:**
+  - Email format is required (must contain '@')
+  - JWT token expires in 24 hours (configurable via JWT_EXPIRES_IN)
+  - Refresh token expires in 30 days
+  - Use access token in `Authorization: Bearer <token>` header for authenticated requests
 
 ### 2.3 Refresh Access Token
 - **Method:** `POST /api/v1/auth/refresh-token`
@@ -148,14 +186,19 @@ All API endpoints return standard JSON envelopes:
 ### 2.4 Forgot Password
 - **Method:** `POST /api/v1/auth/forgot-password`
 - **Auth:** Public
-- **Request Body:** `{"email": "farmer@agrietech.et"}`
+- **Description:** Request a password reset email. A secure reset link is sent to the user's email.
+- **Request Body:** `{"email": "abebe@agrietech.et"}`
 - **Response (200 OK):**
   ```json
   {
     "success": true,
-    "message": "Password reset email sent"
+    "message": "Password reset email sent successfully"
   }
   ```
+  **Notes:**
+  - Reset link expires in 1 hour
+  - Email contains a secure token and link to reset password page
+  - For security, response is same even if email doesn't exist
 
 ### 2.5 Reset Password
 - **Method:** `POST /api/v1/auth/reset-password`
@@ -169,14 +212,44 @@ All API endpoints return standard JSON envelopes:
   ```
 
 ### 2.6 Verify Email
-- **Method:** `POST /api/v1/auth/verify-email` or `GET /api/v1/auth/verify-email?token=...`
+- **Method:** `POST /api/v1/auth/verify-email` or `GET /api/v1/auth/verify-email?token=...&email=...`
 - **Auth:** Public
-- **Request Body/Query:** `{"token": "verification_token"}`
+- **Description:** Verify user's email address using the token from verification email. Supports both API calls and browser link clicks.
+- **Request Body/Query:** `{"token": "verification_token_from_email"}`
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "message": "Email verified successfully"
+    }
+  }
+  ```
+  **Browser GET Response:** HTML page with success/error message and auto-redirect to frontend
+  
+  **Notes:**
+  - Token expires in 24 hours
+  - After verification, user is redirected to FRONTEND_URL
+  - Sets `isEmailVerified: true` in user profile
 
 ### 2.7 Resend Verification Email
 - **Method:** `POST /api/v1/auth/resend-verification`
 - **Auth:** Public
-- **Request Body:** `{"email": "farmer@agrietech.et"}`
+- **Description:** Resend email verification link if user didn't receive it or it expired.
+- **Request Body:** `{"email": "abebe@agrietech.et"}`
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "message": "Verification email sent successfully"
+    }
+  }
+  ```
+  **Notes:**
+  - Generates a new verification token
+  - Previous tokens are invalidated
+  - Can be called multiple times if needed
 
 ### 2.8 Logout
 - **Method:** `POST /api/v1/auth/logout`
@@ -221,6 +294,241 @@ All API endpoints return standard JSON envelopes:
     "newPassword": "NewSecurePass123!"
   }
   ```
+
+### 2.11 Submit Role Upgrade Request
+- **Method:** `POST /api/v1/auth/role-requests`
+- **Auth:** Bearer Token required
+- **Description:** Submit an application to upgrade from FARMER to professional field role (DEVELOPMENT_AGENT, WOREDA_OFFICER, or RESEARCHER). Requires staff credentials and organization affiliation.
+- **Request Body:**
+  ```json
+  {
+    "requestedRole": "DEVELOPMENT_AGENT",
+    "regionId": "reg_oromia",
+    "regionName": "Oromia",
+    "zoneId": "zone_east_shewa",
+    "zoneName": "East Shewa",
+    "woredaId": "woreda_adama_01",
+    "woredaName": "Adama Zuria",
+    "kebeleName": "Wonji Gefersa Kebele 02",
+    "staffIdNumber": "DA-ETH-2026-8812",
+    "organizationName": "Adama Woreda Office of Agriculture"
+  }
+  ```
+  **Required Fields:**
+  - `requestedRole` (string) - Must be one of: DEVELOPMENT_AGENT, WOREDA_OFFICER, RESEARCHER
+  - `regionId`, `regionName` (string) - Regional assignment
+  - `zoneId`, `zoneName` (string) - Zone assignment
+  - `woredaId`, `woredaName` (string) - Woreda assignment
+  - `staffIdNumber` (string) - Employee badge or staff ID
+  - `organizationName` (string) - Official organization name
+  
+  **Optional Fields:**
+  - `kebeleName` (string) - Kebele/community name
+
+- **Response (201 Created):**
+  ```json
+  {
+    "success": true,
+    "message": "Role upgrade request submitted successfully",
+    "data": {
+      "id": "req_123456",
+      "userId": "usr_789",
+      "userName": "Tadesse Bekele",
+      "currentRole": "FARMER",
+      "requestedRole": "DEVELOPMENT_AGENT",
+      "status": "PENDING",
+      "staffIdNumber": "DA-ETH-2026-8812",
+      "organizationName": "Adama Woreda Office of Agriculture",
+      "createdAt": "2026-08-21T16:30:00.000Z"
+    }
+  }
+  ```
+  **Validation Rules:**
+  - User cannot request a role they already have
+  - User cannot have multiple PENDING requests for the same role
+  - Staff ID and organization name are required for verification
+
+### 2.12 Get My Role Requests
+- **Method:** `GET /api/v1/auth/role-requests/my-requests`
+- **Auth:** Bearer Token required
+- **Description:** Retrieve all role upgrade requests submitted by the current user
+- **Query Parameters:**
+  - `status` (optional) - Filter by PENDING, APPROVED, or REJECTED
+  - `limit` (optional) - Results per page (default: 10)
+  - `offset` (optional) - Pagination offset (default: 0)
+
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "requests": [
+        {
+          "id": "req_123456",
+          "currentRole": "FARMER",
+          "requestedRole": "DEVELOPMENT_AGENT",
+          "status": "PENDING",
+          "woredaName": "Adama Zuria",
+          "staffIdNumber": "DA-ETH-2026-8812",
+          "organizationName": "Adama Woreda Office of Agriculture",
+          "createdAt": "2026-08-21T16:30:00.000Z",
+          "reviewedAt": null,
+          "reviewedByName": null,
+          "rejectionReason": null
+        }
+      ],
+      "total": 1,
+      "limit": 10,
+      "offset": 0
+    }
+  }
+  ```
+
+### 2.13 Get Pending Role Requests (Supervisor/Admin)
+- **Method:** `GET /api/v1/auth/role-requests/pending`
+- **Auth:** Bearer Token required (Role: WOREDA_OFFICER or ADMIN)
+- **Description:** Retrieve pending role requests for review. Hierarchical filtering applied based on reviewer role.
+- **Query Parameters:**
+  - `requestedRole` (optional) - Filter by role type
+  - `woredaId` (optional, admin only) - Filter by woreda
+  - `limit` (optional) - Default 20
+  - `offset` (optional) - Default 0
+
+- **Hierarchical Filtering:**
+  - **WOREDA_OFFICER**: Can only see DEVELOPMENT_AGENT requests from their own woreda
+  - **ADMIN**: Can see all requests nationwide with optional filtering
+
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "requests": [
+        {
+          "id": "req_123456",
+          "userId": "usr_789",
+          "userName": "Tadesse Bekele",
+          "userPhone": "+251911223344",
+          "userEmail": "tadesse@example.com",
+          "currentRole": "FARMER",
+          "requestedRole": "DEVELOPMENT_AGENT",
+          "regionName": "Oromia",
+          "zoneName": "East Shewa",
+          "woredaName": "Adama Zuria",
+          "woredaId": "woreda_adama_01",
+          "kebeleName": "Wonji Gefersa Kebele 02",
+          "staffIdNumber": "DA-ETH-2026-8812",
+          "organizationName": "Adama Woreda Office of Agriculture",
+          "status": "PENDING",
+          "createdAt": "2026-08-21T16:30:00.000Z"
+        }
+      ],
+      "total": 1,
+      "limit": 20,
+      "offset": 0
+    }
+  }
+  ```
+
+### 2.14 Approve Role Request
+- **Method:** `POST /api/v1/auth/role-requests/:id/approve`
+- **Auth:** Bearer Token required (Role: WOREDA_OFFICER or ADMIN)
+- **Description:** Approve a role upgrade request. User's role is automatically updated upon approval.
+- **Authorization Rules:**
+  - **WOREDA_OFFICER**: Can only approve DEVELOPMENT_AGENT requests from their own woreda
+  - **ADMIN**: Can approve all role requests nationwide
+
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Role request approved successfully",
+    "data": {
+      "id": "req_123456",
+      "status": "APPROVED",
+      "reviewedById": "usr_reviewer",
+      "reviewedByName": "admin@agrietech.et",
+      "reviewedAt": "2026-08-21T17:00:00.000Z"
+    }
+  }
+  ```
+  **Side Effects:**
+  - User's role automatically updated to requested role
+  - Audit log entry created
+  - User gains immediate access to new role permissions
+
+- **Error Responses:**
+  - `400 Bad Request` - Request already processed
+  - `403 Forbidden` - Cross-woreda approval attempt or insufficient permissions
+  - `404 Not Found` - Request not found
+
+### 2.15 Reject Role Request
+- **Method:** `POST /api/v1/auth/role-requests/:id/reject`
+- **Auth:** Bearer Token required (Role: WOREDA_OFFICER or ADMIN)
+- **Description:** Reject a role upgrade request with reason
+- **Request Body:**
+  ```json
+  {
+    "rejectionReason": "Staff ID verification failed with Woreda HR."
+  }
+  ```
+  **Required Fields:**
+  - `rejectionReason` (string) - Explanation for rejection
+
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Role request rejected",
+    "data": {
+      "id": "req_123456",
+      "status": "REJECTED",
+      "rejectionReason": "Staff ID verification failed with Woreda HR.",
+      "reviewedById": "usr_reviewer",
+      "reviewedByName": "woreda.officer@agrietech.et",
+      "reviewedAt": "2026-08-21T17:15:00.000Z"
+    }
+  }
+  ```
+
+### 2.16 Get Role Request Statistics
+- **Method:** `GET /api/v1/auth/role-requests/stats`
+- **Auth:** Bearer Token required (Role: ADMIN)
+- **Description:** Retrieve system-wide statistics for role requests
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "total": 150,
+      "pending": 25,
+      "approved": 110,
+      "rejected": 15,
+      "byRoleAndStatus": [
+        {
+          "requestedRole": "DEVELOPMENT_AGENT",
+          "status": "APPROVED",
+          "_count": 85
+        },
+        {
+          "requestedRole": "DEVELOPMENT_AGENT",
+          "status": "PENDING",
+          "_count": 20
+        }
+      ]
+    }
+  }
+  ```
+
+**Role Request Approval Hierarchy:**
+
+| Reviewer Role      | Can Approve                           | Geographic Scope        |
+|--------------------|---------------------------------------|-------------------------|
+| FARMER             | ❌ None                                | N/A                     |
+| DEVELOPMENT_AGENT  | ❌ None                                | N/A                     |
+| WOREDA_OFFICER     | ✅ DEVELOPMENT_AGENT only              | Own woreda only         |
+| RESEARCHER         | ❌ None                                | N/A                     |
+| ADMIN              | ✅ All roles                           | Nationwide              |
 
 ---
 
@@ -849,6 +1157,71 @@ All API endpoints return standard JSON envelopes:
 - **System Health Check:** `GET /api/v1/admin/system/health`
 - **Trigger Ingestion Job:** `POST /api/v1/admin/ingestion/trigger` (Body: `{jobType: "pullChirpsRainfall"}`)
 - **Get Audit Logs:** `GET /api/v1/admin/audit-logs?limit=50`
+
+### 14.8 Role Request Management (Hierarchical Approval System)
+
+#### 14.8.1 Get Pending Role Requests
+- **Method:** `GET /api/v1/admin/role-requests`
+- **Auth:** Admin Bearer Token (Role: WOREDA_OFFICER or ADMIN)
+- **Description:** Retrieve pending role upgrade requests for approval. Hierarchical filtering applied automatically.
+- **Query Parameters:**
+  - `status` (optional) - PENDING (default), APPROVED, REJECTED
+  - `requestedRole` (optional) - DEVELOPMENT_AGENT, WOREDA_OFFICER, RESEARCHER
+  - `woredaId` (optional, admin only) - Filter by specific woreda
+  - `limit` (optional) - Default 20
+  - `offset` (optional) - Default 0
+
+- **Hierarchical Filtering:**
+  - **WOREDA_OFFICER**: Automatically filtered to only show DEVELOPMENT_AGENT requests from their own woreda
+  - **ADMIN**: Can view all requests nationwide with optional filters
+
+#### 14.8.2 Approve Role Request
+- **Method:** `POST /api/v1/admin/role-requests/:id/approve`
+- **Auth:** Admin Bearer Token (Role: WOREDA_OFFICER or ADMIN)
+- **Description:** Approve role upgrade request and automatically update user's role
+- **Response:** `{ "success": true, "message": "Role request approved successfully", "data": {...} }`
+- **Side Effects:**
+  - User role updated to requested role
+  - Request status changed to APPROVED
+  - Audit log entry created
+  - User immediately gains new permissions
+
+#### 14.8.3 Reject Role Request
+- **Method:** `POST /api/v1/admin/role-requests/:id/reject`
+- **Auth:** Admin Bearer Token (Role: WOREDA_OFFICER or ADMIN)
+- **Description:** Reject role upgrade request with documented reason
+- **Request Body:**
+  ```json
+  {
+    "rejectionReason": "Staff ID verification failed with Woreda HR."
+  }
+  ```
+- **Response:** `{ "success": true, "message": "Role request rejected", "data": {...} }`
+
+#### 14.8.4 Get Role Request Statistics
+- **Method:** `GET /api/v1/admin/role-requests/stats`
+- **Auth:** Admin Bearer Token (Role: ADMIN only)
+- **Description:** System-wide role request statistics and analytics
+- **Response:**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "total": 150,
+      "pending": 25,
+      "approved": 110,
+      "rejected": 15,
+      "byRoleAndStatus": [...]
+    }
+  }
+  ```
+
+**Role Request Workflow:**
+1. Field worker submits application via `POST /api/v1/auth/role-requests`
+2. Supervisor reviews via `GET /api/v1/admin/role-requests`
+3. Supervisor approves/rejects via `POST /api/v1/admin/role-requests/:id/approve` or `/reject`
+4. System automatically updates user role and permissions on approval
+5. Applicant receives immediate access to new role features
 
 ---
 

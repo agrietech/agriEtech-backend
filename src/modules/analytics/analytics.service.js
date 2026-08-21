@@ -178,60 +178,61 @@ async function getRegionalBreakdown() {
         orderBy: { nameEn: 'asc' },
       });
 
-      const results = [];
-
-      for (const region of regions) {
-        const woredaIds = [];
-        let farmCount = 0;
-        for (const zone of region.zones) {
-          for (const woreda of zone.woredas) {
-            woredaIds.push(woreda.id);
-            farmCount += woreda._count.farms;
+      const results = await Promise.all(
+        regions.map(async (region) => {
+          const woredaIds = [];
+          let farmCount = 0;
+          for (const zone of region.zones) {
+            for (const woreda of zone.woredas) {
+              woredaIds.push(woreda.id);
+              farmCount += woreda._count.farms;
+            }
           }
-        }
 
-        if (woredaIds.length === 0) continue;
+          if (woredaIds.length === 0) return null;
 
-        const rainfallAgg = await prisma.satelliteObservation.aggregate({
-          _avg: { chirpsRainfallMm: true },
-          where: {
-            woredaId: { in: woredaIds },
-            source: 'CHIRPS',
-            observationDate: { gte: new Date(Date.now() - 30 * 86400000) },
-          },
-        });
+          const [rainfallAgg, ndviAgg, latestRisk] = await Promise.all([
+            prisma.satelliteObservation.aggregate({
+              _avg: { chirpsRainfallMm: true },
+              where: {
+                woredaId: { in: woredaIds },
+                source: 'CHIRPS',
+                observationDate: { gte: new Date(Date.now() - 30 * 86400000) },
+              },
+            }),
+            prisma.satelliteObservation.aggregate({
+              _avg: { modisNdvi: true },
+              where: {
+                woredaId: { in: woredaIds },
+                source: { in: ['MODIS', 'MODIS_NDVI'] },
+                observationDate: { gte: new Date(Date.now() - 30 * 86400000) },
+              },
+            }),
+            prisma.riskAssessment.findFirst({
+              where: { woredaId: { in: woredaIds } },
+              orderBy: { createdAt: 'desc' },
+              select: { alertLevel: true },
+            }),
+          ]);
 
-        const ndviAgg = await prisma.satelliteObservation.aggregate({
-          _avg: { modisNdvi: true },
-          where: {
-            woredaId: { in: woredaIds },
-            source: { in: ['MODIS', 'MODIS_NDVI'] },
-            observationDate: { gte: new Date(Date.now() - 30 * 86400000) },
-          },
-        });
+          return {
+            region: region.nameEn,
+            regionCode: region.code,
+            monitoredFarms: farmCount,
+            monitoredWoredas: woredaIds.length,
+            avgRainfallMm: rainfallAgg._avg.chirpsRainfallMm
+              ? Math.round(rainfallAgg._avg.chirpsRainfallMm * 10) / 10
+              : 35.0,
+            avgNdvi: ndviAgg._avg.modisNdvi
+              ? Math.round(ndviAgg._avg.modisNdvi * 1000) / 1000
+              : 0.55,
+            alertStatus: latestRisk?.alertLevel || 'LOW',
+          };
+        })
+      );
 
-        const latestRisk = await prisma.riskAssessment.findFirst({
-          where: { woredaId: { in: woredaIds } },
-          orderBy: { assessedAt: 'desc' },
-          select: { alertLevel: true },
-        });
-
-        results.push({
-          region: region.nameEn,
-          regionCode: region.code,
-          monitoredFarms: farmCount,
-          monitoredWoredas: woredaIds.length,
-          avgRainfallMm: rainfallAgg._avg.chirpsRainfallMm
-            ? Math.round(rainfallAgg._avg.chirpsRainfallMm * 10) / 10
-            : 35.0,
-          avgNdvi: ndviAgg._avg.modisNdvi
-            ? Math.round(ndviAgg._avg.modisNdvi * 1000) / 1000
-            : 0.55,
-          alertStatus: latestRisk?.alertLevel || 'LOW',
-        });
-      }
-
-      if (results.length > 0) return results;
+      const filtered = results.filter(Boolean);
+      if (filtered.length > 0) return filtered;
     } catch (_err) {
       // Fallback
     }

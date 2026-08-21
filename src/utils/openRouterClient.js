@@ -25,7 +25,7 @@ class OpenRouterClient {
     messages,
     temperature = 0.2,
     responseFormat = null,
-    maxTokens = 2500,
+    maxTokens = 1200,
     model = null,
   }) {
     const targetModel = model || this.model;

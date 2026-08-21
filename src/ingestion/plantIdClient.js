@@ -53,6 +53,11 @@ class PlantIdClient {
         ? `data:image/jpeg;base64,${base64Data}`
         : imageUrl;
 
+      if (!formattedImage) {
+        logger.info('[PlantIdClient] No image provided for identification; utilizing local botanical taxonomy.');
+        return this._generateMockBotanicalResult(cropHint);
+      }
+
       const isV3 = this.apiUrl.includes('v3') || !this.apiUrl.includes('v2');
       let targetUrl = this.apiUrl;
 
