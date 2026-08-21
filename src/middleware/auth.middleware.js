@@ -3,7 +3,7 @@ const env = require('../config/env');
 const { isTokenBlacklisted } = require('../modules/auth/auth.service');
 
 // Authenticate JWT bearer token
-function authenticate(req, res, next) {
+async function authenticate(req, res, next) {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -17,7 +17,9 @@ function authenticate(req, res, next) {
 
     const token = authHeader.substring(7);
 
-    if (isTokenBlacklisted(token)) {
+    // Check token blacklist (async Redis check)
+    const isBlacklisted = await isTokenBlacklisted(token);
+    if (isBlacklisted) {
       return res
         .status(401)
         .json({

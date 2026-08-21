@@ -33,8 +33,8 @@ const mockUsers = new Map([
   ],
 ]);
 
-// Token blacklist
-const tokenBlacklist = new Set();
+// Token blacklist - Redis-backed for persistence
+const redis = require('../../config/redis');
 
 // Helper to validate email format
 function isValidEmail(email) {
@@ -71,7 +71,7 @@ function generateAccessToken(user) {
       type: 'access',
     },
     env.JWT_SECRET,
-    { expiresIn: env.JWT_EXPIRES_IN || '7d' }
+    { expiresIn: env.JWT_EXPIRES_IN || '24h' }
   );
 }
 
@@ -128,58 +128,54 @@ async function registerUser({
     : null;
 
   if (isConnected()) {
-    try {
-      if (resolvedEmail) {
-        const existingEmail = await prisma.user.findFirst({
-          where: { email: resolvedEmail },
-        });
-        if (existingEmail) {
-          throw new ConflictError('User with this email already exists');
-        }
-      }
-
-      if (resolvedPhone) {
-        const existingPhone = await prisma.user.findFirst({
-          where: { phoneNumber: resolvedPhone },
-        });
-        if (existingPhone) {
-          throw new ConflictError('User with this phone number already exists');
-        }
-      }
-
-      const user = await prisma.user.create({
-        data: {
-          email: resolvedEmail,
-          phoneNumber: resolvedPhone,
-          fullName: resolvedName,
-          passwordHash,
-          role,
-          woredaId: woredaId || null,
-          preferredLang,
-          verificationToken,
-        },
+    if (resolvedEmail) {
+      const existingEmail = await prisma.user.findFirst({
+        where: { email: resolvedEmail },
       });
-
-      if (resolvedEmail && verificationToken) {
-        try {
-          await _sendVerificationEmail(resolvedEmail, verificationToken);
-        } catch (emailErr) {
-          logger.warn(`[Auth Service] Verification email failed to send: ${emailErr.message}`);
-        }
+      if (existingEmail) {
+        throw new ConflictError('User with this email already exists');
       }
-
-      const accessToken = generateAccessToken(user);
-      const refreshToken = generateRefreshToken(user);
-
-      return {
-        user: sanitizeUser(user),
-        accessToken,
-        refreshToken,
-      };
-    } catch (err) {
-      if (err instanceof ConflictError || err instanceof BadRequestError) throw err;
-      // Fallback
     }
+
+    if (resolvedPhone) {
+      const existingPhone = await prisma.user.findFirst({
+        where: { phoneNumber: resolvedPhone },
+      });
+      if (existingPhone) {
+        throw new ConflictError('User with this phone number already exists');
+      }
+    }
+
+    const user = await prisma.user.create({
+      data: {
+        email: resolvedEmail,
+        phoneNumber: resolvedPhone,
+        fullName: resolvedName,
+        passwordHash,
+        role,
+        woredaId: woredaId || null,
+        preferredLang,
+        verificationToken,
+      },
+    });
+
+    if (resolvedEmail && verificationToken) {
+      try {
+        await _sendVerificationEmail(resolvedEmail, verificationToken);
+      } catch (emailErr) {
+        logger.warn(`[Auth Service] Verification email failed to send: ${emailErr.message}`);
+      }
+    }
+
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken(user);
+
+    return {
+      user: sanitizeUser(user),
+      token: accessToken,
+      accessToken,
+      refreshToken,
+    };
   }
 
   // Fallback in-memory registration
@@ -221,6 +217,7 @@ async function registerUser({
 
   return {
     user: sanitizeUser(fallbackUser),
+    token: accessToken,
     accessToken,
     refreshToken,
   };
@@ -258,7 +255,7 @@ async function loginUser({ email, phoneNumber, phone, identifier, password }) {
   }
 
   if (!user) {
-    user = mockUsers.get(normalizedEmail) || mockUsers.get(rawIdentifier) || mockUsers.get('farmer@agrietech.et');
+    user = mockUsers.get(normalizedEmail) || mockUsers.get(rawIdentifier);
   }
 
   if (!user) {
@@ -266,7 +263,7 @@ async function loginUser({ email, phoneNumber, phone, identifier, password }) {
   }
 
   const isMatch = await bcrypt.compare(password, user.passwordHash || '').catch(() => false);
-  if (!isMatch && password !== 'Password123!' && password !== 'password123' && password !== 'BrandNewPassword456!') {
+  if (!isMatch) {
     throw new UnauthorizedError('Invalid credentials');
   }
 
@@ -275,6 +272,7 @@ async function loginUser({ email, phoneNumber, phone, identifier, password }) {
 
   return {
     user: sanitizeUser(user),
+    token: accessToken,
     accessToken,
     refreshToken,
   };
@@ -582,28 +580,53 @@ async function refreshAccessToken(refreshToken) {
   }
 
   const newAccessToken = generateAccessToken(user);
-  return { accessToken: newAccessToken };
+  return { token: newAccessToken, accessToken: newAccessToken };
 }
 
 async function logout(token) {
   if (token) {
-    tokenBlacklist.add(token);
+    try {
+      const decoded = jwt.decode(token);
+      if (decoded && decoded.exp) {
+        const ttl = decoded.exp - Math.floor(Date.now() / 1000);
+        if (ttl > 0 && redis && typeof redis.setex === 'function') {
+          await redis.setex(`blacklist:${token}`, ttl, '1');
+        }
+      }
+    } catch (err) {
+      logger.warn(`[Auth Service] Failed to blacklist token: ${err.message}`);
+    }
   }
   return { message: 'Logged out successfully' };
 }
 
 async function logoutUser(accessToken, refreshToken) {
+  const promises = [];
+  
   if (accessToken) {
-    tokenBlacklist.add(accessToken);
+    promises.push(logout(accessToken));
   }
   if (refreshToken) {
-    tokenBlacklist.add(refreshToken);
+    promises.push(logout(refreshToken));
   }
+  
+  await Promise.all(promises);
   return { message: 'Logged out successfully' };
 }
 
-function isTokenBlacklisted(token) {
-  return tokenBlacklist.has(token);
+async function isTokenBlacklisted(token) {
+  if (!token) return false;
+  
+  try {
+    if (redis && typeof redis.get === 'function') {
+      const result = await redis.get(`blacklist:${token}`);
+      return result !== null;
+    }
+  } catch (_err) {
+    logger.warn('[Auth Service] Redis blacklist check failed, allowing token');
+  }
+  
+  return false;
 }
 
 async function getUserProfile(userId) {
