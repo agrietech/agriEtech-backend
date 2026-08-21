@@ -104,6 +104,39 @@ app.get('/', (_req, res) => {
   });
 });
 
+// API v1 root catalog index
+app.get('/api/v1', (_req, res) => {
+  res.status(200).json({
+    success: true,
+    data: {
+      name: 'AgriEtech Multi-Hazard Early Warning Platform API',
+      version: '1.0.0',
+      status: 'ONLINE',
+      baseUrl: '/api/v1',
+      authentication: {
+        type: 'Bearer JWT',
+        header: 'Authorization: Bearer <token>',
+      },
+      modules: {
+        auth: { path: '/api/v1/auth', description: 'User registration, authentication, token refresh, password management' },
+        boundaries: { path: '/api/v1/boundaries', description: 'Administrative regions, zones, and woredas with GeoJSON' },
+        farms: { path: '/api/v1/farms', description: 'Farm plot registration, spatial boundaries, crop metadata' },
+        sensors: { path: '/api/v1/sensors', description: 'IoT sensor registration, telemetry readings, telemetry history' },
+        satelliteObservations: { path: '/api/v1/satellite-observations', description: 'CHIRPS rainfall, NASA POWER, NDVI, GloFAS river discharge' },
+        riskAssessments: { path: '/api/v1/risk-assessments', description: 'Multi-hazard SPI drought, flood, locust, vegetation risk calculation' },
+        alerts: { path: '/api/v1/alerts', description: 'Early warning alert generation, advisory dispatch, push notifications' },
+        diseaseDiagnosis: { path: '/api/v1/disease-diagnosis', description: 'Plant.id botanical identification + Gemini 2.5 Flash multimodal vision' },
+        analytics: { path: '/api/v1/analytics', description: 'Executive dashboard analytics, regional breakdown, temporal trends' },
+        ai: { path: '/api/v1/ai', description: 'Bilingual AI voice assistant, farmer Q&A, text-to-speech' },
+        ingestion: { path: '/api/v1/ingestion', description: 'Data connector status, manual pipeline pull triggers' },
+        ussd: { path: '/api/v1/delivery/ussd', description: 'Interactive USSD menu handler (*804#)' },
+        admin: { path: '/api/v1/admin', description: 'System administration, user roles, emergency broadcasts, audit logs' },
+      },
+      documentation: 'file:///c:/Users/a/Desktop/agriEtech-backend/docs/API_SPECIFICATION.md',
+    },
+  });
+});
+
 // Web Admin Dashboard UI
 app.use('/admin', adminRoutes);
 

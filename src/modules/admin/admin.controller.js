@@ -119,22 +119,22 @@ function renderDashboard(_req, res) {
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg-base: #070b09;
-      --bg-surface: #0e1511;
-      --bg-surface-elevated: #141f19;
-      --bg-card: rgba(16, 26, 20, 0.75);
-      --bg-card-hover: rgba(22, 36, 28, 0.85);
-      --border-subtle: rgba(34, 197, 94, 0.15);
-      --border-focus: #22c55e;
-      --accent-emerald: #10b981;
-      --accent-green: #22c55e;
+      --bg-base: #0a1420;
+      --bg-surface: #0f1925;
+      --bg-surface-elevated: #15202e;
+      --bg-card: rgba(20, 32, 48, 0.75);
+      --bg-card-hover: rgba(28, 44, 64, 0.85);
+      --border-subtle: rgba(56, 189, 248, 0.15);
+      --border-focus: #38bdf8;
+      --accent-sky: #38bdf8;
+      --accent-blue: #0ea5e9;
       --accent-cyan: #06b6d4;
       --accent-amber: #f59e0b;
       --accent-rose: #f43f5e;
       --accent-purple: #a855f7;
       --text-main: #f9fafb;
-      --text-secondary: #9ca3af;
-      --text-tertiary: #6b7280;
+      --text-secondary: #94a3b8;
+      --text-tertiary: #64748b;
       --sidebar-width: 260px;
       --header-height: 68px;
     }
@@ -174,16 +174,16 @@ function renderDashboard(_req, res) {
     .brand-icon {
       width: 38px;
       height: 38px;
-      background: linear-gradient(135deg, #10b981, #047857);
+      background: linear-gradient(135deg, #38bdf8, #0ea5e9);
       border-radius: 10px;
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 20px;
-      box-shadow: 0 0 15px rgba(16, 185, 129, 0.35);
+      box-shadow: 0 0 15px rgba(56, 189, 248, 0.35);
     }
     .brand-name { font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 17px; letter-spacing: -0.3px; color: #fff; }
-    .brand-sub { font-size: 10px; color: var(--accent-green); text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px; }
+    .brand-sub { font-size: 10px; color: var(--accent-sky); text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px; }
 
     .sidebar-nav { padding: 16px 12px; display: flex; flex-direction: column; gap: 4px; flex: 1; overflow-y: auto; }
     .nav-section-title { font-size: 10px; font-weight: 700; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 1px; padding: 12px 12px 6px; }
@@ -205,11 +205,11 @@ function renderDashboard(_req, res) {
     .nav-item:hover { color: #fff; background: rgba(255,255,255,0.04); }
     .nav-item.active {
       color: #fff;
-      background: linear-gradient(90deg, rgba(34, 197, 94, 0.15), rgba(34, 197, 94, 0.03));
-      border-color: rgba(34, 197, 94, 0.3);
+      background: linear-gradient(90deg, rgba(56, 189, 248, 0.15), rgba(56, 189, 248, 0.03));
+      border-color: rgba(56, 189, 248, 0.3);
       font-weight: 600;
     }
-    .nav-item.active .nav-icon { color: var(--accent-green); transform: scale(1.1); }
+    .nav-item.active .nav-icon { color: var(--accent-sky); transform: scale(1.1); }
     .nav-icon { font-size: 16px; transition: transform 0.2s; }
     .nav-badge {
       margin-left: auto;
@@ -220,7 +220,7 @@ function renderDashboard(_req, res) {
       color: var(--text-secondary);
       font-weight: 600;
     }
-    .nav-item.active .nav-badge { background: rgba(34, 197, 94, 0.25); color: var(--accent-green); }
+    .nav-item.active .nav-badge { background: rgba(56, 189, 248, 0.25); color: var(--accent-sky); }
 
     .sidebar-footer {
       padding: 16px;
@@ -234,7 +234,7 @@ function renderDashboard(_req, res) {
       width: 36px;
       height: 36px;
       border-radius: 50%;
-      background: linear-gradient(135deg, #059669, #0d9488);
+      background: linear-gradient(135deg, #0ea5e9, #0284c7);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -244,7 +244,7 @@ function renderDashboard(_req, res) {
     }
     .admin-info { flex: 1; min-width: 0; }
     .admin-name { font-size: 13px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .admin-role { font-size: 11px; color: var(--accent-green); font-weight: 500; }
+    .admin-role { font-size: 11px; color: var(--accent-sky); font-weight: 500; }
 
     /* Main Content Area */
     main.main-viewport {
@@ -253,8 +253,8 @@ function renderDashboard(_req, res) {
       flex-direction: column;
       height: 100vh;
       overflow-y: auto;
-      background: radial-gradient(circle at 80% 10%, rgba(16, 185, 129, 0.05) 0%, transparent 60%),
-                  radial-gradient(circle at 10% 80%, rgba(6, 182, 212, 0.04) 0%, transparent 60%),
+      background: radial-gradient(circle at 80% 10%, rgba(56, 189, 248, 0.05) 0%, transparent 60%),
+                  radial-gradient(circle at 10% 80%, rgba(14, 165, 233, 0.04) 0%, transparent 60%),
                   var(--bg-base);
     }
 
@@ -282,18 +282,18 @@ function renderDashboard(_req, res) {
       gap: 7px;
       padding: 5px 12px;
       border-radius: 20px;
-      background: rgba(34, 197, 94, 0.1);
-      border: 1px solid rgba(34, 197, 94, 0.25);
+      background: rgba(56, 189, 248, 0.1);
+      border: 1px solid rgba(56, 189, 248, 0.25);
       font-size: 12px;
       font-weight: 600;
-      color: var(--accent-green);
+      color: var(--accent-sky);
     }
     .pulse-dot {
       width: 7px;
       height: 7px;
       border-radius: 50%;
-      background: var(--accent-green);
-      box-shadow: 0 0 8px var(--accent-green);
+      background: var(--accent-sky);
+      box-shadow: 0 0 8px var(--accent-sky);
       animation: pulse 2s infinite;
     }
     @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(1.2); } }
@@ -334,7 +334,7 @@ function renderDashboard(_req, res) {
       overflow: hidden;
       transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     }
-    .kpi-card:hover { transform: translateY(-3px); border-color: rgba(34, 197, 94, 0.4); box-shadow: 0 12px 28px rgba(0,0,0,0.4); }
+    .kpi-card:hover { transform: translateY(-3px); border-color: rgba(56, 189, 248, 0.4); box-shadow: 0 12px 28px rgba(0,0,0,0.4); }
     .kpi-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
     .kpi-label { font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
     .kpi-icon-wrap {
@@ -349,7 +349,7 @@ function renderDashboard(_req, res) {
       border: 1px solid rgba(255,255,255,0.08);
     }
     .kpi-value { font-family: 'Outfit', sans-serif; font-size: 32px; font-weight: 700; color: #fff; letter-spacing: -0.5px; }
-    .kpi-footnote { font-size: 11px; color: var(--accent-green); margin-top: 6px; font-weight: 500; display: flex; align-items: center; gap: 4px; }
+    .kpi-footnote { font-size: 11px; color: var(--accent-sky); margin-top: 6px; font-weight: 500; display: flex; align-items: center; gap: 4px; }
 
     /* Panels & Tables */
     .panel {
@@ -414,7 +414,7 @@ function renderDashboard(_req, res) {
       outline: none;
       transition: border-color 0.2s, box-shadow 0.2s;
     }
-    .input-field:focus { border-color: var(--accent-green); box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.15); }
+    .input-field:focus { border-color: var(--accent-sky); box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.15); }
     .input-field::placeholder { color: var(--text-tertiary); }
 
     /* Action Buttons */

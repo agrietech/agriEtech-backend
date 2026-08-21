@@ -4,7 +4,7 @@
  */
 
 require('dotenv').config();
-const { PrismaClient } = require('@prisma/client');
+const { prisma } = require('../src/config/db');
 const axios = require('axios');
 const redis = require('../src/config/redis');
 const { openMeteoConnector, nasaPowerConnector, faoLocustConnector } = require('../src/ingestion/connectors');
@@ -27,7 +27,6 @@ async function runDiagnostics() {
 
   // 1. Database Check
   console.log('1. Testing Database Connection (PostgreSQL / Supabase)...');
-  const prisma = new PrismaClient();
   try {
     const startTime = Date.now();
     await prisma.$connect();

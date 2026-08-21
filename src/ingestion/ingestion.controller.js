@@ -49,8 +49,57 @@ async function getConnectorsList(_req, res, next) {
   }
 }
 
+// Test API connectivity for all connectors
+async function testConnectorHealth(req, res, next) {
+  try {
+    const testCoords = { lat: 9.0320, lng: 38.7469 };
+    const results = {};
+
+    // Test Open-Meteo (fast)
+    try {
+      await connectors.openMeteoConnector.fetchForecast(testCoords);
+      results.openMeteo = { status: 'WORKING', requiresKey: false };
+    } catch (err) {
+      results.openMeteo = { status: 'FAILED', error: err.message };
+    }
+
+    // Test SoilGrids (fast)
+    try {
+      await connectors.soilGridsConnector.fetchSoilProperties(testCoords);
+      results.soilGrids = { status: 'WORKING', requiresKey: false };
+    } catch (err) {
+      results.soilGrids = { status: 'FAILED', error: err.message };
+    }
+
+    // Test Open-Elevation (fast)
+    try {
+      await connectors.openElevationConnector.fetchElevation(testCoords);
+      results.openElevation = { status: 'WORKING', requiresKey: false };
+    } catch (err) {
+      results.openElevation = { status: 'FAILED', error: err.message };
+    }
+
+    // Check Plant.id configuration
+    const plantIdClient = require('./plantIdClient');
+    results.plantId = {
+      status: plantIdClient.isConfigured() ? 'CONFIGURED' : 'NOT_CONFIGURED',
+      requiresKey: true
+    };
+
+    res.status(200).json({
+      success: true,
+      message: 'API health check completed',
+      totalConnectors: Object.keys(connectors).length + 1,
+      results
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   triggerPull,
   ingestTelemetry,
   getConnectorsList,
+  testConnectorHealth,
 };

@@ -68,12 +68,14 @@ class PlantIdClient {
           classification_level: 'species',
         };
 
+        const requestTimeout = process.env.NODE_ENV === 'test' ? 3000 : 15000;
+
         const response = await axios.post(targetUrl, payload, {
           headers: {
             'Api-Key': this.apiKey,
             'Content-Type': 'application/json',
           },
-          timeout: 25000,
+          timeout: requestTimeout,
         });
 
         return this._parsePlantIdV3Response(response.data, cropHint);
@@ -91,9 +93,11 @@ class PlantIdClient {
           disease_details: ['cause', 'common_names', 'description', 'treatment'],
         };
 
+        const requestTimeout = process.env.NODE_ENV === 'test' ? 3000 : 15000;
+
         const response = await axios.post(targetUrl, payload, {
           headers: { 'Content-Type': 'application/json' },
-          timeout: 25000,
+          timeout: requestTimeout,
         });
 
         return this._parsePlantIdV2Response(response.data, cropHint);

@@ -47,6 +47,7 @@ class OpenRouterClient {
         payload.response_format = { type: 'json_object' };
       }
 
+      const requestTimeout = process.env.NODE_ENV === 'test' ? 3000 : 15000;
       const response = await axios.post(`${this.baseUrl}/chat/completions`, payload, {
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
@@ -54,7 +55,7 @@ class OpenRouterClient {
           'X-Title': 'AgriEtech Multi-Hazard Platform',
           'Content-Type': 'application/json',
         },
-        timeout: 45000,
+        timeout: requestTimeout,
       });
 
       const choice = response.data?.choices?.[0];
