@@ -329,15 +329,40 @@ All API endpoints return standard JSON envelopes:
 
 ### 14.1 Web Dashboard UI
 - **Method:** `GET /admin/dashboard`
-- **Auth:** Web Session / Admin Cookie
+- **Auth:** Web Session / Admin Bearer Token
 
-### 14.2 Trigger Ingestion Job
-- **Method:** `POST /api/v1/admin/ingestion/trigger`
-- **Auth:** Bearer Token (`ADMIN`)
+### 14.2 User Management CRUD
+- **List Users:** `GET /api/v1/admin/users?page=1&limit=20&search=abebe`
+- **Create User:** `POST /api/v1/admin/users` (Body: `{fullName, phoneNumber, email, role, woredaId}`)
+- **Update User:** `PUT /api/v1/admin/users/:id` (Body: `{fullName, phoneNumber, email, role, woredaId}`)
+- **Update Role:** `PATCH /api/v1/admin/users/:id/role` (Body: `{role: "DEVELOPMENT_AGENT"}`)
+- **Toggle Verification:** `PATCH /api/v1/admin/users/:id/status` (Body: `{isEmailVerified: true}`)
+- **Delete User:** `DELETE /api/v1/admin/users/:id`
 
-### 14.3 Emergency Alert Broadcast
-- **Method:** `POST /api/v1/admin/broadcast-alert`
-- **Auth:** Bearer Token (`ADMIN`)
+### 14.3 Farm Plot Management CRUD
+- **List Farms:** `GET /api/v1/admin/farms?page=1&limit=20`
+- **Create Farm Plot:** `POST /api/v1/admin/farms` (Body: `{farmName, primaryCrop, areaHectares, latitude, longitude}`)
+- **Update Farm Plot:** `PUT /api/v1/admin/farms/:id`
+- **Delete Farm Plot:** `DELETE /api/v1/admin/farms/:id`
+
+### 14.4 IoT Sensor Network CRUD
+- **List Sensors:** `GET /api/v1/admin/sensors?page=1&limit=20`
+- **Register Sensor:** `POST /api/v1/admin/sensors` (Body: `{hardwareId, sensorType, farmId}`)
+- **Delete Sensor:** `DELETE /api/v1/admin/sensors/:id`
+
+### 14.5 Alert Management & Emergency Broadcast
+- **List Alerts:** `GET /api/v1/admin/alerts?page=1&limit=20`
+- **Broadcast Alert:** `POST /api/v1/admin/broadcast-alert` (Body: `{woredaId, hazardType, severity, titleEn, messageEn}`)
+- **Delete Alert:** `DELETE /api/v1/admin/alerts/:id`
+
+### 14.6 Crop Disease Diagnoses
+- **List Diagnoses:** `GET /api/v1/admin/diagnoses?page=1&limit=20`
+- **Delete Diagnosis:** `DELETE /api/v1/admin/diagnoses/:id`
+
+### 14.7 System Health, Pipeline Trigger & Audit Trail
+- **System Health Check:** `GET /api/v1/admin/system/health`
+- **Trigger Ingestion Job:** `POST /api/v1/admin/ingestion/trigger` (Body: `{jobType: "pullChirpsRainfall"}`)
+- **Get Audit Logs:** `GET /api/v1/admin/audit-logs?limit=50`
 
 ---
 
