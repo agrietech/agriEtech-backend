@@ -19,12 +19,13 @@
 8. [Early Warning Alerts (`/alerts`)](#8-early-warning-alerts-alerts)
 9. [AI Crop Disease Diagnosis (`/disease-diagnosis`)](#9-ai-crop-disease-diagnosis-disease-diagnosis)
 10. [Analytics & Agronomic Advisories (`/analytics`)](#10-analytics--agronomic-advisories-analytics)
-11. [AI Voice & Multimodal Assistant (`/ai`)](#11-ai-voice--multimodal-assistant-ai)
-12. [Data Ingestion Pipeline (`/ingestion`)](#12-data-ingestion-pipeline-ingestion)
-13. [USSD Interactive Menu (`/delivery/ussd`)](#13-ussd-interactive-menu-deliveryussd)
-14. [Admin & Audit Control (`/admin`)](#14-admin--audit-control-admin)
-15. [WebSocket Real-Time Gateway](#15-websocket-real-time-gateway)
-16. [Error Handling & Status Codes](#16-error-handling--status-codes)
+11. [Location-Based Map & Analytics (`/analytics/location`)](#10a-location-based-map--analytics-analyticslocation)
+12. [AI Voice & Multimodal Assistant (`/ai`)](#11-ai-voice--multimodal-assistant-ai)
+13. [Data Ingestion Pipeline (`/ingestion`)](#12-data-ingestion-pipeline-ingestion)
+14. [USSD Interactive Menu (`/delivery/ussd`)](#13-ussd-interactive-menu-deliveryussd)
+15. [Admin & Audit Control (`/admin`)](#14-admin--audit-control-admin)
+16. [WebSocket Real-Time Gateway](#15-websocket-real-time-gateway)
+17. [Error Handling & Status Codes](#16-error-handling--status-codes)
 
 ---
 
@@ -133,10 +134,93 @@ All API endpoints return standard JSON envelopes:
 - **Method:** `POST /api/v1/auth/refresh-token`
 - **Auth:** Public
 - **Request Body:** `{"refreshToken": "ref_9823471928374"}`
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "token": "eyJhbGciOiJIUzI1NiIsIn...",
+      "refreshToken": "ref_new_token"
+    }
+  }
+  ```
 
-### 2.4 Get Profile
+### 2.4 Forgot Password
+- **Method:** `POST /api/v1/auth/forgot-password`
+- **Auth:** Public
+- **Request Body:** `{"email": "farmer@agrietech.et"}`
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Password reset email sent"
+  }
+  ```
+
+### 2.5 Reset Password
+- **Method:** `POST /api/v1/auth/reset-password`
+- **Auth:** Public
+- **Request Body:**
+  ```json
+  {
+    "token": "reset_token_from_email",
+    "newPassword": "NewSecurePass123!"
+  }
+  ```
+
+### 2.6 Verify Email
+- **Method:** `POST /api/v1/auth/verify-email` or `GET /api/v1/auth/verify-email?token=...`
+- **Auth:** Public
+- **Request Body/Query:** `{"token": "verification_token"}`
+
+### 2.7 Resend Verification Email
+- **Method:** `POST /api/v1/auth/resend-verification`
+- **Auth:** Public
+- **Request Body:** `{"email": "farmer@agrietech.et"}`
+
+### 2.8 Logout
+- **Method:** `POST /api/v1/auth/logout`
+- **Auth:** Bearer Token required
+- **Description:** Blacklists current token to prevent reuse
+
+### 2.9 Get Profile
 - **Method:** `GET /api/v1/auth/me`
 - **Auth:** Bearer Token required
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "id": "usr_78912",
+      "fullName": "Abebe Bikila",
+      "phoneNumber": "+251911223344",
+      "email": "farmer@agrietech.et",
+      "role": "FARMER",
+      "preferredLang": "am",
+      "woreda": {
+        "id": "woreda_adama_01",
+        "nameEn": "Adama Zuria",
+        "zone": {
+          "nameEn": "Adama Special",
+          "region": {
+            "nameEn": "Oromia"
+          }
+        }
+      }
+    }
+  }
+  ```
+
+### 2.10 Update Password
+- **Method:** `PATCH /api/v1/auth/update-password`
+- **Auth:** Bearer Token required
+- **Request Body:**
+  ```json
+  {
+    "currentPassword": "OldPassword123!",
+    "newPassword": "NewSecurePass123!"
+  }
+  ```
 
 ---
 
@@ -214,9 +298,26 @@ All API endpoints return standard JSON envelopes:
   }
   ```
 
-### 5.3 Retrieve Farm Telemetry History
-- **Method:** `GET /api/v1/sensors/farm/:farmId`
+### 5.3 Get Farm Sensors
+- **Method:** `GET /api/v1/sensors` or `GET /api/v1/sensors/farm/:farmId`
 - **Auth:** Bearer Token
+- **Description:** List all sensors or sensors for a specific farm
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": [
+      {
+        "id": "sns_019283",
+        "hardwareId": "ESP32_FARM_01",
+        "sensorType": "SOIL_MOISTURE_STATION",
+        "farmId": "farm_123",
+        "isActive": true,
+        "lastReading": "2026-08-21T10:30:00Z"
+      }
+    ]
+  }
+  ```
 
 ---
 
@@ -243,6 +344,16 @@ All API endpoints return standard JSON envelopes:
 - **Method:** `GET /api/v1/risk-assessments/woreda/:woredaId`
 - **Auth:** Bearer Token
 
+### 7.3 Get Latest Assessments
+- **Method:** `GET /api/v1/risk-assessments` or `GET /api/v1/risk-assessments/latest`
+- **Auth:** Bearer Token
+- **Description:** Get latest risk assessments across all woredas
+
+### 7.4 Get Risk Statistics
+- **Method:** `GET /api/v1/risk-assessments/statistics`
+- **Auth:** Bearer Token
+- **Description:** Aggregate risk statistics and distribution
+
 ---
 
 ## 8. Early Warning Alerts (`/alerts`)
@@ -250,9 +361,30 @@ All API endpoints return standard JSON envelopes:
 ### 8.1 Create Early Warning Alert
 - **Method:** `POST /api/v1/alerts`
 - **Auth:** Bearer Token (`WOREDA_OFFICER` / `ADMIN`)
+- **Request Body:**
+  ```json
+  {
+    "woredaId": "woreda_adama_01",
+    "hazardType": "DROUGHT",
+    "severity": "HIGH",
+    "titleEn": "Drought Warning",
+    "messageEn": "Water scarcity expected",
+    "titleAm": "የድርቅ ማስጠንቀቂያ",
+    "messageAm": "የውሃ እጥረት ሊከሰት ይችላል"
+  }
+  ```
 
-### 8.2 List Active Alerts
-- **Method:** `GET /api/v1/alerts?severity=HIGH`
+### 8.2 List Alerts
+- **Method:** `GET /api/v1/alerts` or `GET /api/v1/alerts/active`
+- **Auth:** Bearer Token
+- **Query Parameters:** `severity`, `woredaId`, `status`
+
+### 8.3 Get Alert by ID
+- **Method:** `GET /api/v1/alerts/:id`
+- **Auth:** Bearer Token
+
+### 8.4 Mark Alert as Read
+- **Method:** `PATCH /api/v1/alerts/:id/read`
 - **Auth:** Bearer Token
 
 ---
@@ -264,7 +396,12 @@ All API endpoints return standard JSON envelopes:
 - **Auth:** Bearer Token
 - **Payload:** Multipart form-data (`image` file upload) OR JSON with `imageUrl` and `cropType`.
 
-### 9.2 Get Diagnosis History
+### 9.2 Get All Diagnoses
+- **Method:** `GET /api/v1/disease-diagnosis`
+- **Auth:** Bearer Token
+- **Description:** Get all disease diagnoses for the authenticated user
+
+### 9.3 Get Diagnosis History by Farm
 - **Method:** `GET /api/v1/disease-diagnosis/farm/:farmId`
 - **Auth:** Bearer Token
 
@@ -275,18 +412,330 @@ All API endpoints return standard JSON envelopes:
 ### 10.1 Get Executive Dashboard Analytics
 - **Method:** `GET /api/v1/analytics/dashboard`
 - **Auth:** Bearer Token
+- **Description:** National dashboard with farms, sensors, alerts, NDVI, and risk distribution.
 
 ### 10.2 Get Regional Risk Breakdown
 - **Method:** `GET /api/v1/analytics/regional-breakdown`
 - **Auth:** Bearer Token
+- **Description:** Regional statistics with rainfall, NDVI, alert status per region.
 
 ### 10.3 Get Temporal Trends
 - **Method:** `GET /api/v1/analytics/temporal-trends?timeframe=DAILY&woredaId=woreda_adama_01`
 - **Auth:** Bearer Token
+- **Query Parameters:**
+  - `timeframe`: `DAILY`, `MONTHLY`, `YEARLY` (default: `DAILY`)
+  - `woredaId`: Specific woreda ID (optional)
+  - `includeAi`: `true` to include AI insights (optional)
+  - `language`: `am`, `en`, `om` (default: `am`)
 
 ### 10.4 Get Agronomic Advisory
 - **Method:** `GET /api/v1/analytics/agronomic-advisories?cropType=WHEAT&season=MEHER`
 - **Auth:** Bearer Token
+- **Query Parameters:**
+  - `cropType`: `WHEAT`, `TEFF`, `MAIZE`, `BARLEY`, etc.
+  - `season`: `MEHER`, `BELG`
+  - `woredaId`: Specific woreda (optional)
+
+### 10.5 Get AI Insights
+- **Method:** `POST /api/v1/analytics/ai-insights`
+- **Auth:** Bearer Token
+- **Request Body:**
+  ```json
+  {
+    "woredaId": "woreda_adama_01",
+    "timeframe": "DAILY",
+    "language": "am",
+    "metrics": []
+  }
+  ```
+
+---
+
+## 10A. Location-Based Map & Analytics (`/analytics/location`)
+
+### 10A.1 Get User Location Map (Auto-Detect)
+- **Method:** `GET /api/v1/analytics/location/map`
+- **Auth:** Bearer Token (Required)
+- **Description:** Returns map data based on authenticated user's role and location.
+  - **REGIONAL_OFFICER**: Region boundaries with all zones and woredas
+  - **ZONE_OFFICER**: Zone boundaries with all woredas
+  - **WOREDA_OFFICER**: Woreda boundaries with all farm locations
+  - **FARMER**: Woreda boundaries with all farm locations
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "type": "woreda",
+      "woreda": {
+        "id": "woreda_adama_01",
+        "nameEn": "Adama Zuria",
+        "nameAm": "አዳማ ዙሪያ",
+        "pcode": "ET0408001",
+        "boundaries": { "type": "Polygon", "coordinates": [[...]] }
+      },
+      "zone": { "id": "zone_adama_special", "nameEn": "Adama Special" },
+      "region": { "id": "ET04", "nameEn": "Oromia" },
+      "farms": [
+        {
+          "id": "farm_123",
+          "farmName": "Adama Wheat Plot A",
+          "latitude": 8.54,
+          "longitude": 39.27,
+          "areaHectares": 2.5,
+          "primaryCrop": "WHEAT"
+        }
+      ],
+      "farmCount": 42
+    }
+  }
+  ```
+
+### 10A.2 Get User Location Analytics (Auto-Detect)
+- **Method:** `GET /api/v1/analytics/location/analytics`
+- **Auth:** Bearer Token (Required)
+- **Description:** Returns analytics data based on authenticated user's role and location.
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "type": "woreda",
+      "woreda": { "id": "woreda_adama_01", "nameEn": "Adama Zuria" },
+      "zone": { "id": "zone_adama_special", "nameEn": "Adama Special" },
+      "region": { "id": "ET04", "nameEn": "Oromia" },
+      "statistics": {
+        "totalFarms": 42,
+        "activeSensors": 15,
+        "totalSensors": 18,
+        "activeAlerts": 2
+      },
+      "currentConditions": {
+        "avgRainfallLast30Days": 45.8,
+        "avgNdvi": 0.62,
+        "alertLevel": "NORMAL",
+        "lastAssessed": "2026-08-20T10:30:00Z"
+      },
+      "recentObservations": [
+        { "date": "2026-08-20", "rainfall": 12.5, "ndvi": 0.64, "source": "CHIRPS" }
+      ]
+    }
+  }
+  ```
+
+### 10A.3 Get Region Map
+- **Method:** `GET /api/v1/analytics/region/:regionId/map`
+- **Auth:** Bearer Token
+- **Description:** Get region boundaries with all zones and woredas.
+- **Path Parameters:**
+  - `regionId`: Region ID (e.g., `ET04` for Oromia, `ET03` for Amhara)
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "type": "region",
+      "region": {
+        "id": "ET04",
+        "nameEn": "Oromia",
+        "nameAm": "ኦሮሚያ",
+        "code": "ET04",
+        "boundaries": { "type": "Polygon", "coordinates": [[...]] }
+      },
+      "zones": [
+        {
+          "id": "zone_adama_special",
+          "nameEn": "Adama Special",
+          "nameAm": "አዳማ ልዩ",
+          "pcode": "ET0408",
+          "boundaries": { "type": "Polygon", "coordinates": [[...]] },
+          "woredaCount": 12,
+          "woredas": [...]
+        }
+      ],
+      "zoneCount": 21,
+      "woredaCount": 287
+    }
+  }
+  ```
+
+### 10A.4 Get Region Analytics
+- **Method:** `GET /api/v1/analytics/region/:regionId/analytics`
+- **Auth:** Bearer Token
+- **Description:** Get comprehensive analytics for a region.
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "type": "region",
+      "region": { "id": "ET04", "nameEn": "Oromia", "code": "ET04" },
+      "statistics": {
+        "totalZones": 21,
+        "totalWoredas": 287,
+        "totalFarms": 580,
+        "activeSensors": 200,
+        "totalSensors": 245,
+        "activeAlerts": 12
+      },
+      "riskDistribution": {
+        "green": 250,
+        "yellow": 28,
+        "orange": 7,
+        "red": 2
+      },
+      "zoneBreakdown": [
+        {
+          "zoneId": "zone_adama_special",
+          "zoneName": "Adama Special",
+          "woredaCount": 12,
+          "farmCount": 85,
+          "alertCount": 3
+        }
+      ]
+    }
+  }
+  ```
+
+### 10A.5 Get Zone Map
+- **Method:** `GET /api/v1/analytics/zone/:zoneId/map`
+- **Auth:** Bearer Token
+- **Description:** Get zone boundaries with all woredas.
+- **Path Parameters:**
+  - `zoneId`: Zone ID (e.g., `zone_adama_special`)
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "type": "zone",
+      "zone": {
+        "id": "zone_adama_special",
+        "nameEn": "Adama Special",
+        "nameAm": "አዳማ ልዩ",
+        "pcode": "ET0408",
+        "boundaries": { "type": "Polygon", "coordinates": [[...]] }
+      },
+      "region": { "id": "ET04", "nameEn": "Oromia", "code": "ET04" },
+      "woredas": [
+        {
+          "id": "woreda_adama_01",
+          "nameEn": "Adama Zuria",
+          "nameAm": "አዳማ ዙሪያ",
+          "pcode": "ET0408001",
+          "boundaries": { "type": "Polygon", "coordinates": [[...]] }
+        }
+      ],
+      "woredaCount": 12
+    }
+  }
+  ```
+
+### 10A.6 Get Zone Analytics
+- **Method:** `GET /api/v1/analytics/zone/:zoneId/analytics`
+- **Auth:** Bearer Token
+- **Description:** Get comprehensive analytics for a zone.
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "type": "zone",
+      "zone": { "id": "zone_adama_special", "nameEn": "Adama Special" },
+      "region": { "id": "ET04", "nameEn": "Oromia" },
+      "statistics": {
+        "totalWoredas": 12,
+        "totalFarms": 85,
+        "activeSensors": 32,
+        "totalSensors": 38,
+        "activeAlerts": 3
+      },
+      "riskDistribution": {
+        "green": 68,
+        "yellow": 14,
+        "orange": 2,
+        "red": 1
+      },
+      "woredaBreakdown": [
+        {
+          "woredaId": "woreda_adama_01",
+          "woredaName": "Adama Zuria",
+          "farmCount": 42,
+          "alertCount": 1
+        }
+      ]
+    }
+  }
+  ```
+
+### 10A.7 Get Woreda Map
+- **Method:** `GET /api/v1/analytics/woreda/:woredaId/map`
+- **Auth:** Bearer Token
+- **Description:** Get woreda boundaries with all farm locations.
+- **Path Parameters:**
+  - `woredaId`: Woreda ID (e.g., `woreda_adama_01`)
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "type": "woreda",
+      "woreda": {
+        "id": "woreda_adama_01",
+        "nameEn": "Adama Zuria",
+        "nameAm": "አዳማ ዙሪያ",
+        "pcode": "ET0408001",
+        "boundaries": { "type": "Polygon", "coordinates": [[...]] }
+      },
+      "zone": { "id": "zone_adama_special", "nameEn": "Adama Special" },
+      "region": { "id": "ET04", "nameEn": "Oromia" },
+      "farms": [
+        {
+          "id": "farm_123",
+          "farmName": "Adama Wheat Plot A",
+          "latitude": 8.54,
+          "longitude": 39.27,
+          "areaHectares": 2.5,
+          "primaryCrop": "WHEAT"
+        }
+      ],
+      "farmCount": 42
+    }
+  }
+  ```
+
+### 10A.8 Get Woreda Analytics
+- **Method:** `GET /api/v1/analytics/woreda/:woredaId/analytics`
+- **Auth:** Bearer Token
+- **Description:** Get comprehensive analytics for a woreda.
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "type": "woreda",
+      "woreda": { "id": "woreda_adama_01", "nameEn": "Adama Zuria" },
+      "zone": { "id": "zone_adama_special", "nameEn": "Adama Special" },
+      "region": { "id": "ET04", "nameEn": "Oromia" },
+      "statistics": {
+        "totalFarms": 42,
+        "activeSensors": 15,
+        "totalSensors": 18,
+        "activeAlerts": 2
+      },
+      "currentConditions": {
+        "avgRainfallLast30Days": 45.8,
+        "avgNdvi": 0.62,
+        "alertLevel": "NORMAL",
+        "lastAssessed": "2026-08-20T10:30:00Z"
+      },
+      "recentObservations": [
+        { "date": "2026-08-20", "rainfall": 12.5, "ndvi": 0.64, "source": "CHIRPS" },
+        { "date": "2026-08-19", "rainfall": 8.2, "ndvi": 0.63, "source": "CHIRPS" }
+      ]
+    }
+  }
+  ```
 
 ---
 
@@ -298,8 +747,16 @@ All API endpoints return standard JSON envelopes:
 - **Request Body:** `{"userQuestion": "የበቆሎ አባጨጓሬን እንዴት ማጥፋት ይቻላል?", "language": "am"}`
 
 ### 11.2 Text-to-Speech Generation
-- **Method:** `POST /api/v1/ai/text-to-speech`
+- **Method:** `POST /api/v1/ai/text-to-speech` or `GET /api/v1/ai/text-to-speech`
 - **Auth:** Bearer Token
+- **Request Body (POST):**
+  ```json
+  {
+    "text": "የአየር ሁኔታው መልካም ነው",
+    "language": "am"
+  }
+  ```
+- **Response:** Audio file or audio URL
 
 ---
 
@@ -308,10 +765,28 @@ All API endpoints return standard JSON envelopes:
 ### 12.1 List Ingestion Connectors Status
 - **Method:** `GET /api/v1/ingestion/connectors`
 - **Auth:** Bearer Token
+- **Description:** List all available data connectors and their health status
 
-### 12.2 Manual Pipeline Ingestion Pull
-- **Method:** `POST /api/v1/ingestion/pull`
+### 12.2 Test Connector Health
+- **Method:** `GET /api/v1/ingestion/health`
+- **Auth:** Bearer Token
+- **Description:** Test health of all ingestion connectors
+
+### 12.3 Manual Pipeline Ingestion Pull
+- **Method:** `POST /api/v1/ingestion/pull` or `POST /api/v1/ingestion/trigger`
 - **Auth:** Bearer Token (`ADMIN`)
+- **Request Body:**
+  ```json
+  {
+    "jobType": "pullChirpsRainfall"
+  }
+  ```
+- **Available job types:** `pullChirpsRainfall`, `pullNasaPower`, `pullFaoLocust`, `calculateRisks`
+
+### 12.4 Ingest Sensor Telemetry
+- **Method:** `POST /api/v1/ingestion/telemetry`
+- **Auth:** Public / API Key
+- **Description:** Bulk telemetry ingestion endpoint
 
 ---
 
@@ -323,15 +798,26 @@ All API endpoints return standard JSON envelopes:
 - **Request Body:** `sessionId={id}&serviceCode=*804#&phoneNumber=+251911223344&text=1*1`
 - **Response Format:** Plain text string prefixed with `CON` (continue) or `END` (terminate).
 
+### 13.2 USSD Health Check
+- **Method:** `GET /api/v1/delivery/ussd`
+- **Auth:** Public
+- **Response:** `{"status": "OK", "service": "USSD Gateway"}`
+
 ---
 
 ## 14. Admin & Audit Control (`/admin`)
 
 ### 14.1 Web Dashboard UI
-- **Method:** `GET /admin/dashboard`
-- **Auth:** Web Session / Admin Bearer Token
+- **Method:** `GET /api/v1/admin` or `GET /api/v1/admin/dashboard`
+- **Auth:** Admin Web Session / Admin Bearer Token
+- **Description:** Interactive admin dashboard with map visualization and CRUD operations
 
-### 14.2 User Management CRUD
+### 14.2 Get Overview Statistics
+- **Method:** `GET /api/v1/admin/overview`
+- **Auth:** Admin Bearer Token
+- **Description:** Get overview statistics for admin dashboard
+
+### 14.3 User Management CRUD
 - **List Users:** `GET /api/v1/admin/users?page=1&limit=20&search=abebe`
 - **Create User:** `POST /api/v1/admin/users` (Body: `{fullName, phoneNumber, email, role, woredaId}`)
 - **Update User:** `PUT /api/v1/admin/users/:id` (Body: `{fullName, phoneNumber, email, role, woredaId}`)

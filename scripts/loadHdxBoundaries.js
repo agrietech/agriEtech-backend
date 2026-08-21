@@ -10,8 +10,14 @@ const fs = require('fs');
 const path = require('path');
 const turf = require('@turf/turf');
 const { PrismaClient } = require('@prisma/client');
+const { PrismaPg } = require('@prisma/adapter-pg');
+const { Pool } = require('pg');
 
-const prisma = new PrismaClient();
+// Setup connection pool and Prisma client with adapter
+const connectionString = process.env.DATABASE_URL;
+const pool = new Pool({ connectionString });
+const adapter = new PrismaPg(pool);
+const prisma = new PrismaClient({ adapter });
 
 const DATA_DIR = path.resolve(__dirname, '../data/boundaries');
 
