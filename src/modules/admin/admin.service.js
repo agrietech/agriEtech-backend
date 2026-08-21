@@ -2,6 +2,7 @@ const { prisma, isConnected } = require('../../config/db');
 const redis = require('../../config/redis');
 const { getQueueStats, addJob } = require('../../ingestion/jobs/queue');
 const logger = require('../../utils/logger');
+const { BadRequestError } = require('../../utils/errors');
 const os = require('os');
 
 /**
@@ -191,7 +192,24 @@ async function getUsers({ page = 1, limit = 20, role, woredaId, search } = {}) {
             preferredLang: true,
             isEmailVerified: true,
             woredaId: true,
-            woreda: { select: { nameEn: true, nameAm: true } },
+            woreda: { 
+              select: { 
+                nameEn: true, 
+                nameAm: true,
+                zone: { 
+                  select: { 
+                    nameEn: true, 
+                    nameAm: true,
+                    region: { 
+                      select: { 
+                        nameEn: true, 
+                        nameAm: true 
+                      } 
+                    }
+                  }
+                }
+              }
+            },
             createdAt: true,
             updatedAt: true,
           },
@@ -223,7 +241,18 @@ async function getUsers({ page = 1, limit = 20, role, woredaId, search } = {}) {
       preferredLang: 'am',
       isEmailVerified: true,
       woredaId: 'woreda_adama_01',
-      woreda: { nameEn: 'Adama Zuria', nameAm: 'አዳማ ዙሪያ' },
+      woreda: { 
+        nameEn: 'Adama Zuria', 
+        nameAm: 'አዳማ ዙሪያ',
+        zone: {
+          nameEn: 'East Shewa Zone',
+          nameAm: 'ምስራቅ ሸዋ ዞን',
+          region: {
+            nameEn: 'Oromia',
+            nameAm: 'ኦሮሚያ'
+          }
+        }
+      },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     },
@@ -236,7 +265,18 @@ async function getUsers({ page = 1, limit = 20, role, woredaId, search } = {}) {
       preferredLang: 'om',
       isEmailVerified: true,
       woredaId: 'woreda_adama_01',
-      woreda: { nameEn: 'Adama Zuria', nameAm: 'አዳማ ዙሪያ' },
+      woreda: { 
+        nameEn: 'Adama Zuria', 
+        nameAm: 'አዳማ ዙሪያ',
+        zone: {
+          nameEn: 'East Shewa Zone',
+          nameAm: 'ምስራቅ ሸዋ ዞን',
+          region: {
+            nameEn: 'Oromia',
+            nameAm: 'ኦሮሚያ'
+          }
+        }
+      },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     },
@@ -534,9 +574,13 @@ async function getAuditLogs(limit = 50) {
  * User CRUD Operations
  */
 async function createUser(data, adminContext = {}) {
+  if (!data.password || data.password.trim().length < 8) {
+    throw new BadRequestError('A strong password (minimum 8 characters) is required for user creation');
+  }
+  
   const bcrypt = require('bcryptjs');
   const salt = await bcrypt.genSalt(10);
-  const passwordHash = await bcrypt.hash(data.password || 'DefaultPass123!', salt);
+  const passwordHash = await bcrypt.hash(data.password, salt);
 
   if (isConnected()) {
     try {
