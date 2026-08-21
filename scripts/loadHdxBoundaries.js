@@ -1,7 +1,7 @@
 /**
  * @file loadHdxBoundaries.js
- * @description Production importer for Ethiopian Administrative Boundaries (Admin 1 Regions, Admin 2 Zones, Admin 3 Woredas).
- * Parses GeoJSON files from HDX / OCHA and populates PostgreSQL / PostGIS via Prisma.
+ * @description Production bulk importer for Ethiopian Administrative Boundaries (Admin 1 Regions, Admin 2 Zones, Admin 3 Woredas).
+ * Parses GeoJSON files from HDX / OCHA and populates PostgreSQL / PostGIS with high-performance bulk operations.
  * @usage node scripts/loadHdxBoundaries.js
  */
 
@@ -9,47 +9,40 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const turf = require('@turf/turf');
-const { PrismaClient } = require('@prisma/client');
-const { PrismaPg } = require('@prisma/adapter-pg');
 const { Pool } = require('pg');
-
-// Setup connection pool and Prisma client with adapter
-const connectionString = process.env.DATABASE_URL;
-const pool = new Pool({ connectionString });
-const adapter = new PrismaPg(pool);
-const prisma = new PrismaClient({ adapter });
 
 const DATA_DIR = path.resolve(__dirname, '../data/boundaries');
 
-// Amharic name mapping for major Ethiopian Regions
+// Amharic name mapping for Ethiopian Regions
 const REGION_AMHARIC_NAMES = {
   Tigray: 'ትግራይ',
   Afar: 'አፋር',
   Amhara: 'አማራ',
   Oromia: 'ኦሮሚያ',
   Somali: 'ሶማሌ',
+  'Benishangul-Gumuz': 'ቤኒሻንጉል ጉሙዝ',
   'Benishangul Gumz': 'ቤኒሻንጉል ጉሙዝ',
+  'Central Ethiopia': 'ማዕከላዊ ኢትዮጵያ',
+  'South Ethiopia': 'ደቡብ ኢትዮጵያ',
+  'South West Ethiopia': 'ደቡብ ምዕራብ ኢትዮጵያ',
   'Southern Nations, Nationalities and Peoples': 'ደቡብ ብሔሮች',
   Gambela: 'ጋምቤላ',
   Harari: 'ሐረሪ',
   'Addis Ababa': 'አዲስ አበባ',
   'Dire Dawa': 'ድሬዳዋ',
   Sidama: 'ሲዳማ',
-  'South West Ethiopia': 'ደቡብ ምዕራብ ኢትዮጵያ',
-  'Central Ethiopia': 'ማዕከላዊ ኢትዮጵያ',
-  'South Ethiopia': 'ደቡብ ኢትዮጵያ',
+  Contested: 'አከራካሪ አካባቢ',
 };
 
-async function loadRegions(admin1Path) {
+async function loadRegions(client, admin1Path) {
   console.log('\n--- 1. Importing Admin 1 (Regions) ---');
   if (!fs.existsSync(admin1Path)) {
-    console.error(`File not found: ${admin1Path}`);
-    return new Map();
+    throw new Error(`File not found: ${admin1Path}`);
   }
 
   const raw = fs.readFileSync(admin1Path, 'utf8');
   const data = JSON.parse(raw);
-  const regionMap = new Map(); // pcode -> Region record
+  const regionMap = new Map();
 
   console.log(`Found ${data.features.length} regions in GeoJSON.`);
 
@@ -59,43 +52,43 @@ async function loadRegions(admin1Path) {
     const nameEn = props.adm1_name || 'Unknown Region';
     const nameAm = REGION_AMHARIC_NAMES[nameEn] || props.adm1_name1 || null;
 
-    try {
-      const region = await prisma.region.upsert({
-        where: { code: pcode },
-        update: {
-          nameEn,
-          nameAm,
-          geojson: feature.geometry,
-        },
-        create: {
-          id: pcode,
-          code: pcode,
-          nameEn,
-          nameAm,
-          geojson: feature.geometry,
-        },
-      });
+    const query = `
+      INSERT INTO "Region" ("id", "code", "nameEn", "nameAm", "geojson", "updatedAt")
+      VALUES ($1, $2, $3, $4, $5, NOW())
+      ON CONFLICT ("id") DO UPDATE SET
+        "code" = EXCLUDED."code",
+        "nameEn" = EXCLUDED."nameEn",
+        "nameAm" = EXCLUDED."nameAm",
+        "geojson" = EXCLUDED."geojson",
+        "updatedAt" = NOW()
+      RETURNING *;
+    `;
 
-      regionMap.set(pcode, region);
-      console.log(`  ✓ Region: ${nameEn} (${pcode})`);
-    } catch (err) {
-      console.error(`  ✗ Error upserting region ${nameEn}:`, err.message);
-    }
+    const res = await client.query(query, [
+      pcode,
+      pcode,
+      nameEn,
+      nameAm,
+      JSON.stringify(feature.geometry),
+    ]);
+
+    regionMap.set(pcode, res.rows[0]);
+    console.log(`  ✓ Region: ${nameEn} (${pcode})`);
   }
 
+  console.log(`  ✓ Successfully imported ${regionMap.size} Regions.`);
   return regionMap;
 }
 
-async function loadZones(admin2Path, regionMap) {
+async function loadZones(client, admin2Path, regionMap) {
   console.log('\n--- 2. Importing Admin 2 (Zones) ---');
   if (!fs.existsSync(admin2Path)) {
-    console.error(`File not found: ${admin2Path}`);
-    return new Map();
+    throw new Error(`File not found: ${admin2Path}`);
   }
 
   const raw = fs.readFileSync(admin2Path, 'utf8');
   const data = JSON.parse(raw);
-  const zoneMap = new Map(); // pcode -> Zone record
+  const zoneMap = new Map();
 
   console.log(`Found ${data.features.length} zones in GeoJSON.`);
 
@@ -112,48 +105,45 @@ async function loadZones(admin2Path, regionMap) {
       continue;
     }
 
-    try {
-      const zone = await prisma.zone.upsert({
-        where: { id: zonePcode },
-        update: {
-          regionId: region.id,
-          nameEn,
-          nameAm,
-          geojson: feature.geometry,
-        },
-        create: {
-          id: zonePcode,
-          regionId: region.id,
-          nameEn,
-          nameAm,
-          geojson: feature.geometry,
-        },
-      });
+    const query = `
+      INSERT INTO "Zone" ("id", "regionId", "nameEn", "nameAm", "geojson", "updatedAt")
+      VALUES ($1, $2, $3, $4, $5, NOW())
+      ON CONFLICT ("id") DO UPDATE SET
+        "regionId" = EXCLUDED."regionId",
+        "nameEn" = EXCLUDED."nameEn",
+        "nameAm" = EXCLUDED."nameAm",
+        "geojson" = EXCLUDED."geojson",
+        "updatedAt" = NOW()
+      RETURNING *;
+    `;
 
-      zoneMap.set(zonePcode, zone);
-    } catch (err) {
-      console.error(`  ✗ Error upserting zone ${nameEn}:`, err.message);
-    }
+    const res = await client.query(query, [
+      zonePcode,
+      region.id,
+      nameEn,
+      nameAm,
+      JSON.stringify(feature.geometry),
+    ]);
+
+    zoneMap.set(zonePcode, res.rows[0]);
   }
 
   console.log(`  ✓ Successfully imported ${zoneMap.size} Zones.`);
   return zoneMap;
 }
 
-async function loadWoredas(admin3Path, zoneMap) {
+async function loadWoredas(client, admin3Path, zoneMap) {
   console.log('\n--- 3. Importing Admin 3 (Woredas) ---');
   if (!fs.existsSync(admin3Path)) {
-    console.error(`File not found: ${admin3Path}`);
-    return;
+    throw new Error(`File not found: ${admin3Path}`);
   }
 
   const raw = fs.readFileSync(admin3Path, 'utf8');
   const data = JSON.parse(raw);
 
-  console.log(`Found ${data.features.length} woredas in GeoJSON. Processing centroids and polygons...`);
+  console.log(`Found ${data.features.length} woredas in GeoJSON. Calculating centroids and preparing bulk payload...`);
 
   let count = 0;
-  const batchSize = 50;
   const woredas = [];
 
   for (const feature of data.features) {
@@ -190,40 +180,47 @@ async function loadWoredas(admin3Path, zoneMap) {
     });
   }
 
-  console.log(`Upserting ${woredas.length} woredas into database...`);
+  console.log(`Executing bulk parameterized upsert for ${woredas.length} woredas...`);
 
+  const batchSize = 100;
   for (let i = 0; i < woredas.length; i += batchSize) {
     const batch = woredas.slice(i, i + batchSize);
-    await Promise.all(
-      batch.map(async (w) => {
-        try {
-          await prisma.woreda.upsert({
-            where: { id: w.id },
-            update: {
-              zoneId: w.zoneId,
-              nameEn: w.nameEn,
-              nameAm: w.nameAm,
-              centerLat: w.centerLat,
-              centerLng: w.centerLng,
-              geojson: w.geojson,
-            },
-            create: {
-              id: w.id,
-              zoneId: w.zoneId,
-              nameEn: w.nameEn,
-              nameAm: w.nameAm,
-              centerLat: w.centerLat,
-              centerLng: w.centerLng,
-              geojson: w.geojson,
-            },
-          });
-          count++;
-        } catch (err) {
-          console.error(`  ✗ Error upserting woreda ${w.nameEn}:`, err.message);
-        }
-      })
-    );
-    process.stdout.write(`  Progress: ${Math.min(i + batchSize, woredas.length)} / ${woredas.length} woredas\r`);
+    const valuePlaceholders = [];
+    const values = [];
+    let pIdx = 1;
+
+    for (const w of batch) {
+      valuePlaceholders.push(
+        `($${pIdx}, $${pIdx + 1}, $${pIdx + 2}, $${pIdx + 3}, $${pIdx + 4}, $${pIdx + 5}, $${pIdx + 6}, NOW())`
+      );
+      values.push(
+        w.id,
+        w.zoneId,
+        w.nameEn,
+        w.nameAm,
+        w.centerLat,
+        w.centerLng,
+        JSON.stringify(w.geojson)
+      );
+      pIdx += 7;
+    }
+
+    const query = `
+      INSERT INTO "Woreda" ("id", "zoneId", "nameEn", "nameAm", "centerLat", "centerLng", "geojson", "updatedAt")
+      VALUES ${valuePlaceholders.join(', ')}
+      ON CONFLICT ("id") DO UPDATE SET
+        "zoneId" = EXCLUDED."zoneId",
+        "nameEn" = EXCLUDED."nameEn",
+        "nameAm" = EXCLUDED."nameAm",
+        "centerLat" = EXCLUDED."centerLat",
+        "centerLng" = EXCLUDED."centerLng",
+        "geojson" = EXCLUDED."geojson",
+        "updatedAt" = NOW();
+    `;
+
+    await client.query(query, values);
+    count += batch.length;
+    console.log(`  ✓ Inserted batch ${Math.min(i + batchSize, woredas.length)} / ${woredas.length} woredas`);
   }
 
   console.log(`\n  ✓ Successfully imported ${count} Woredas!`);
@@ -238,18 +235,29 @@ async function main() {
   const admin2File = path.join(DATA_DIR, 'eth_admin2.geojson');
   const admin3File = path.join(DATA_DIR, 'eth_admin3.geojson');
 
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false },
+    max: 2,
+    connectionTimeoutMillis: 15000,
+  });
+
+  const client = await pool.connect();
+
   try {
-    const regionMap = await loadRegions(admin1File);
-    const zoneMap = await loadZones(admin2File, regionMap);
-    await loadWoredas(admin3File, zoneMap);
+    const regionMap = await loadRegions(client, admin1File);
+    const zoneMap = await loadZones(client, admin2File, regionMap);
+    await loadWoredas(client, admin3File, zoneMap);
 
     console.log('\n===============================================================');
     console.log('🎉 BOUNDARY IMPORT COMPLETED SUCCESSFULLY!');
     console.log('===============================================================');
   } catch (err) {
     console.error('[FATAL] Boundary import error:', err);
+    process.exit(1);
   } finally {
-    await prisma.$disconnect();
+    client.release();
+    await pool.end();
   }
 }
 
