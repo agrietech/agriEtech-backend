@@ -55,8 +55,8 @@ const pool = new Pool({
   },
   max: 10, // Maximum pool size (safely within Supabase pool limit)
   min: 2,  // Minimum pool size
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000,
+  idleTimeoutMillis: 60000,
+  connectionTimeoutMillis: 30000,
 });
 
 const adapter = new PrismaPg(pool);

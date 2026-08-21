@@ -19,13 +19,13 @@ class OpenRouterClient {
   }
 
   /**
-   * Execute chat completion via OpenRouter
+   * Execute chat completion via OpenRouter with resilient token budgeting
    */
   async chatCompletion({
     messages,
     temperature = 0.2,
     responseFormat = null,
-    maxTokens = 1200,
+    maxTokens = 300,
     model = null,
   }) {
     const targetModel = model || this.model;
@@ -35,20 +35,20 @@ class OpenRouterClient {
       return this._generateMockCompletion(messages);
     }
 
-    try {
+    const executeRequest = async (tokens) => {
       const payload = {
         model: targetModel,
         messages,
         temperature,
-        max_tokens: maxTokens,
+        max_tokens: tokens,
       };
 
       if (responseFormat === 'json') {
         payload.response_format = { type: 'json_object' };
       }
 
-      const requestTimeout = process.env.NODE_ENV === 'test' ? 3000 : 15000;
-      const response = await axios.post(`${this.baseUrl}/chat/completions`, payload, {
+      const requestTimeout = process.env.NODE_ENV === 'test' ? 4000 : 20000;
+      return await axios.post(`${this.baseUrl}/chat/completions`, payload, {
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
           'HTTP-Referer': this.appUrl,
@@ -57,6 +57,24 @@ class OpenRouterClient {
         },
         timeout: requestTimeout,
       });
+    };
+
+    try {
+      let response;
+      try {
+        response = await executeRequest(maxTokens);
+      } catch (firstErr) {
+        const errorMsg = firstErr.response?.data?.error?.message || firstErr.message || '';
+        // If OpenRouter complains about requested tokens exceeding credit budget, extract afford amount
+        if (errorMsg.includes('max_tokens') || errorMsg.includes('credits')) {
+          const affordMatch = errorMsg.match(/can only afford (\d+)/i);
+          const affordableTokens = affordMatch ? Math.max(100, parseInt(affordMatch[1], 10) - 10) : 250;
+          logger.warn(`[OpenRouterClient] Token budget adjustment needed (${errorMsg}). Retrying with ${affordableTokens} tokens.`);
+          response = await executeRequest(affordableTokens);
+        } else {
+          throw firstErr;
+        }
+      }
 
       const choice = response.data?.choices?.[0];
       const content = choice?.message?.content || '';
