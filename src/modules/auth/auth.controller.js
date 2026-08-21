@@ -182,7 +182,7 @@ function renderVerificationHtml({ success, title, message }) {
     ${icon}
     <h1>${title}</h1>
     <p>${message}</p>
-    <a href="/" class="btn">${success ? 'Open AgriEtech Platform' : 'Return to Home'}</a>
+    <a href="${process.env.FRONTEND_URL || process.env.APP_URL || '/'}" class="btn">${success ? 'Open AgriEtech App' : 'Return to App'}</a>
     <div class="footer">
       AgriEtech Multi-Hazard Platform for Ethiopia &bull; Addis Ababa
     </div>

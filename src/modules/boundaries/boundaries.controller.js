@@ -1,8 +1,9 @@
 const boundariesService = require('./boundaries.service');
 
-async function getRegions(_req, res, next) {
+async function getRegions(req, res, next) {
   try {
-    const data = await boundariesService.getRegions();
+    const includeGeometry = req.query.includeGeometry === 'true';
+    const data = await boundariesService.getRegions(includeGeometry);
     res.status(200).json({ success: true, data });
   } catch (error) {
     next(error);
@@ -11,7 +12,8 @@ async function getRegions(_req, res, next) {
 
 async function getZones(req, res, next) {
   try {
-    const data = await boundariesService.getZones(req.query.regionId);
+    const includeGeometry = req.query.includeGeometry === 'true';
+    const data = await boundariesService.getZones(req.query.regionId, includeGeometry);
     res.status(200).json({ success: true, data });
   } catch (error) {
     next(error);

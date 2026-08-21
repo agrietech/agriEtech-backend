@@ -18,6 +18,18 @@ enum Role {
   ADMIN
 }
 
+enum RoleRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum RequestableRole {
+  DEVELOPMENT_AGENT
+  WOREDA_OFFICER
+  RESEARCHER
+}
+
 enum RiskLevel {
   LOW
   MODERATE
@@ -67,6 +79,8 @@ model User {
   woreda                Woreda?           @relation(fields: [woredaId], references: [id])
   farms                 Farm[]
   alertLogs             AlertDeliveryLog[]
+  roleRequests          RoleRequest[]     @relation("RoleRequestUser")
+  reviewedRequests      RoleRequest[]     @relation("RoleRequestReviewer")
   createdAt             DateTime          @default(now())
   updatedAt             DateTime          @updatedAt
 
@@ -304,5 +318,39 @@ model AuditLog {
 
   @@index([action])
   @@index([adminId])
+  @@index([createdAt])
+}
+
+model RoleRequest {
+  id                String            @id @default(uuid())
+  userId            String
+  user              User              @relation("RoleRequestUser", fields: [userId], references: [id], onDelete: Cascade)
+  userName          String
+  userPhone         String?
+  userEmail         String?
+  currentRole       Role              @default(FARMER)
+  requestedRole     Role              // DEVELOPMENT_AGENT, WOREDA_OFFICER, RESEARCHER
+  regionId          String
+  regionName        String
+  zoneId            String
+  zoneName          String
+  woredaId          String
+  woredaName        String
+  kebeleName        String?
+  staffIdNumber     String            // Required employee badge/staff ID
+  organizationName  String            // Required organization name
+  status            RoleRequestStatus @default(PENDING)
+  rejectionReason   String?
+  reviewedById      String?
+  reviewedBy        User?             @relation("RoleRequestReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedByName    String?
+  reviewedAt        DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([woredaId])
+  @@index([requestedRole])
   @@index([createdAt])
 }

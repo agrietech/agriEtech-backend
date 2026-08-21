@@ -105,39 +105,35 @@ async function createFarm({ userId, farmName, primaryCrop, areaHectares, woredaI
   const longitude = inputLng !== undefined ? Number(inputLng) : derivedLng;
 
   if (isConnected()) {
-    try {
-      return await prisma.$transaction(async (tx) => {
-        const farm = await tx.farm.create({
-          data: {
-            userId,
-            farmName,
-            primaryCrop: primaryCrop || null,
-            areaHectares: areaHectares ?? null,
-            latitude,
-            longitude,
-            woredaId,
-            polygonGeojson: farmPolygon.geometry,
-          },
-        });
-
-        try {
-          await tx.$executeRaw`
-            UPDATE "Farm"
-            SET "spatialBoundary" = ST_SetSRID(ST_GeomFromGeoJSON(${JSON.stringify(farmPolygon.geometry)}), 4326)
-            WHERE id = ${farm.id}
-          `;
-        } catch (_geoErr) {
-          // PostGIS extension might not be enabled on basic postgres
-        }
-
-        return farm;
+    return await prisma.$transaction(async (tx) => {
+      const farm = await tx.farm.create({
+        data: {
+          userId,
+          farmName,
+          primaryCrop: primaryCrop || null,
+          areaHectares: areaHectares ?? null,
+          latitude,
+          longitude,
+          woredaId,
+          polygonGeojson: farmPolygon.geometry,
+        },
       });
-    } catch (_err) {
-      // Fallback to in-memory store
-    }
+
+      try {
+        await tx.$executeRaw`
+          UPDATE "Farm"
+          SET "spatialBoundary" = ST_SetSRID(ST_GeomFromGeoJSON(${JSON.stringify(farmPolygon.geometry)}), 4326)
+          WHERE id = ${farm.id}
+        `;
+      } catch (_geoErr) {
+        // PostGIS extension might not be enabled on basic postgres
+      }
+
+      return farm;
+    });
   }
 
-  // Fallback in-memory persistence
+  // Fallback in-memory persistence when DB is offline
   const fallbackFarm = {
     id: `farm_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
     userId,
@@ -160,17 +156,13 @@ async function createFarm({ userId, farmName, primaryCrop, areaHectares, woredaI
 // Get farms for authenticated user
 async function getFarmsByUser(userId) {
   if (isConnected()) {
-    try {
-      return await prisma.farm.findMany({
-        where: { userId },
-        include: {
-          woreda: { select: { id: true, nameEn: true, nameAm: true } },
-        },
-        orderBy: { createdAt: 'desc' },
-      });
-    } catch (_err) {
-      // Fallback
-    }
+    return await prisma.farm.findMany({
+      where: { userId },
+      include: {
+        woreda: { select: { id: true, nameEn: true, nameAm: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
   const userFarms = Array.from(mockFarms.values()).filter(
@@ -182,31 +174,18 @@ async function getFarmsByUser(userId) {
 // Get farm by ID
 async function getFarmById(id) {
   if (isConnected()) {
-    try {
-      const found = await prisma.farm.findUnique({
-        where: { id },
-        include: {
-          woreda: { select: { id: true, nameEn: true, nameAm: true } },
-          sensors: { select: { id: true, hardwareId: true, sensorType: true, isActive: true } },
-        },
-      });
-      if (found) return found;
-    } catch (_err) {
-      // Fallback
-    }
+    const found = await prisma.farm.findUnique({
+      where: { id },
+      include: {
+        woreda: { select: { id: true, nameEn: true, nameAm: true } },
+        sensors: { select: { id: true, hardwareId: true, sensorType: true, isActive: true } },
+      },
+    });
+    if (found) return found;
+    return mockFarms.get(id) || null;
   }
 
-  return mockFarms.get(id) || mockFarms.get('farm_demo_01') || {
-    id,
-    farmName: 'Bishoftu Wheat Plot Alpha',
-    primaryCrop: 'Wheat',
-    areaHectares: 3.5,
-    latitude: 8.7523,
-    longitude: 38.9785,
-    woredaId: 'woreda_bishoftu_02',
-    woreda: { id: 'woreda_bishoftu_02', nameEn: 'Bishoftu', nameAm: 'ቢሾፍቱ' },
-    sensors: [],
-  };
+  return mockFarms.get(id) || mockFarms.get('farm_demo_01') || null;
 }
 
 module.exports = {

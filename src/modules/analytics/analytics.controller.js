@@ -62,10 +62,99 @@ async function getAiInsights(req, res, next) {
   }
 }
 
+// Location-specific map and analytics
+async function getLocationMap(req, res, next) {
+  try {
+    const userId = req.user.id;
+    const data = await analyticsService.getLocationMap(userId);
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function getLocationAnalytics(req, res, next) {
+  try {
+    const userId = req.user.id;
+    const data = await analyticsService.getLocationAnalytics(userId);
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function getRegionMap(req, res, next) {
+  try {
+    const { regionId } = req.params;
+    const data = await analyticsService.getRegionMap(regionId);
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function getRegionAnalytics(req, res, next) {
+  try {
+    const { regionId } = req.params;
+    const data = await analyticsService.getRegionAnalytics(regionId);
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function getZoneMap(req, res, next) {
+  try {
+    const { zoneId } = req.params;
+    const data = await analyticsService.getZoneMap(zoneId);
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function getZoneAnalytics(req, res, next) {
+  try {
+    const { zoneId } = req.params;
+    const data = await analyticsService.getZoneAnalytics(zoneId);
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function getWoredaMap(req, res, next) {
+  try {
+    const { woredaId } = req.params;
+    const data = await analyticsService.getWoredaMap(woredaId);
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function getWoredaAnalytics(req, res, next) {
+  try {
+    const { woredaId } = req.params;
+    const data = await analyticsService.getWoredaAnalytics(woredaId);
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   getDashboardSummary,
   getRegionalBreakdown,
   getTemporalTrends,
   getAgronomicAdvisories,
   getAiInsights,
+  getLocationMap,
+  getLocationAnalytics,
+  getRegionMap,
+  getRegionAnalytics,
+  getZoneMap,
+  getZoneAnalytics,
+  getWoredaMap,
+  getWoredaAnalytics,
 };
