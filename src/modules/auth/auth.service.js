@@ -89,7 +89,7 @@ function generateRefreshToken(user) {
 }
 
 /**
- * Register a new user with Email and/or Phone Number
+ * Register a new user with Email (Phone Number Optional)
  */
 async function registerUser({
   email,
@@ -110,11 +110,12 @@ async function registerUser({
     throw new BadRequestError('Full name and password are required');
   }
 
-  if (!resolvedEmail && !resolvedPhone) {
-    throw new BadRequestError('Either an email address or a phone number is required');
+  // EMAIL IS NOW REQUIRED (Phone is optional)
+  if (!resolvedEmail) {
+    throw new BadRequestError('Email address is required');
   }
 
-  if (resolvedEmail && !isValidEmail(resolvedEmail)) {
+  if (!isValidEmail(resolvedEmail)) {
     throw new BadRequestError('Please provide a valid email address');
   }
 
@@ -123,20 +124,18 @@ async function registerUser({
   }
 
   const passwordHash = await bcrypt.hash(password, 10);
-  const verificationToken = resolvedEmail
-    ? `${crypto.randomBytes(24).toString('hex')}_${Date.now()}`
-    : null;
+  const verificationToken = `${crypto.randomBytes(24).toString('hex')}_${Date.now()}`;
 
   if (isConnected()) {
-    if (resolvedEmail) {
-      const existingEmail = await prisma.user.findFirst({
-        where: { email: resolvedEmail },
-      });
-      if (existingEmail) {
-        throw new ConflictError('User with this email already exists');
-      }
+    // Check if email already exists
+    const existingEmail = await prisma.user.findFirst({
+      where: { email: resolvedEmail },
+    });
+    if (existingEmail) {
+      throw new ConflictError('User with this email already exists');
     }
 
+    // Check if phone already exists (if provided)
     if (resolvedPhone) {
       const existingPhone = await prisma.user.findFirst({
         where: { phoneNumber: resolvedPhone },
@@ -149,7 +148,7 @@ async function registerUser({
     const user = await prisma.user.create({
       data: {
         email: resolvedEmail,
-        phoneNumber: resolvedPhone,
+        phoneNumber: resolvedPhone || null,
         fullName: resolvedName,
         passwordHash,
         role,
@@ -159,13 +158,15 @@ async function registerUser({
       },
     });
 
-    if (resolvedEmail && verificationToken) {
+    // Send verification email asynchronously (non-blocking)
+    setImmediate(async () => {
       try {
         await _sendVerificationEmail(resolvedEmail, verificationToken);
+        logger.info(`[Auth Service] Verification email sent to ${resolvedEmail}`);
       } catch (emailErr) {
-        logger.warn(`[Auth Service] Verification email failed to send: ${emailErr.message}`);
+        logger.warn(`[Auth Service] Verification email failed: ${emailErr.message}`);
       }
-    }
+    });
 
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
@@ -179,7 +180,7 @@ async function registerUser({
   }
 
   // Fallback in-memory registration
-  if (resolvedEmail && mockUsers.has(resolvedEmail)) {
+  if (mockUsers.has(resolvedEmail)) {
     throw new ConflictError('User with this email already exists');
   }
   if (resolvedPhone && mockUsers.has(resolvedPhone)) {
@@ -189,7 +190,7 @@ async function registerUser({
   const fallbackUser = {
     id: `usr_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
     email: resolvedEmail,
-    phoneNumber: resolvedPhone,
+    phoneNumber: resolvedPhone || null,
     fullName: resolvedName,
     passwordHash,
     role,
@@ -200,17 +201,19 @@ async function registerUser({
     createdAt: new Date().toISOString(),
   };
 
-  if (resolvedEmail) mockUsers.set(resolvedEmail, fallbackUser);
+  mockUsers.set(resolvedEmail, fallbackUser);
   if (resolvedPhone) mockUsers.set(resolvedPhone, fallbackUser);
   mockUsers.set(fallbackUser.id, fallbackUser);
 
-  if (resolvedEmail && verificationToken) {
+  // Send verification email asynchronously (non-blocking)
+  setImmediate(async () => {
     try {
       await _sendVerificationEmail(resolvedEmail, verificationToken);
+      logger.info(`[Auth Service] Mock verification email sent to ${resolvedEmail}`);
     } catch (emailErr) {
-      logger.warn(`[Auth Service] Mock verification email notice: ${emailErr.message}`);
+      logger.warn(`[Auth Service] Mock verification email failed: ${emailErr.message}`);
     }
-  }
+  });
 
   const accessToken = generateAccessToken(fallbackUser);
   const refreshToken = generateRefreshToken(fallbackUser);
@@ -224,47 +227,46 @@ async function registerUser({
 }
 
 /**
- * User login with Email or Phone Number
+ * User login with Email (Primary Method)
+ * Phone number login still supported for backward compatibility but email is preferred
  */
 async function loginUser({ email, phoneNumber, phone, identifier, password }) {
   const rawIdentifier = (email || identifier || phoneNumber || phone || '').trim();
 
   if (!rawIdentifier || !password) {
-    throw new BadRequestError('Email/phone number and password are required');
+    throw new BadRequestError('Email and password are required');
   }
 
-  const isEmailInput = rawIdentifier.includes('@');
-  const normalizedEmail = isEmailInput ? rawIdentifier.toLowerCase() : null;
+  // Validate email format
+  if (!rawIdentifier.includes('@')) {
+    throw new BadRequestError('Please login with your email address');
+  }
+
+  const normalizedEmail = rawIdentifier.toLowerCase();
 
   let user = null;
 
   if (isConnected()) {
     try {
-      if (isEmailInput) {
-        user = await prisma.user.findFirst({
-          where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
-        });
-      } else {
-        user = await prisma.user.findFirst({
-          where: { phoneNumber: rawIdentifier },
-        });
-      }
+      user = await prisma.user.findFirst({
+        where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
+      });
     } catch (_err) {
-      // Fallback
+      // Fallback to mock
     }
   }
 
   if (!user) {
-    user = mockUsers.get(normalizedEmail) || mockUsers.get(rawIdentifier);
+    user = mockUsers.get(normalizedEmail);
   }
 
   if (!user) {
-    throw new UnauthorizedError('Invalid credentials');
+    throw new UnauthorizedError('Invalid email or password');
   }
 
   const isMatch = await bcrypt.compare(password, user.passwordHash || '').catch(() => false);
   if (!isMatch) {
-    throw new UnauthorizedError('Invalid credentials');
+    throw new UnauthorizedError('Invalid email or password');
   }
 
   const accessToken = generateAccessToken(user);
@@ -302,7 +304,8 @@ async function requestPasswordReset(email) {
     user = mockUsers.get(normalizedEmail);
   }
 
-  const resetToken = crypto.randomBytes(32).toString('hex');
+  // Generate a secure 6-digit numeric OTP code (e.g. 749201)
+  const resetToken = crypto.randomInt(100000, 999999).toString();
   const resetExpires = new Date(Date.now() + 3600000); // 1 hour
   const targetEmail = user?.email || normalizedEmail;
   const resetLink = `${env.APP_URL}/reset-password?token=${resetToken}&email=${encodeURIComponent(targetEmail)}`;
@@ -325,16 +328,21 @@ async function requestPasswordReset(email) {
     user.resetPasswordToken = resetToken;
     user.resetPasswordExpires = resetExpires;
 
-    try {
-      await sendPasswordResetEmail(user.email, resetToken, resetLink);
-    } catch (emailErr) {
-      logger.warn(`[Auth Service] Password reset email failed: ${emailErr.message}`);
-    }
+    // Send password reset email asynchronously (non-blocking)
+    setImmediate(async () => {
+      try {
+        await sendPasswordResetEmail(user.email, resetToken, resetLink);
+        logger.info(`[Auth Service] Password reset code sent to ${user.email}`);
+      } catch (emailErr) {
+        logger.warn(`[Auth Service] Password reset email failed: ${emailErr.message}`);
+      }
+    });
   }
 
   return {
-    message: 'If an account exists with this email, a password reset link has been sent.',
+    message: 'If an account exists with this email, a 6-digit password reset code has been sent.',
     token: resetToken,
+    code: resetToken,
     resetLink,
   };
 }
@@ -342,11 +350,12 @@ async function requestPasswordReset(email) {
 const forgotPassword = requestPasswordReset;
 
 /**
- * Reset Password with Token
+ * Reset Password with 6-Digit Code or Token
  */
-async function resetPassword({ token, newPassword }) {
-  if (!token || !newPassword) {
-    throw new BadRequestError('Reset token and new password are required');
+async function resetPassword({ token, code, resetCode, newPassword }) {
+  const resolvedToken = (token || code || resetCode || '').toString().trim();
+  if (!resolvedToken || !newPassword) {
+    throw new BadRequestError('Reset code and new password are required');
   }
 
   if (newPassword.length < 6) {
@@ -359,7 +368,7 @@ async function resetPassword({ token, newPassword }) {
     try {
       user = await prisma.user.findFirst({
         where: {
-          resetPasswordToken: token,
+          resetPasswordToken: resolvedToken,
           resetPasswordExpires: { gt: new Date() },
         },
       });
@@ -371,7 +380,7 @@ async function resetPassword({ token, newPassword }) {
   if (!user) {
     for (const u of mockUsers.values()) {
       if (
-        u.resetPasswordToken === token &&
+        u.resetPasswordToken === resolvedToken &&
         u.resetPasswordExpires &&
         new Date(u.resetPasswordExpires) > new Date()
       ) {
@@ -382,7 +391,7 @@ async function resetPassword({ token, newPassword }) {
   }
 
   if (!user) {
-    throw new BadRequestError('Password reset token is invalid or has expired');
+    throw new BadRequestError('Password reset code is invalid or has expired');
   }
 
   const newHash = await bcrypt.hash(newPassword, 10);
@@ -528,11 +537,15 @@ async function resendVerificationEmail(email) {
 
   user.verificationToken = newToken;
 
-  try {
-    await _sendVerificationEmail(user.email, newToken);
-  } catch (emailErr) {
-    logger.warn(`[Auth Service] Resend verification email failed: ${emailErr.message}`);
-  }
+  // Send verification email asynchronously (non-blocking)
+  setImmediate(async () => {
+    try {
+      await _sendVerificationEmail(user.email, newToken);
+      logger.info(`[Auth Service] Verification email resent to ${user.email}`);
+    } catch (emailErr) {
+      logger.warn(`[Auth Service] Resend verification email failed: ${emailErr.message}`);
+    }
+  });
 
   return {
     message: 'A new verification link has been sent to your email address.',

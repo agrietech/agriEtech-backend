@@ -125,7 +125,7 @@ const globalLimiter = createRateLimiter({
 
 const authLimiter = createRateLimiter({
   windowMs: 60 * 1000,
-  max: 10,
+  max: 30,
   prefix: 'rl:auth',
   message: 'Too many authentication attempts. Please try again after 1 minute.',
 });

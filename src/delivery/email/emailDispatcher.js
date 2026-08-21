@@ -106,7 +106,7 @@ async function sendPasswordResetEmail(email, resetToken, resetLink) {
   const subject = '🔒 Reset Your AgriEtech Account Password';
   const resolvedLink = resetLink || `${env.APP_URL}/reset-password?token=${resetToken}&email=${encodeURIComponent(email)}`;
   
-  const text = `AgriEtech Multi-Hazard Early Warning Platform\n\nPassword Reset Request\n\nHello,\n\nWe received a request to reset the password for your AgriEtech account associated with ${email}.\n\nPlease click the link below to set a new password:\n${resolvedLink}\n\nThis link is valid for 1 hour.\n\nIf you did not request a password reset, you can safely ignore this email. Your password will remain unchanged.\n\nBest regards,\nAgriEtech Platform Team\nAddis Ababa, Ethiopia\n${env.APP_URL}`;
+  const text = `AgriEtech Multi-Hazard Early Warning Platform\n\nPassword Reset Request\n\nHello,\n\nWe received a request to reset the password for your AgriEtech account associated with ${email}.\n\nYour 6-Digit Verification Code:\n>>> ${resetToken} <<<\n\nPlease click the link below or enter the 6-digit code on the reset page:\n${resolvedLink}\n\nThis code and link are valid for 1 hour.\n\nIf you did not request a password reset, you can safely ignore this email. Your password will remain unchanged.\n\nBest regards,\nAgriEtech Platform Team\nAddis Ababa, Ethiopia\n${env.APP_URL}`;
 
   const html = `
     <!DOCTYPE html>
@@ -127,7 +127,7 @@ async function sendPasswordResetEmail(email, resetToken, resetLink) {
     <body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
       <!-- Hidden Preheader Text -->
       <div style="display: none; font-size: 1px; color: #f1f5f9; line-height: 1px; max-height: 0px; max-width: 0px; opacity: 0; overflow: hidden;">
-        Reset your AgriEtech password. This secure link is valid for 1 hour.
+        Reset your AgriEtech password with your 6-digit verification code: ${resetToken}.
       </div>
 
       <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f1f5f9; padding: 40px 10px;">
@@ -165,12 +165,26 @@ async function sendPasswordResetEmail(email, resetToken, resetLink) {
                   <p style="margin: 0 0 16px 0;">
                     We received a request to reset the password for your account associated with <strong style="color: #0f172a;">${email}</strong>.
                   </p>
-                  <p style="margin: 0 0 24px 0;">
-                    Click the button below to choose a new, secure password. For your protection, this link is valid for <strong>1 hour</strong>.
+
+                  <!-- 6-Digit Numeric OTP Code Box -->
+                  <div style="background-color: #f0fdf4; border: 2px dashed #16a34a; border-radius: 12px; padding: 24px 20px; text-align: center; margin: 24px 0;">
+                    <div style="font-size: 12px; color: #15803d; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;">
+                      Your 6-Digit Verification Code
+                    </div>
+                    <div style="font-size: 38px; font-weight: 900; color: #166534; letter-spacing: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;">
+                      ${resetToken}
+                    </div>
+                    <div style="font-size: 12px; color: #64748b; margin-top: 8px;">
+                      ⏱️ Valid for 1 hour
+                    </div>
+                  </div>
+
+                  <p style="margin: 0 0 20px 0;">
+                    You can either enter the 6-digit code above on the password reset screen or click the button below directly:
                   </p>
 
                   <!-- CTA Button -->
-                  <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 32px 0;">
+                  <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 24px 0;">
                     <tr>
                       <td align="center">
                         <table border="0" cellpadding="0" cellspacing="0">
