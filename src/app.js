@@ -146,10 +146,20 @@ app.get('/api/v1', (_req, res) => {
 // Web Admin Dashboard UI
 app.use('/admin', adminRoutes);
 
-// Top-level email verification handler (for user-friendly links)
+// Top-level email verification and password reset handlers (for user-friendly links)
 app.get('/verify-email', (req, res, next) => {
   const authController = require('./modules/auth/auth.controller');
   return authController.verifyEmail(req, res, next);
+});
+
+app.get('/reset-password', (req, res) => {
+  const authController = require('./modules/auth/auth.controller');
+  return authController.renderResetPasswordPage(req, res);
+});
+
+app.get('/forgot-password', (req, res) => {
+  const authController = require('./modules/auth/auth.controller');
+  return authController.renderForgotPasswordPage(req, res);
 });
 
 // API feature routes with specialized rate limiters
