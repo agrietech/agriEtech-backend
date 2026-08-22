@@ -12,9 +12,9 @@ async function authenticate(req, res, next) {
       return next();
     }
 
-    // 2. Test environment bypass when no auth header is supplied
-    if (process.env.NODE_ENV === 'test' && !req.headers.authorization) {
-      req.user = { id: 'usr_test_farmer_01', email: 'farmer@agrietech.et', role: 'ADMIN' };
+    // 2. Dev / Admin Bypass (Instant tokenless access when ADMIN_DEV_BYPASS=true)
+    if ((process.env.ADMIN_DEV_BYPASS === 'true' || process.env.ADMIN_BYPASS === 'true' || process.env.NODE_ENV === 'test') && !req.headers.authorization) {
+      req.user = { id: 'usr_admin_01', email: 'admin@agrietech.et', fullName: 'System Administrator', role: 'ADMIN' };
       return next();
     }
 
