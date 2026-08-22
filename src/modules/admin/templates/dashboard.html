@@ -903,6 +903,19 @@
 
         <div class="panel">
           <div class="panel-header">
+            <div class="panel-title">🧹 Database Sanitization & Production Readiness</div>
+            <button class="btn btn-danger btn-sm" onclick="cleanTestDataUI()">🧹 Clean Test Records</button>
+          </div>
+          <div class="panel-body">
+            <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:1rem;">
+              Purge dummy test users, temporary sensor readings, mock scans, and test farms while safeguarding official Ethiopian administrative boundaries (1,148 Woredas, 15 Regions) and verified administrator accounts.
+            </p>
+            <div id="dbCleanResult" style="display:none;padding:0.75rem 1rem;border-radius:var(--radius);background:var(--primary-light);color:var(--primary-dark);font-size:0.85rem;margin-bottom:1rem;font-weight:600;"></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
             <div class="panel-title">🛡️ Admin Security Audit Logs</div>
           </div>
           <div class="panel-body">
@@ -1440,7 +1453,37 @@
     }
 
     // 8. System & Ingestion API
-    async function loadSystem() {
+    async 
+    async function cleanTestDataUI() {
+      if (!confirm('Are you sure you want to sanitize the database? This will remove all mock/test users, dummy sensor readings, and test farms, while preserving all real accounts and official Ethiopian woreda boundaries.')) {
+        return;
+      }
+      try {
+        const res = await fetch('/api/v1/admin/database/clean-test-data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        const json = await res.json();
+        if (json.success) {
+          const resEl = document.getElementById('dbCleanResult');
+          if (resEl) {
+            resEl.style.display = 'block';
+            resEl.innerHTML = `✅ Database Sanitized: Deleted ${json.data.deleted.users} test users, ${json.data.deleted.farms} test farms, ${json.data.deleted.sensors} test sensors, ${json.data.deleted.diagnoses} diagnoses. Active production records: ${json.data.current.users} users, ${json.data.current.farms} farms, ${json.data.current.sensors} sensors.`;
+          }
+          alert(`Database Sanitization Complete!\n\nDeleted ${json.data.deleted.users} test users, ${json.data.deleted.farms} test farms, ${json.data.deleted.sensors} test sensors.\nActive real records preserved: ${json.data.current.users} users, ${json.data.current.farms} farms.`);
+          loadOverview();
+          loadUsers();
+          loadFarms();
+          loadSensors();
+        } else {
+          alert('Failed to clean test data: ' + (json.error?.message || 'Unknown error'));
+        }
+      } catch (err) {
+        alert('Network error while cleaning database: ' + err.message);
+      }
+    }
+
+    function loadSystem() {
       try {
         const res = await fetch('/api/v1/admin/system/health', { headers: getAuthHeaders() });
         const json = await res.json();

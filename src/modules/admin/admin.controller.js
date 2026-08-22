@@ -256,7 +256,19 @@ function renderDashboard(_req, res) {
   });
 }
 
+
+async function cleanTestData(req, res, next) {
+  try {
+    const adminContext = { id: req.user?.id, email: req.user?.email, ip: req.ip };
+    const result = await adminService.cleanTestData(adminContext);
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
+  cleanTestData,
   getOverview,
   getUsers,
   createUser,

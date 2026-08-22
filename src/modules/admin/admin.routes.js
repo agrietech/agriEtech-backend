@@ -55,6 +55,7 @@ router.get('/system/health', adminAuth, controller.getSystemHealth);
 router.get('/health', adminAuth, controller.getSystemHealth);
 router.post('/ingestion/trigger', adminAuth, controller.triggerIngestion);
 router.get('/audit-logs', adminAuth, controller.getAuditLogs);
+router.post('/database/clean-test-data', adminAuth, controller.cleanTestData);
 
 // Role Request Management (Hierarchical Approval System)
 router.get('/role-requests', adminAuth, roleRequestController.getPendingRequests);

@@ -1097,7 +1097,108 @@ async function deleteDiagnosis(diagId, adminContext = {}) {
   return { success: true, id: diagId };
 }
 
+
+async function cleanTestData(adminContext = {}) {
+  if (isConnected()) {
+    try {
+      const allUsers = await prisma.user.findMany({ select: { id: true, email: true, role: true } });
+      const testUsers = allUsers.filter(u => 
+        u.email.startsWith('audit_farmer_') || 
+        u.email.startsWith('farmer_diag_') || 
+        u.email.startsWith('test_') || 
+        u.email.startsWith('mock_') ||
+        u.email.startsWith('farmer_178') ||
+        u.email.startsWith('woreda_officer_178') ||
+        u.email.startsWith('admin_178') ||
+        u.email.startsWith('render_test_') ||
+        u.email.startsWith('camera_farmer_') ||
+        u.email.startsWith('form_user_') ||
+        (u.email.includes('test') && u.role !== 'ADMIN' && !u.email.includes('admin@agrietech.et'))
+      );
+
+      const testUserIds = testUsers.map(u => u.id);
+
+      const deletedReadings = await prisma.sensorReading.deleteMany({
+        where: {
+          OR: [
+            { sensor: { farm: { userId: { in: testUserIds } } } },
+            { sensor: { hardwareId: { in: ['AGRI-NODE-ETH-999', 'ETH-NODE-001', 'AGRI-FIREBASE-STREAM'] } } }
+          ]
+        }
+      });
+
+      const deletedSensors = await prisma.sensor.deleteMany({
+        where: {
+          OR: [
+            { hardwareId: { in: ['AGRI-NODE-ETH-999', 'ETH-NODE-001', 'AGRI-FIREBASE-STREAM'] } },
+            { hardwareId: { startsWith: 'test' } },
+            { farm: { userId: { in: testUserIds } } }
+          ]
+        }
+      });
+
+      const deletedDiagnoses = await prisma.diseaseDiagnosis.deleteMany({
+        where: {
+          OR: [
+            { farm: { userId: { in: testUserIds } } },
+            { farmId: null }
+          ]
+        }
+      });
+
+      const deletedFarms = await prisma.farm.deleteMany({
+        where: {
+          OR: [
+            { userId: { in: testUserIds } },
+            { farmName: { startsWith: 'Bishoftu Demonstration Plot #' } },
+            { farmName: { startsWith: 'Test Farm' } }
+          ]
+        }
+      });
+
+      let deletedUsersCount = 0;
+      if (testUserIds.length > 0) {
+        const delUsers = await prisma.user.deleteMany({ where: { id: { in: testUserIds } } });
+        deletedUsersCount = delUsers.count;
+      }
+
+      await logAuditAction({
+        action: 'DATABASE_TEST_DATA_SANITIZED',
+        adminId: adminContext.id,
+        adminEmail: adminContext.email,
+        details: `Sanitized database: deleted ${deletedUsersCount} test users, ${deletedFarms.count} test farms, ${deletedSensors.count} test sensors, ${deletedDiagnoses.count} diagnoses, ${deletedReadings.count} readings`,
+        ipAddress: adminContext.ip,
+      });
+
+      const remainingUsers = await prisma.user.count();
+      const remainingFarms = await prisma.farm.count();
+      const remainingSensors = await prisma.sensor.count();
+
+      return {
+        success: true,
+        deleted: {
+          users: deletedUsersCount,
+          farms: deletedFarms.count,
+          sensors: deletedSensors.count,
+          diagnoses: deletedDiagnoses.count,
+          readings: deletedReadings.count,
+        },
+        current: {
+          users: remainingUsers,
+          farms: remainingFarms,
+          sensors: remainingSensors,
+        }
+      };
+    } catch (err) {
+      logger.error(`[AdminService] Error cleaning test data: ${err.message}`);
+      throw err;
+    }
+  }
+  return { success: true, message: 'Database simulated test data cleaned.' };
+}
+
 module.exports = {
+  cleanTestData,
   getOverview,
   getUsers,
   createUser,
