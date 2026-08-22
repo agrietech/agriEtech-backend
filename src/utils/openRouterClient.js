@@ -531,11 +531,159 @@ You MUST output valid JSON ONLY with exact fields:
     };
   }
 
-  _getBilingualMockDiagnosis(cropHint = 'Wheat', _plantIdData = null) {
-    const isMaize = (cropHint || '').toUpperCase().includes('MAIZE') || (cropHint || '').toUpperCase().includes('CORN');
-    const isTeff = (cropHint || '').toUpperCase().includes('TEFF');
+  _getBilingualMockDiagnosis(cropHint = 'Wheat', plantIdData = null) {
+    // If Plant.id provided real botanical classification, use it directly
+    if (plantIdData && plantIdData.crop && plantIdData.crop.scientificName && plantIdData.crop.scientificName !== 'Crop') {
+      const sciName = plantIdData.crop.scientificName;
+      const commonName = plantIdData.crop.commonNames?.[0] || sciName;
+      const topDisease = plantIdData.diseases?.[0];
+      const isHealthy = plantIdData.isHealthy || !topDisease;
 
-    if (isMaize) {
+      let amharicCrop = 'ሰብል';
+      const sciLower = sciName.toLowerCase();
+      if (sciLower.includes('triticum') || sciLower.includes('wheat')) amharicCrop = 'ስንዴ';
+      else if (sciLower.includes('eragrostis') || sciLower.includes('tef')) amharicCrop = 'ጤፍ';
+      else if (sciLower.includes('zea') || sciLower.includes('mays') || sciLower.includes('maize')) amharicCrop = 'በቆሎ';
+      else if (sciLower.includes('lycopersicum') || sciLower.includes('tomato')) amharicCrop = 'ቲማቲም';
+      else if (sciLower.includes('tuberosum') || sciLower.includes('potato')) amharicCrop = 'ድንች';
+      else if (sciLower.includes('cepa') || sciLower.includes('onion')) amharicCrop = 'ሽንኩርት';
+      else if (sciLower.includes('coffea') || sciLower.includes('coffee')) amharicCrop = 'ቡና';
+      else if (sciLower.includes('malus') || sciLower.includes('apple')) amharicCrop = 'ፖም';
+      else if (sciLower.includes('persea') || sciLower.includes('avocado')) amharicCrop = 'አቮካዶ';
+      else if (sciLower.includes('hordeum') || sciLower.includes('barley')) amharicCrop = 'ገብስ';
+      else if (sciLower.includes('sorghum')) amharicCrop = 'ማሽላ';
+      else if (sciLower.includes('vicia') || sciLower.includes('faba') || sciLower.includes('bean')) amharicCrop = 'ባቄላ';
+
+      if (isHealthy) {
+        return {
+          cropIdentified: { nameEn: `${commonName} (${sciName})`, nameAm: amharicCrop },
+          diseaseName: { nameEn: 'Healthy Plant / No Active Pathogen Detected', nameAm: 'ጤናማ ተክል / የበሽታ ምልክት አልተገኘም' },
+          pathogen: 'None (Healthy)',
+          severity: 'LOW',
+          confidenceScore: Math.round((plantIdData.isHealthyProbability || 0.95) * 100) / 100,
+          symptoms: {
+            en: 'Foliage and plant tissues display normal vigor, uniform coloration, and no necrotic lesions.',
+            am: 'የተክሉ ቅጠሎችና ቅርንጫፎች ጤናማ እድገትና ንጹህ ቀለም ያሳያሉ፤ የበሽታ መበስበስ ምልክት የለም።',
+          },
+          treatment: {
+            organicEn: 'Maintain balanced irrigation schedule and apply cured compost to sustain vigor.',
+            organicAm: 'መደበኛ የመስኖና የአፈር እርጥበትን ይጠብቁ፤ የበሰበሰ የተፈጥሮ ኮምፖስት ይጠቀሙ።',
+            chemicalEn: 'No chemical treatment required.',
+            chemicalAm: 'ምንም አይነት ኬሚካል አያስፈልግም።',
+            culturalOm: 'Biqiltuun fayyaadha; eegumsa biyyee fi bishaanii itti fufaa.',
+          },
+          prevention: {
+            en: 'Continue weekly field scouting and maintain weed-free crop borders.',
+            am: 'ሳምንታዊ የእርሻ ክትትልዎን ይቀጥሉ፤ የእርሻውን ድንበር ከአረም ያጽዱ።',
+          },
+        };
+      }
+
+      return {
+        cropIdentified: { nameEn: `${commonName} (${sciName})`, nameAm: amharicCrop },
+        diseaseName: {
+          nameEn: topDisease.name || 'Botanical Pathogen Infection',
+          nameAm: `የ${amharicCrop} በሽታ (${topDisease.name || 'የፈንገስ/ተባይ ምልክት'})`,
+        },
+        pathogen: topDisease.cause || 'Identified Plant Pathogen',
+        severity: topDisease.probability > 0.7 ? 'HIGH' : 'MODERATE',
+        confidenceScore: Math.round((topDisease.probability || 0.88) * 100) / 100,
+        symptoms: {
+          en: topDisease.description || `Visible foliage lesions and stress symptoms detected on ${commonName}.`,
+          am: `በ${amharicCrop} ላይ የሚታዩ የበሽታ ምልክቶችና የቅጠል ጉዳቶች ተለይተዋል።`,
+        },
+        treatment: {
+          organicEn: 'Remove and burn severely infected leaves; apply neem oil extract or copper soap spray.',
+          organicAm: 'በከፍተኛ ሁኔታ የተጎዱ ቅጠሎችን አስወግደው ያቃጥሉ፤ የኒም ዘይት ወይም የተፈጥሮ ፀረ-ተባይ ይርጩ።',
+          chemicalEn: 'Apply appropriate targeted fungicide (e.g., Mancozeb, Tilt 250 EC, or Ridomil Gold MZ) according to label rates.',
+          chemicalAm: 'በመመሪያው መሰረት ተገቢውን ፀረ-ፈንገስ (ለምሳሌ ማንኮዜብ፣ ቲልት ወይም ሪዶሚል ጎልድ) ይርጩ።',
+          culturalOm: 'Dawaa qoricha dhibee itti gorfame seeraan fayyadamaa.',
+        },
+        prevention: {
+          en: 'Implement crop rotation, maintain plant spacing for air circulation, and inspect weekly.',
+          am: 'ሰብል ማፈራረቅን ይተግብሩ፤ የአየር ዝውውር እንዲኖር የሰብል ክፍተትን ይጠብቁ።',
+        },
+      };
+    }
+
+    const hint = (cropHint || '').toUpperCase();
+
+    if (hint.includes('TOMATO') || hint.includes('ቲማቲም')) {
+      return {
+        cropIdentified: { nameEn: 'Tomato (Solanum lycopersicum)', nameAm: 'ቲማቲም' },
+        diseaseName: { nameEn: 'Tomato Late Blight (Phytophthora infestans)', nameAm: 'የቲማቲም አረንጓዴ/ቅጠል መድረቅ በሽታ' },
+        pathogen: 'Phytophthora infestans',
+        severity: 'HIGH',
+        confidenceScore: 0.94,
+        symptoms: {
+          en: 'Water-soaked irregular dark brown lesions on leaves and stems with white mold on leaf undersides.',
+          am: 'በቅጠሎችና በግንዱ ላይ ጥቁር ቡናማ የውሃ ነጠብጣቦችና በቅጠሉ ስር ነጭ የፈንገስ ሻጋታ ይታያል።',
+        },
+        treatment: {
+          organicEn: 'Remove and destroy infected vines; apply copper hydroxide preventative spray.',
+          organicAm: 'የተጎዱትን ተክሎች ቆርጠው ያቃጥሉ፤ የኮፐር ሃይድሮክሳይድ ፀረ-ፈንገስ ይርጩ።',
+          chemicalEn: 'Apply systemic fungicide Ridomil Gold MZ (2.5 kg/ha) or Profiler immediately.',
+          chemicalAm: 'ሪዶሚል ጎልድ (Ridomil Gold) ወይም ፕሮፋይለር ፀረ-ፈንገስ በአፋጣኝ ይርጩ።',
+          culturalOm: 'Qoricha Ridomil Gold biifaa; baala dhibame balleessaa.',
+        },
+        prevention: {
+          en: 'Avoid overhead irrigation; stake tomatoes and maintain 50 cm row spacing for ventilation.',
+          am: 'ቅጠሉ ላይ ውሃ አያፍሱ፤ አየር እንዲዘዋወር ቲማቲሙን በጨራቅ ያስሩ፤ የ50 ሳ.ሜ ክፍተት ይጠብቁ።',
+        },
+      };
+    }
+
+    if (hint.includes('COFFEE') || hint.includes('ቡና')) {
+      return {
+        cropIdentified: { nameEn: 'Coffee (Coffea arabica)', nameAm: 'ቡና' },
+        diseaseName: { nameEn: 'Coffee Berry Disease (CBD)', nameAm: 'የቡና ፍሬ በሽታ' },
+        pathogen: 'Colletotrichum kahawae',
+        severity: 'HIGH',
+        confidenceScore: 0.92,
+        symptoms: {
+          en: 'Dark, sunken necrotic spots on green expanding coffee berries causing premature berry drop.',
+          am: 'በአረንጓዴ የቡና ፍሬዎች ላይ ጥቁር የሰመጡ ጠባሳዎች ይታያሉ፤ ፍሬው ያለጊዜው እንዲረግፍ ያደርጋሉ።',
+        },
+        treatment: {
+          organicEn: 'Prune dead coffee twigs; apply organic copper soap spray early in the rainy season.',
+          organicAm: 'የደረቁ የቡና ቅርንጫፎችን ይቁረጡ፤ በዝናብ መጀመሪያ የተፈጥሮ የኮፐር ድብልቅ ይርጩ።',
+          chemicalEn: 'Apply Kocide 2000 (Copper Hydroxide) or Cabrio Duo at recommended flowering and berry pinhead stages.',
+          chemicalAm: 'ኮሳይድ 2000 (Kocide) ወይም ካብሪዮ ዱኦ ፀረ-ፈንገስ ፍሬው በሚያብብበት ወቅት ይርጩ።',
+          culturalOm: 'Dawaa Kocide biifaa; damee goge mummuraa.',
+        },
+        prevention: {
+          en: 'Plant CBD-resistant varieties (e.g., 741, 74110, 74112); maintain 35% canopy shade.',
+          am: 'በሽታውን የሚቋቋሙ የተሻሻሉ የቡና ዝርያዎችን (741፣ 74110) ይትከሉ፤ የ35% ጥላ ዛፎችን ይጠብቁ።',
+        },
+      };
+    }
+
+    if (hint.includes('APPLE') || hint.includes('ፖም')) {
+      return {
+        cropIdentified: { nameEn: 'Apple (Malus domestica)', nameAm: 'ፖም' },
+        diseaseName: { nameEn: 'Apple Scab (Venturia inaequalis)', nameAm: 'የፖም ቅርፊት (ስካብ) በሽታ' },
+        pathogen: 'Venturia inaequalis',
+        severity: 'MODERATE',
+        confidenceScore: 0.91,
+        symptoms: {
+          en: 'Olive-green to black velvety spots on leaves and corky scabs on apple fruits.',
+          am: 'በቅጠሎች ላይ የወይራ አረንጓዴና ጥቁር ነጠብጣቦች፣ በፍሬው ላይ ደረቅ የቅርፊት ምልክቶች ይታያሉ።',
+        },
+        treatment: {
+          organicEn: 'Rake and compost fallen leaves; spray sulfur-based fungicide early spring.',
+          organicAm: 'የረገፉ ቅጠሎችን ሰብስበው ያፅዱ፤ በበልግ ወቅት የሰልፈር ድብልቅ ይርጩ።',
+          chemicalEn: 'Apply Score 250 EC (Difenoconazole) or Captan at green tip stage.',
+          chemicalAm: 'ስኮር 250 ኢሲ (Score 250 EC) ፀረ-ፈንገስ ቡቃያ በሚወጣበት ወቅት ይርጩ።',
+          culturalOm: 'Baala harca\'e walitti qabaa; dawaa Score biifaa.',
+        },
+        prevention: {
+          en: 'Prune trees for maximum sunlight penetration and air circulation.',
+          am: 'ለዛፉ በቂ የፀሐይ ብርሃንና አየር እንዲያገኝ ቅርንጫፎቹን ይግረዙ።',
+        },
+      };
+    }
+
+    if (hint.includes('MAIZE') || hint.includes('CORN') || hint.includes('በቆሎ')) {
       return {
         cropIdentified: { nameEn: 'Maize (Zea mays)', nameAm: 'በቆሎ' },
         diseaseName: { nameEn: 'Fall Armyworm Infestation', nameAm: 'የመኸር ሰራዊት አባጨጓሬ (ፎል አርሚዎርም)' },
@@ -560,7 +708,7 @@ You MUST output valid JSON ONLY with exact fields:
       };
     }
 
-    if (isTeff) {
+    if (hint.includes('TEFF') || hint.includes('ጤፍ')) {
       return {
         cropIdentified: { nameEn: 'Teff (Eragrostis tef)', nameAm: 'ጤፍ' },
         diseaseName: { nameEn: 'Teff Rust', nameAm: 'የጤፍ ዋግ' },

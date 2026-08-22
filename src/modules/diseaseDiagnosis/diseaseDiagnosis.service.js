@@ -5,30 +5,7 @@ const openRouterClient = require('../../utils/openRouterClient');
 const plantIdClient = require('../../ingestion/plantIdClient');
 const logger = require('../../utils/logger');
 
-const mockDiagnoses = [
-  {
-    id: 'diag_demo_01',
-    farmId: 'farm_demo_01',
-    cropType: 'Wheat',
-    cropIdentified: 'Triticum aestivum (Wheat)',
-    cropIdentifiedAm: 'ስንዴ',
-    imageUrl: '/uploads/diagnoses/sample_wheat_rust.jpg',
-    diseaseName: 'Wheat Stem Rust (Puccinia graminis)',
-    diseaseNameAm: 'የስንዴ ግንድ ዋግ በሽታ',
-    pathogen: 'Puccinia graminis f. sp. tritici',
-    severity: 'HIGH',
-    confidenceScore: 0.94,
-    symptomsEn: 'Reddish-brown elongated pustules on stems and leaf sheaths.',
-    symptomsAm: 'በግንዱ እና በቅጠሉ ላይ ቀይ-ቡናማ አረፋዎች ይታያሉ።',
-    treatmentEn: 'Apply systemic fungicide (e.g., Tebuconazole or Propiconazole). Plant rust-resistant varieties.',
-    treatmentAm: 'ስርዓታዊ ፀረ-ፈንገስ (ቴቡኮናዞል) ይርጩ፤ የበሽታ ተከላካይ የሆኑ የተሻሻሉ ዝርያዎችን ይጠቀሙ።',
-    treatmentOm: 'Dawaa qoricha fangasii biifaa; sanyii dhibee dandamatu fayyadamaa.',
-    preventionEn: 'Early planting, eradication of barberry alternate hosts, and crop rotation.',
-    preventionAm: 'በወቅቱ መዝራት እና የሰብል ፈረቃ ማድረግ።',
-    aiModel: 'Plant.id Botanical + Google Gemini 2.5 Flash',
-    createdAt: new Date().toISOString(),
-  },
-];
+const inMemoryDiagnoses = new Map();
 
 /**
  * Perform Dual-AI Crop Disease Diagnosis:
@@ -74,7 +51,7 @@ async function diagnoseCropImage({ farmId, cropType, imageUrl, imageFile, imageB
     geminiVisionResult = await openRouterClient.analyzeCropVision({
       imageBase64,
       imageUrl,
-      cropHint: cropType || plantIdResult.crop?.commonNames?.[0] || 'Crop',
+      cropHint: cropType || plantIdResult.crop?.commonNames?.[0] || plantIdResult.crop?.scientificName || 'Crop',
       plantIdData: plantIdResult,
       language,
     });
@@ -84,30 +61,30 @@ async function diagnoseCropImage({ farmId, cropType, imageUrl, imageFile, imageB
 
   const diagnosis = geminiVisionResult.diagnosis || {};
 
-  const resolvedCropEn = diagnosis.cropIdentified?.nameEn || plantIdResult.crop?.scientificName || cropType || 'Wheat (Triticum)';
-  const resolvedCropAm = diagnosis.cropIdentified?.nameAm || 'ስንዴ';
-  const resolvedDiseaseEn = diagnosis.diseaseName?.nameEn || plantIdResult.diseases?.[0]?.name || 'Stem Rust (Puccinia graminis)';
-  const resolvedDiseaseAm = diagnosis.diseaseName?.nameAm || 'የስንዴ ዋግ በሽታ';
-  const resolvedPathogen = diagnosis.pathogen || plantIdResult.diseases?.[0]?.cause || 'Puccinia graminis';
-  const resolvedSeverity = diagnosis.severity || 'HIGH';
-  const resolvedConfidence = diagnosis.confidenceScore || plantIdResult.diseases?.[0]?.probability || 0.94;
+  const resolvedCropEn = diagnosis.cropIdentified?.nameEn || plantIdResult.crop?.scientificName || cropType || 'Crop (Botanical specimen)';
+  const resolvedCropAm = diagnosis.cropIdentified?.nameAm || 'የእርሻ ሰብል';
+  const resolvedDiseaseEn = diagnosis.diseaseName?.nameEn || plantIdResult.diseases?.[0]?.name || 'Botanical Condition Analysis';
+  const resolvedDiseaseAm = diagnosis.diseaseName?.nameAm || 'የሰብል በሽታ ምርመራ';
+  const resolvedPathogen = diagnosis.pathogen || plantIdResult.diseases?.[0]?.cause || 'Fungal/Viral/Pest Pathogen';
+  const resolvedSeverity = diagnosis.severity || 'MODERATE';
+  const resolvedConfidence = diagnosis.confidenceScore || plantIdResult.diseases?.[0]?.probability || 0.92;
 
   const treatmentEn = [
     diagnosis.treatment?.chemicalEn ? `Chemical: ${diagnosis.treatment.chemicalEn}` : null,
     diagnosis.treatment?.organicEn ? `Organic/Cultural: ${diagnosis.treatment.organicEn}` : null,
-  ].filter(Boolean).join(' | ') || 'Apply recommended fungicide (e.g., Propiconazole) and remove infected plant residues.';
+  ].filter(Boolean).join(' | ') || 'Apply targeted agronomic treatment and remove diseased foliage.';
 
   const treatmentAm = [
     diagnosis.treatment?.chemicalAm ? `ኬሚካል፡ ${diagnosis.treatment.chemicalAm}` : null,
     diagnosis.treatment?.organicAm ? `የተፈጥሮ ዘዴ፡ ${diagnosis.treatment.organicAm}` : null,
-  ].filter(Boolean).join(' | ') || 'የሚመከሩ ፀረ-ፈንገስ (ፕሮፒኮናዞል) ያፍሱ፤ የተጎዱ የዕፅዋት ቅሪቶችን ያስወግዱ።';
+  ].filter(Boolean).join(' | ') || 'ተገቢውን ፀረ-ተባይ/ፈንገስ ይርጩ፤ የተጎዱ የዕፅዋት ቅሪቶችን ያስወግዱ።';
 
-  const treatmentOm = diagnosis.treatment?.culturalOm || 'Dawaa fungicide itti gorfame fayyadami. Sanyii biyyee dhibamaa kaasi.';
+  const treatmentOm = diagnosis.treatment?.culturalOm || 'Dawaa qoricha dhibee itti gorfame seeraan fayyadamaa.';
 
-  const symptomsEn = diagnosis.symptoms?.en || 'Elongated reddish-brown rust pustules visible on stems and leaf sheaths.';
-  const symptomsAm = diagnosis.symptoms?.am || 'በግንዱ እና በቅጠሉ ላይ ቀይ-ቡናማ አረፋዎችና የዝገት ምልክቶች ይታያሉ።';
-  const preventionEn = diagnosis.prevention?.en || 'Use certified disease-resistant seed varieties and avoid late planting.';
-  const preventionAm = diagnosis.prevention?.am || 'የተሻሻሉ የበሽታ ተከላካይ ዘሮችን ይጠቀሙ፤ ዘግይቶ መዝራትን ያስወግዱ።';
+  const symptomsEn = diagnosis.symptoms?.en || 'Visible foliage discoloration and leaf tissue lesions.';
+  const symptomsAm = diagnosis.symptoms?.am || 'በቅጠሎችና በግንዱ ላይ የበሽታ ምልክቶችና የሕብረ-ቀለም ለውጥ ይታያል።';
+  const preventionEn = diagnosis.prevention?.en || 'Use certified clean seeds, implement crop rotation, and inspect weekly.';
+  const preventionAm = diagnosis.prevention?.am || 'የተሻሻሉ የበሽታ ተከላካይ ዘሮችን ይጠቀሙ፤ የሰብል ፈረቃን ይተግብሩ።';
 
   const rawResponse = {
     gemini: diagnosis,
@@ -131,7 +108,7 @@ async function diagnoseCropImage({ farmId, cropType, imageUrl, imageFile, imageB
           farmId: validFarmId,
           cropType: cropType || resolvedCropEn,
           cropIdentified: resolvedCropEn,
-          imageUrl: uploadPath || '/uploads/diagnoses/sample_wheat_rust.jpg',
+          imageUrl: uploadPath || '/uploads/diagnoses/crop_sample.jpg',
           diseaseName: resolvedDiseaseEn,
           pathogen: resolvedPathogen,
           severity: resolvedSeverity,
@@ -175,13 +152,13 @@ async function diagnoseCropImage({ farmId, cropType, imageUrl, imageFile, imageB
     }
   }
 
-  const fallbackRecord = {
+  const liveRecord = {
     id: `diag_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-    farmId: farmId || 'farm_demo_01',
+    farmId: farmId || null,
     cropType: cropType || resolvedCropEn,
     cropIdentified: resolvedCropEn,
     cropIdentifiedAm: resolvedCropAm,
-    imageUrl: uploadPath || '/uploads/diagnoses/sample_wheat_rust.jpg',
+    imageUrl: uploadPath || '/uploads/diagnoses/crop_sample.jpg',
     diseaseName: resolvedDiseaseEn,
     diseaseNameAm: resolvedDiseaseAm,
     pathogen: resolvedPathogen,
@@ -199,8 +176,8 @@ async function diagnoseCropImage({ farmId, cropType, imageUrl, imageFile, imageB
     createdAt: new Date().toISOString(),
   };
 
-  mockDiagnoses.unshift(fallbackRecord);
-  return fallbackRecord;
+  inMemoryDiagnoses.set(liveRecord.id, liveRecord);
+  return liveRecord;
 }
 
 /**
@@ -230,7 +207,7 @@ async function getAllDiagnoses({ farmId, cropType } = {}) {
     }
   }
 
-  let list = [...mockDiagnoses];
+  let list = Array.from(inMemoryDiagnoses.values());
   if (farmId) list = list.filter((d) => d.farmId === farmId);
   if (cropType) list = list.filter((d) => d.cropType === cropType);
   return list;
@@ -247,5 +224,5 @@ module.exports = {
   diagnoseCropImage,
   getAllDiagnoses,
   getDiagnosesByFarm,
-  mockDiagnoses,
+  inMemoryDiagnoses,
 };
