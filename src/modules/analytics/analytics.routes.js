@@ -4,6 +4,7 @@ const controller = require('./analytics.controller');
 const { authenticate } = require('../../middleware/auth.middleware');
 
 router.get('/dashboard', authenticate, controller.getDashboardSummary);
+router.get('/dashboard-summary', authenticate, controller.getDashboardSummary);
 router.get('/summary', authenticate, controller.getDashboardSummary);
 router.get('/regional-breakdown', authenticate, controller.getRegionalBreakdown);
 router.get('/regional', authenticate, controller.getRegionalBreakdown);
