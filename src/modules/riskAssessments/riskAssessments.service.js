@@ -141,7 +141,7 @@ async function getAssessmentsByWoreda(woredaId) {
     }
   }
 
-  return mockRiskAssessments.filter((r) => !woredaId || r.woredaId === woredaId || woredaId === 'woreda_adama_01');
+  return mockRiskAssessments.filter((r) => !woredaId || r.woredaId === woredaId);
 }
 
 // Get risk statistics from live database

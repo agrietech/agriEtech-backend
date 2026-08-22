@@ -173,9 +173,9 @@ async function getFarmsByUser(userId) {
   }
 
   const userFarms = Array.from(mockFarms.values()).filter(
-    (f) => !userId || f.userId === userId || userId === 'usr_farmer_01'
+    (f) => !userId || f.userId === userId
   );
-  return userFarms.length > 0 ? userFarms : Array.from(mockFarms.values());
+  return userFarms;
 }
 
 // Get farm by ID

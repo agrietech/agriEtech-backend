@@ -134,7 +134,7 @@ async function getSensorsByFarm(farmId) {
   const list = Array.from(mockSensors.values()).filter(
     (s) => !farmId || s.farmId === farmId
   );
-  return list.length > 0 ? list : [mockSensors.get('sensor_demo_01')];
+  return list;
 }
 
 module.exports = {
