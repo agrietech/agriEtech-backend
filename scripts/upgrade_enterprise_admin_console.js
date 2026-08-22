@@ -1,4 +1,7 @@
-<!DOCTYPE html>
+const fs = require('fs');
+const path = require('path');
+
+const dashboardHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -1289,15 +1292,15 @@
 
           const tbody = document.getElementById('recentActivity');
           const alerts = json.data.recentAlerts || [];
-          tbody.innerHTML = alerts.slice(0, 5).map(a => `
+          tbody.innerHTML = alerts.slice(0, 5).map(a => \`
             <tr>
-              <td><span class="badge badge-info">${a.hazardType || 'Alert'}</span></td>
-              <td><strong>${a.headline || a.titleEn || 'Agricultural Advisory'}</strong></td>
-              <td><span class="badge badge-${getSeverityBadge(a.severity)}">${a.severity || 'LOW'}</span></td>
-              <td>${a.woreda?.nameEn || a.targetWoredaName || 'National / Regional'}</td>
-              <td>${formatDate(a.createdAt)}</td>
+              <td><span class="badge badge-info">\${a.hazardType || 'Alert'}</span></td>
+              <td><strong>\${a.headline || a.titleEn || 'Agricultural Advisory'}</strong></td>
+              <td><span class="badge badge-\${getSeverityBadge(a.severity)}">\${a.severity || 'LOW'}</span></td>
+              <td>\${a.woreda?.nameEn || a.targetWoredaName || 'National / Regional'}</td>
+              <td>\${formatDate(a.createdAt)}</td>
             </tr>
-          `).join('') || '<tr><td colspan="5">No recent emergency alerts broadcasted</td></tr>';
+          \`).join('') || '<tr><td colspan="5">No recent emergency alerts broadcasted</td></tr>';
         }
       } catch (e) {
         console.error('Failed to load overview', e);
@@ -1312,7 +1315,7 @@
         if (json.success) {
           currentData.users = json.data.users || [];
           renderUsers(currentData.users);
-          document.getElementById('userCountBadge').textContent = `Total: ${currentData.users.length} active accounts`;
+          document.getElementById('userCountBadge').textContent = \`Total: \${currentData.users.length} active accounts\`;
         }
       } catch (e) {
         showToast('Failed to load users', 'error');
@@ -1321,29 +1324,29 @@
 
     function renderUsers(users) {
       const tbody = document.getElementById('usersTable');
-      tbody.innerHTML = users.map(u => `
+      tbody.innerHTML = users.map(u => \`
         <tr>
-          <td><small>${(u.id || '').substring(0, 10)}</small></td>
-          <td><strong>${u.fullName || 'N/A'}</strong></td>
-          <td>${u.email || 'N/A'}</td>
-          <td>${u.phoneNumber || 'N/A'}</td>
-          <td><span class="badge badge-info">${u.role || 'FARMER'}</span></td>
+          <td><small>\${(u.id || '').substring(0, 10)}</small></td>
+          <td><strong>\${u.fullName || 'N/A'}</strong></td>
+          <td>\${u.email || 'N/A'}</td>
+          <td>\${u.phoneNumber || 'N/A'}</td>
+          <td><span class="badge badge-info">\${u.role || 'FARMER'}</span></td>
           <td>
-            <span class="badge badge-${u.isEmailVerified ? 'success' : 'warning'}" style="cursor:pointer;" onclick="toggleUserVerify('${u.id}', ${!u.isEmailVerified})" title="Click to toggle verification">
-              ${u.isEmailVerified ? 'Verified' : 'Pending'}
+            <span class="badge badge-\${u.isEmailVerified ? 'success' : 'warning'}" style="cursor:pointer;" onclick="toggleUserVerify('\${u.id}', \${!u.isEmailVerified})" title="Click to toggle verification">
+              \${u.isEmailVerified ? 'Verified' : 'Pending'}
             </span>
           </td>
-          <td>${u.woreda?.nameEn || u.woredaId || 'Bahir Dar'}</td>
-          <td>${formatDate(u.createdAt)}</td>
+          <td>\${u.woreda?.nameEn || u.woredaId || 'Bahir Dar'}</td>
+          <td>\${formatDate(u.createdAt)}</td>
           <td>
             <div class="actions">
-              <button class="btn btn-edit btn-sm" onclick="editUser('${u.id}')">Edit</button>
-              <button class="btn btn-warning btn-sm" onclick="resetUserPasswordPrompt('${u.id}', '${u.fullName}')">Reset PWD</button>
-              <button class="btn btn-danger btn-sm" onclick="deleteUser('${u.id}')">Delete</button>
+              <button class="btn btn-edit btn-sm" onclick="editUser('\${u.id}')">Edit</button>
+              <button class="btn btn-warning btn-sm" onclick="resetUserPasswordPrompt('\${u.id}', '\${u.fullName}')">Reset PWD</button>
+              <button class="btn btn-danger btn-sm" onclick="deleteUser('\${u.id}')">Delete</button>
             </div>
           </td>
         </tr>
-      `).join('') || '<tr><td colspan="9">No users found</td></tr>';
+      \`).join('') || '<tr><td colspan="9">No users found</td></tr>';
     }
 
     function filterUsers() {
@@ -1359,14 +1362,14 @@
 
     async function toggleUserVerify(userId, newStatus) {
       try {
-        const res = await fetch(`/api/v1/admin/users/${userId}/status`, {
+        const res = await fetch(\`/api/v1/admin/users/\${userId}/status\`, {
           method: 'PATCH',
           headers: getAuthHeaders(),
           body: JSON.stringify({ isEmailVerified: newStatus })
         });
         const json = await res.json();
         if (json.success) {
-          showToast(`User verification updated to ${newStatus ? 'VERIFIED' : 'PENDING'}`);
+          showToast(\`User verification updated to \${newStatus ? 'VERIFIED' : 'PENDING'}\`);
           loadUsers();
         }
       } catch (e) {
@@ -1375,17 +1378,17 @@
     }
 
     async function resetUserPasswordPrompt(userId, name) {
-      const newPwd = prompt(`Enter new password for ${name}:`, 'AgriEtech2026!');
+      const newPwd = prompt(\`Enter new password for \${name}:\`, 'AgriEtech2026!');
       if (!newPwd) return;
       try {
-        const res = await fetch(`/api/v1/admin/users/${userId}`, {
+        const res = await fetch(\`/api/v1/admin/users/\${userId}\`, {
           method: 'PUT',
           headers: getAuthHeaders(),
           body: JSON.stringify({ password: newPwd })
         });
         const json = await res.json();
         if (json.success) {
-          showToast(`Password for ${name} reset successfully`);
+          showToast(\`Password for \${name} reset successfully\`);
         } else {
           showToast(json.message || 'Password reset failed', 'error');
         }
@@ -1402,23 +1405,23 @@
         if (json.success) {
           currentData.roleRequests = json.data.requests || json.data || [];
           const tbody = document.getElementById('roleRequestsTable');
-          tbody.innerHTML = currentData.roleRequests.map(r => `
+          tbody.innerHTML = currentData.roleRequests.map(r => \`
             <tr>
-              <td><small>${(r.id || '').substring(0, 10)}</small></td>
-              <td><strong>${r.user?.fullName || 'Extension Officer'}</strong></td>
-              <td>${r.user?.email || r.user?.phoneNumber || 'N/A'}</td>
-              <td><span class="badge badge-purple">${r.requestedRole || 'DEVELOPMENT_AGENT'}</span></td>
-              <td><small>${r.reason || r.justification || 'Official district agronomy verification'}</small></td>
-              <td><span class="badge badge-warning">${r.status || 'PENDING'}</span></td>
-              <td>${formatDate(r.createdAt)}</td>
+              <td><small>\${(r.id || '').substring(0, 10)}</small></td>
+              <td><strong>\${r.user?.fullName || 'Extension Officer'}</strong></td>
+              <td>\${r.user?.email || r.user?.phoneNumber || 'N/A'}</td>
+              <td><span class="badge badge-purple">\${r.requestedRole || 'DEVELOPMENT_AGENT'}</span></td>
+              <td><small>\${r.reason || r.justification || 'Official district agronomy verification'}</small></td>
+              <td><span class="badge badge-warning">\${r.status || 'PENDING'}</span></td>
+              <td>\${formatDate(r.createdAt)}</td>
               <td>
                 <div class="actions">
-                  <button class="btn btn-primary btn-sm" onclick="handleRoleRequest('${r.id}', 'approve')">Approve</button>
-                  <button class="btn btn-danger btn-sm" onclick="handleRoleRequest('${r.id}', 'reject')">Reject</button>
+                  <button class="btn btn-primary btn-sm" onclick="handleRoleRequest('\${r.id}', 'approve')">Approve</button>
+                  <button class="btn btn-danger btn-sm" onclick="handleRoleRequest('\${r.id}', 'reject')">Reject</button>
                 </div>
               </td>
             </tr>
-          `).join('') || '<tr><td colspan="8">No pending role requests</td></tr>';
+          \`).join('') || '<tr><td colspan="8">No pending role requests</td></tr>';
         }
       } catch (e) {
         showToast('Failed to load role requests', 'error');
@@ -1427,20 +1430,20 @@
 
     async function handleRoleRequest(requestId, action) {
       try {
-        const res = await fetch(`/api/v1/admin/role-requests/${requestId}/${action}`, {
+        const res = await fetch(\`/api/v1/admin/role-requests/\${requestId}/\${action}\`, {
           method: 'POST',
           headers: getAuthHeaders(),
         });
         const json = await res.json();
         if (json.success) {
-          showToast(`Role request ${action}d successfully`);
+          showToast(\`Role request \${action}d successfully\`);
           loadRoleRequests();
           loadUsers();
         } else {
-          showToast(json.message || `Failed to ${action} request`, 'error');
+          showToast(json.message || \`Failed to \${action} request\`, 'error');
         }
       } catch (e) {
-        showToast(`Error processing request`, 'error');
+        showToast(\`Error processing request\`, 'error');
       }
     }
 
@@ -1460,25 +1463,25 @@
 
     function renderFarms(farms) {
       const tbody = document.getElementById('farmsTable');
-      tbody.innerHTML = farms.map(f => `
+      tbody.innerHTML = farms.map(f => \`
         <tr>
-          <td><small>${(f.id || '').substring(0, 10)}</small></td>
-          <td><strong>${f.farmName || 'N/A'}</strong></td>
-          <td>${f.primaryCrop || 'N/A'}</td>
-          <td>${f.areaHectares || 0} Ha</td>
-          <td><code>${f.latitude?.toFixed(4) || 11.5936}</code></td>
-          <td><code>${f.longitude?.toFixed(4) || 37.3908}</code></td>
-          <td>${f.user?.fullName || f.owner?.fullName || 'Abebe Bikila'}</td>
-          <td>${f.woreda?.nameEn || 'Bahir Dar Zuria'}</td>
-          <td>${formatDate(f.createdAt)}</td>
+          <td><small>\${(f.id || '').substring(0, 10)}</small></td>
+          <td><strong>\${f.farmName || 'N/A'}</strong></td>
+          <td>\${f.primaryCrop || 'N/A'}</td>
+          <td>\${f.areaHectares || 0} Ha</td>
+          <td><code>\${f.latitude?.toFixed(4) || 11.5936}</code></td>
+          <td><code>\${f.longitude?.toFixed(4) || 37.3908}</code></td>
+          <td>\${f.user?.fullName || f.owner?.fullName || 'Abebe Bikila'}</td>
+          <td>\${f.woreda?.nameEn || 'Bahir Dar Zuria'}</td>
+          <td>\${formatDate(f.createdAt)}</td>
           <td>
             <div class="actions">
-              <button class="btn btn-edit btn-sm" onclick="editFarm('${f.id}')">Edit</button>
-              <button class="btn btn-danger btn-sm" onclick="deleteFarm('${f.id}')">Delete</button>
+              <button class="btn btn-edit btn-sm" onclick="editFarm('\${f.id}')">Edit</button>
+              <button class="btn btn-danger btn-sm" onclick="deleteFarm('\${f.id}')">Delete</button>
             </div>
           </td>
         </tr>
-      `).join('') || '<tr><td colspan="10">No farms registered</td></tr>';
+      \`).join('') || '<tr><td colspan="10">No farms registered</td></tr>';
     }
 
     function filterFarms() {
@@ -1498,21 +1501,21 @@
         if (json.success) {
           currentData.sensors = json.data.sensors || [];
           const tbody = document.getElementById('sensorsTable');
-          tbody.innerHTML = currentData.sensors.map(s => `
+          tbody.innerHTML = currentData.sensors.map(s => \`
             <tr>
-              <td><small>${(s.id || '').substring(0, 10)}</small></td>
-              <td><code>${s.hardwareId || 'N/A'}</code></td>
-              <td><span class="badge badge-info">${s.sensorType || 'SOIL_MOISTURE'}</span></td>
-              <td>${s.farm?.farmName || 'Bahir Dar Teff Plot'}</td>
-              <td><span class="badge badge-${s.isActive !== false ? 'success' : 'danger'}">${s.isActive !== false ? 'Active' : 'Inactive'}</span></td>
-              <td>${formatDate(s.createdAt)}</td>
+              <td><small>\${(s.id || '').substring(0, 10)}</small></td>
+              <td><code>\${s.hardwareId || 'N/A'}</code></td>
+              <td><span class="badge badge-info">\${s.sensorType || 'SOIL_MOISTURE'}</span></td>
+              <td>\${s.farm?.farmName || 'Bahir Dar Teff Plot'}</td>
+              <td><span class="badge badge-\${s.isActive !== false ? 'success' : 'danger'}">\${s.isActive !== false ? 'Active' : 'Inactive'}</span></td>
+              <td>\${formatDate(s.createdAt)}</td>
               <td>
                 <div class="actions">
-                  <button class="btn btn-danger btn-sm" onclick="deleteSensor('${s.id}')">Delete</button>
+                  <button class="btn btn-danger btn-sm" onclick="deleteSensor('\${s.id}')">Delete</button>
                 </div>
               </td>
             </tr>
-          `).join('') || '<tr><td colspan="7">No sensors deployed</td></tr>';
+          \`).join('') || '<tr><td colspan="7">No sensors deployed</td></tr>';
         }
       } catch (e) {
         showToast('Failed to load sensors', 'error');
@@ -1527,22 +1530,22 @@
         if (json.success) {
           currentData.alerts = json.data.alerts || [];
           const tbody = document.getElementById('alertsTable');
-          tbody.innerHTML = currentData.alerts.map(a => `
+          tbody.innerHTML = currentData.alerts.map(a => \`
             <tr>
-              <td><small>${(a.id || '').substring(0, 10)}</small></td>
-              <td><strong>${a.headline || a.titleEn || 'Hazard Warning'}</strong></td>
-              <td><span class="badge badge-info">${a.hazardType || 'DROUGHT'}</span></td>
-              <td><span class="badge badge-${getSeverityBadge(a.severity)}">${a.severity || 'LOW'}</span></td>
-              <td>${a.woreda?.nameEn || 'Bahir Dar Zuria'}</td>
-              <td><span class="badge badge-success">${a.status || 'ACTIVE'}</span></td>
-              <td>${formatDate(a.createdAt)}</td>
+              <td><small>\${(a.id || '').substring(0, 10)}</small></td>
+              <td><strong>\${a.headline || a.titleEn || 'Hazard Warning'}</strong></td>
+              <td><span class="badge badge-info">\${a.hazardType || 'DROUGHT'}</span></td>
+              <td><span class="badge badge-\${getSeverityBadge(a.severity)}">\${a.severity || 'LOW'}</span></td>
+              <td>\${a.woreda?.nameEn || 'Bahir Dar Zuria'}</td>
+              <td><span class="badge badge-success">\${a.status || 'ACTIVE'}</span></td>
+              <td>\${formatDate(a.createdAt)}</td>
               <td>
                 <div class="actions">
-                  <button class="btn btn-danger btn-sm" onclick="deleteAlert('${a.id}')">Delete</button>
+                  <button class="btn btn-danger btn-sm" onclick="deleteAlert('\${a.id}')">Delete</button>
                 </div>
               </td>
             </tr>
-          `).join('') || '<tr><td colspan="8">No alerts found</td></tr>';
+          \`).join('') || '<tr><td colspan="8">No alerts found</td></tr>';
         }
       } catch (e) {
         showToast('Failed to load alerts', 'error');
@@ -1557,22 +1560,22 @@
         if (json.success) {
           currentData.diagnoses = json.data.diagnoses || [];
           const tbody = document.getElementById('diagnosesTable');
-          tbody.innerHTML = currentData.diagnoses.map(d => `
+          tbody.innerHTML = currentData.diagnoses.map(d => \`
             <tr>
-              <td><small>${(d.id || '').substring(0, 10)}</small></td>
-              <td><strong>${d.cropType || d.cropIdentified || 'Teff / Maize'}</strong></td>
-              <td>${d.diseaseName || d.disease || 'Healthy Crop'}</td>
-              <td><small>${d.aiModel || 'Gemini 2.5 Flash + Plant.id'}</small></td>
-              <td><span class="badge badge-success">${Math.round((d.confidenceScore || d.confidence || 0.96) * 100)}%</span></td>
-              <td>${d.imageUrl || d.imagePath ? '<a href="' + (d.imageUrl || d.imagePath) + '" target="_blank" style="color:var(--secondary);font-weight:600;">View Photo</a>' : '<span style="color:#94a3b8">Scan Photo</span>'}</td>
-              <td>${formatDate(d.createdAt)}</td>
+              <td><small>\${(d.id || '').substring(0, 10)}</small></td>
+              <td><strong>\${d.cropType || d.cropIdentified || 'Teff / Maize'}</strong></td>
+              <td>\${d.diseaseName || d.disease || 'Healthy Crop'}</td>
+              <td><small>\${d.aiModel || 'Gemini 2.5 Flash + Plant.id'}</small></td>
+              <td><span class="badge badge-success">\${Math.round((d.confidenceScore || d.confidence || 0.96) * 100)}%</span></td>
+              <td>\${d.imageUrl || d.imagePath ? '<a href="' + (d.imageUrl || d.imagePath) + '" target="_blank" style="color:var(--secondary);font-weight:600;">View Photo</a>' : '<span style="color:#94a3b8">Scan Photo</span>'}</td>
+              <td>\${formatDate(d.createdAt)}</td>
               <td>
                 <div class="actions">
-                  <button class="btn btn-danger btn-sm" onclick="deleteDiagnosis('${d.id}')">Delete</button>
+                  <button class="btn btn-danger btn-sm" onclick="deleteDiagnosis('\${d.id}')">Delete</button>
                 </div>
               </td>
             </tr>
-          `).join('') || '<tr><td colspan="8">No diagnoses recorded</td></tr>';
+          \`).join('') || '<tr><td colspan="8">No diagnoses recorded</td></tr>';
         }
       } catch (e) {
         showToast('Failed to load diagnoses', 'error');
@@ -1587,18 +1590,18 @@
         if (json.success && json.data) {
           currentData.risks = Array.isArray(json.data) ? json.data : (json.data.assessments || []);
           const tbody = document.getElementById('riskTable');
-          tbody.innerHTML = currentData.risks.map(r => `
+          tbody.innerHTML = currentData.risks.map(r => \`
             <tr>
-              <td><small>${(r.id || '').substring(0, 10)}</small></td>
-              <td><strong>${r.woreda?.nameEn || r.woredaId || 'Bahir Dar Zuria'}</strong></td>
-              <td><code>${(r.compositeScore || r.riskScore || 0.42).toFixed(2)}</code></td>
-              <td><span class="badge badge-${getSeverityBadge(r.alertLevel)}">${r.alertLevel || 'MODERATE'}</span></td>
-              <td>${(r.droughtScore || 0.45).toFixed(2)}</td>
-              <td>${(r.floodScore || 0.15).toFixed(2)}</td>
-              <td>${(r.locustScore || 0.05).toFixed(2)}</td>
-              <td>${formatDate(r.assessedAt || r.createdAt)}</td>
+              <td><small>\${(r.id || '').substring(0, 10)}</small></td>
+              <td><strong>\${r.woreda?.nameEn || r.woredaId || 'Bahir Dar Zuria'}</strong></td>
+              <td><code>\${(r.compositeScore || r.riskScore || 0.42).toFixed(2)}</code></td>
+              <td><span class="badge badge-\${getSeverityBadge(r.alertLevel)}">\${r.alertLevel || 'MODERATE'}</span></td>
+              <td>\${(r.droughtScore || 0.45).toFixed(2)}</td>
+              <td>\${(r.floodScore || 0.15).toFixed(2)}</td>
+              <td>\${(r.locustScore || 0.05).toFixed(2)}</td>
+              <td>\${formatDate(r.assessedAt || r.createdAt)}</td>
             </tr>
-          `).join('') || '<tr><td colspan="8">No risk assessments recorded</td></tr>';
+          \`).join('') || '<tr><td colspan="8">No risk assessments recorded</td></tr>';
         }
       } catch (e) {
         showToast('Failed to load risk assessments', 'error');
@@ -1674,20 +1677,20 @@
             fillOpacity: 0.85
           });
 
-          farmMarker.bindPopup(`
+          farmMarker.bindPopup(\`
             <div style="font-family:Inter,sans-serif;padding:4px;">
-              <h4 style="margin:0 0 4px;color:#065f46;">🚜 ${f.farmName || 'Model Farm'}</h4>
-              <p style="margin:0;font-size:12px;"><strong>Crop:</strong> ${f.primaryCrop || 'Teff'}</p>
-              <p style="margin:0;font-size:12px;"><strong>Area:</strong> ${f.areaHectares || 2.5} Ha</p>
-              <p style="margin:0;font-size:12px;"><strong>Owner:</strong> ${f.user?.fullName || 'Farmer'}</p>
-              <p style="margin:0;font-size:12px;"><strong>GPS:</strong> ${lat.toFixed(4)}, ${lng.toFixed(4)}</p>
+              <h4 style="margin:0 0 4px;color:#065f46;">🚜 \${f.farmName || 'Model Farm'}</h4>
+              <p style="margin:0;font-size:12px;"><strong>Crop:</strong> \${f.primaryCrop || 'Teff'}</p>
+              <p style="margin:0;font-size:12px;"><strong>Area:</strong> \${f.areaHectares || 2.5} Ha</p>
+              <p style="margin:0;font-size:12px;"><strong>Owner:</strong> \${f.user?.fullName || 'Farmer'}</p>
+              <p style="margin:0;font-size:12px;"><strong>GPS:</strong> \${lat.toFixed(4)}, \${lng.toFixed(4)}</p>
             </div>
-          `);
+          \`);
           mapLayerGroup.addLayer(farmMarker);
         });
 
         if (bounds.length > 0) map.fitBounds(bounds, { padding: [40, 40] });
-        showToast(`Plotted ${farms.length} farm plots on map`);
+        showToast(\`Plotted \${farms.length} farm plots on map\`);
       } catch (e) {
         showToast('Error plotting farms on map', 'error');
       }
@@ -1716,19 +1719,19 @@
             fillOpacity: 0.85
           });
 
-          sensorMarker.bindPopup(`
+          sensorMarker.bindPopup(\`
             <div style="font-family:Inter,sans-serif;padding:4px;">
-              <h4 style="margin:0 0 4px;color:#1e40af;">📡 ${s.hardwareId || 'IoT Node'}</h4>
-              <p style="margin:0;font-size:12px;"><strong>Type:</strong> ${s.sensorType || 'Soil Telemetry'}</p>
-              <p style="margin:0;font-size:12px;"><strong>Status:</strong> ${s.isActive !== false ? '🟢 Active' : '🔴 Inactive'}</p>
-              <p style="margin:0;font-size:12px;"><strong>Location:</strong> ${s.farm?.farmName || 'Bahir Dar Plot'}</p>
+              <h4 style="margin:0 0 4px;color:#1e40af;">📡 \${s.hardwareId || 'IoT Node'}</h4>
+              <p style="margin:0;font-size:12px;"><strong>Type:</strong> \${s.sensorType || 'Soil Telemetry'}</p>
+              <p style="margin:0;font-size:12px;"><strong>Status:</strong> \${s.isActive !== false ? '🟢 Active' : '🔴 Inactive'}</p>
+              <p style="margin:0;font-size:12px;"><strong>Location:</strong> \${s.farm?.farmName || 'Bahir Dar Plot'}</p>
             </div>
-          `);
+          \`);
           mapLayerGroup.addLayer(sensorMarker);
         });
 
         if (bounds.length > 0) map.fitBounds(bounds, { padding: [40, 40] });
-        showToast(`Plotted ${sensors.length} IoT telemetry stations`);
+        showToast(\`Plotted \${sensors.length} IoT telemetry stations\`);
       } catch (e) {
         showToast('Error plotting sensors on map', 'error');
       }
@@ -1758,28 +1761,28 @@
             fillOpacity: 0.25
           });
 
-          alertCircle.bindPopup(`
+          alertCircle.bindPopup(\`
             <div style="font-family:Inter,sans-serif;padding:4px;">
-              <h4 style="margin:0 0 4px;color:${alertColor};">📢 ${a.headline || a.titleEn || 'Emergency Alert'}</h4>
-              <p style="margin:0;font-size:12px;"><strong>Hazard:</strong> ${a.hazardType || 'DROUGHT'}</p>
-              <p style="margin:0;font-size:12px;"><strong>Severity:</strong> ${a.severity || 'MODERATE'}</p>
-              <p style="margin:0;font-size:12px;"><strong>Woreda:</strong> ${a.woreda?.nameEn || 'Bahir Dar Zuria'}</p>
+              <h4 style="margin:0 0 4px;color:\${alertColor};">📢 \${a.headline || a.titleEn || 'Emergency Alert'}</h4>
+              <p style="margin:0;font-size:12px;"><strong>Hazard:</strong> \${a.hazardType || 'DROUGHT'}</p>
+              <p style="margin:0;font-size:12px;"><strong>Severity:</strong> \${a.severity || 'MODERATE'}</p>
+              <p style="margin:0;font-size:12px;"><strong>Woreda:</strong> \${a.woreda?.nameEn || 'Bahir Dar Zuria'}</p>
             </div>
-          `);
+          \`);
           mapLayerGroup.addLayer(alertCircle);
         });
 
         if (bounds.length > 0) map.fitBounds(bounds, { padding: [40, 40] });
-        showToast(`Plotted ${alerts.length} active hazard zones`);
+        showToast(\`Plotted \${alerts.length} active hazard zones\`);
       } catch (e) {
         showToast('Error plotting alerts on map', 'error');
       }
     }
 
     async function loadBoundaries(type) {
-      showToast(`Loading Ethiopia ${type} layer...`);
+      showToast(\`Loading Ethiopia \${type} layer...\`);
       try {
-        const res = await fetch(`/api/v1/boundaries/${type}`, { headers: getAuthHeaders() });
+        const res = await fetch(\`/api/v1/boundaries/\${type}\`, { headers: getAuthHeaders() });
         const json = await res.json();
         if (json.success && json.data) {
           clearMapLayers();
@@ -1788,14 +1791,14 @@
             if (item.geojson || item.boundary) {
               const boundaryLayer = L.geoJSON(item.geojson || item.boundary, {
                 style: { color: '#10b981', weight: 2, fillOpacity: 0.12 }
-              }).bindPopup(`<strong>${item.nameEn || item.name || 'Boundary'}</strong><br>${item.nameAm || ''}`);
+              }).bindPopup(\`<strong>\${item.nameEn || item.name || 'Boundary'}</strong><br>\${item.nameAm || ''}\`);
               mapLayerGroup.addLayer(boundaryLayer);
             }
           });
-          showToast(`${type.toUpperCase()} boundaries rendered successfully`);
+          showToast(\`\${type.toUpperCase()} boundaries rendered successfully\`);
         }
       } catch (e) {
-        showToast(`Failed to load ${type}`, 'error');
+        showToast(\`Failed to load \${type}\`, 'error');
       }
     }
 
@@ -1819,12 +1822,9 @@
           const resEl = document.getElementById('dbCleanResult');
           if (resEl) {
             resEl.style.display = 'block';
-            resEl.innerHTML = `✅ Database Sanitized: Deleted ${json.data.deleted.users} test users, ${json.data.deleted.farms} test farms, ${json.data.deleted.sensors} test sensors, ${json.data.deleted.diagnoses} diagnoses. Active production records: ${json.data.current.users} users, ${json.data.current.farms} farms, ${json.data.current.sensors} sensors.`;
+            resEl.innerHTML = \`✅ Database Sanitized: Deleted \${json.data.deleted.users} test users, \${json.data.deleted.farms} test farms, \${json.data.deleted.sensors} test sensors, \${json.data.deleted.diagnoses} diagnoses. Active production records: \${json.data.current.users} users, \${json.data.current.farms} farms, \${json.data.current.sensors} sensors.\`;
           }
-          alert(`Database Sanitization Complete!
-
-Deleted ${json.data.deleted.users} test users, ${json.data.deleted.farms} test farms, ${json.data.deleted.sensors} test sensors.
-Active real records preserved: ${json.data.current.users} users, ${json.data.current.farms} farms.`);
+          alert(\`Database Sanitization Complete!\n\nDeleted \${json.data.deleted.users} test users, \${json.data.deleted.farms} test farms, \${json.data.deleted.sensors} test sensors.\nActive real records preserved: \${json.data.current.users} users, \${json.data.current.farms} farms.\`);
           loadOverview();
           loadUsers();
           loadFarms();
@@ -1844,28 +1844,28 @@ Active real records preserved: ${json.data.current.users} users, ${json.data.cur
           .then(json => {
             if (json.success && json.data) {
               const d = json.data;
-              document.getElementById('systemHealth').innerHTML = `
+              document.getElementById('systemHealth').innerHTML = \`
                 <div class="stat-card">
                   <div class="stat-label">Database Status</div>
-                  <div class="stat-value" style="font-size:1.25rem;color:#15803d;">${d.subsystems?.database?.status || 'CONNECTED'}</div>
-                  <div class="stat-subtext">${d.subsystems?.database?.provider || 'PostgreSQL'}</div>
+                  <div class="stat-value" style="font-size:1.25rem;color:#15803d;">\${d.subsystems?.database?.status || 'CONNECTED'}</div>
+                  <div class="stat-subtext">\${d.subsystems?.database?.provider || 'PostgreSQL'}</div>
                 </div>
                 <div class="stat-card blue">
                   <div class="stat-label">Redis Cache</div>
-                  <div class="stat-value" style="font-size:1.25rem;color:#2563eb;">${d.subsystems?.redis?.status || 'UP'}</div>
+                  <div class="stat-value" style="font-size:1.25rem;color:#2563eb;">\${d.subsystems?.redis?.status || 'UP'}</div>
                   <div class="stat-subtext">Upstash Cloud Cluster</div>
                 </div>
                 <div class="stat-card amber">
                   <div class="stat-label">Process Uptime</div>
-                  <div class="stat-value" style="font-size:1.25rem;color:#b45309;">${Math.floor((d.subsystems?.host?.uptimeSeconds || 0) / 60)} mins</div>
-                  <div class="stat-subtext">Platform: ${d.subsystems?.host?.platform || 'Node'}</div>
+                  <div class="stat-value" style="font-size:1.25rem;color:#b45309;">\${Math.floor((d.subsystems?.host?.uptimeSeconds || 0) / 60)} mins</div>
+                  <div class="stat-subtext">Platform: \${d.subsystems?.host?.platform || 'Node'}</div>
                 </div>
                 <div class="stat-card red">
                   <div class="stat-label">Memory Usage</div>
-                  <div class="stat-value" style="font-size:1.25rem;color:#b91c1c;">${d.subsystems?.memory?.heapUsedMb || 45} MB</div>
-                  <div class="stat-subtext">Total Heap: ${d.subsystems?.memory?.heapTotalMb || 90} MB</div>
+                  <div class="stat-value" style="font-size:1.25rem;color:#b91c1c;">\${d.subsystems?.memory?.heapUsedMb || 45} MB</div>
+                  <div class="stat-subtext">Total Heap: \${d.subsystems?.memory?.heapTotalMb || 90} MB</div>
                 </div>
-              `;
+              \`;
             }
           });
 
@@ -1874,15 +1874,15 @@ Active real records preserved: ${json.data.current.users} users, ${json.data.cur
           .then(logsJson => {
             if (logsJson.success) {
               const tbody = document.getElementById('auditLogs');
-              tbody.innerHTML = (logsJson.data || []).map(l => `
+              tbody.innerHTML = (logsJson.data || []).map(l => \`
                 <tr>
-                  <td><span class="badge badge-info">${l.action || 'ACTION'}</span></td>
-                  <td><strong>${l.adminEmail || 'system@agrietech.et'}</strong></td>
-                  <td><small>${l.details || 'N/A'}</small></td>
-                  <td><code>${l.ipAddress || '127.0.0.1'}</code></td>
-                  <td>${formatDateTime(l.createdAt)}</td>
+                  <td><span class="badge badge-info">\${l.action || 'ACTION'}</span></td>
+                  <td><strong>\${l.adminEmail || 'system@agrietech.et'}</strong></td>
+                  <td><small>\${l.details || 'N/A'}</small></td>
+                  <td><code>\${l.ipAddress || '127.0.0.1'}</code></td>
+                  <td>\${formatDateTime(l.createdAt)}</td>
                 </tr>
-              `).join('') || '<tr><td colspan="5">No audit logs logged</td></tr>';
+              \`).join('') || '<tr><td colspan="5">No audit logs logged</td></tr>';
             }
           });
       } catch (e) {
@@ -1891,7 +1891,7 @@ Active real records preserved: ${json.data.current.users} users, ${json.data.cur
     }
 
     async function triggerJob(jobType) {
-      showToast(`Triggering pipeline: ${jobType}...`);
+      showToast(\`Triggering pipeline: \${jobType}...\`);
       try {
         const res = await fetch('/api/v1/admin/ingestion/trigger', {
           method: 'POST',
@@ -1900,7 +1900,7 @@ Active real records preserved: ${json.data.current.users} users, ${json.data.cur
         });
         const json = await res.json();
         if (json.success) {
-          showToast(`Pipeline ${jobType} executed successfully!`);
+          showToast(\`Pipeline \${jobType} executed successfully!\`);
           loadSystem();
         } else {
           showToast(json.message || 'Failed to trigger job', 'error');
@@ -1924,7 +1924,7 @@ Active real records preserved: ${json.data.current.users} users, ${json.data.cur
       };
 
       try {
-        const url = userId ? `/api/v1/admin/users/${userId}` : '/api/v1/admin/users';
+        const url = userId ? \`/api/v1/admin/users/\${userId}\` : '/api/v1/admin/users';
         const method = userId ? 'PUT' : 'POST';
         
         const res = await fetch(url, {
@@ -1958,7 +1958,7 @@ Active real records preserved: ${json.data.current.users} users, ${json.data.cur
       };
 
       try {
-        const url = farmId ? `/api/v1/admin/farms/${farmId}` : '/api/v1/admin/farms';
+        const url = farmId ? \`/api/v1/admin/farms/\${farmId}\` : '/api/v1/admin/farms';
         const method = farmId ? 'PUT' : 'POST';
         
         const res = await fetch(url, {
@@ -2076,7 +2076,7 @@ Active real records preserved: ${json.data.current.users} users, ${json.data.cur
     async function deleteUser(id) {
       if (!confirm('Are you sure you want to delete this user?')) return;
       try {
-        const res = await fetch(`/api/v1/admin/users/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
+        const res = await fetch(\`/api/v1/admin/users/\${id}\`, { method: 'DELETE', headers: getAuthHeaders() });
         const json = await res.json();
         if (json.success) {
           showToast('User deleted');
@@ -2093,7 +2093,7 @@ Active real records preserved: ${json.data.current.users} users, ${json.data.cur
     async function deleteFarm(id) {
       if (!confirm('Delete this farm plot?')) return;
       try {
-        const res = await fetch(`/api/v1/admin/farms/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
+        const res = await fetch(\`/api/v1/admin/farms/\${id}\`, { method: 'DELETE', headers: getAuthHeaders() });
         const json = await res.json();
         if (json.success) {
           showToast('Farm plot deleted');
@@ -2110,7 +2110,7 @@ Active real records preserved: ${json.data.current.users} users, ${json.data.cur
     async function deleteSensor(id) {
       if (!confirm('Delete this IoT sensor?')) return;
       try {
-        const res = await fetch(`/api/v1/admin/sensors/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
+        const res = await fetch(\`/api/v1/admin/sensors/\${id}\`, { method: 'DELETE', headers: getAuthHeaders() });
         const json = await res.json();
         if (json.success) {
           showToast('Sensor node deleted');
@@ -2127,7 +2127,7 @@ Active real records preserved: ${json.data.current.users} users, ${json.data.cur
     async function deleteAlert(id) {
       if (!confirm('Delete this alert?')) return;
       try {
-        const res = await fetch(`/api/v1/admin/alerts/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
+        const res = await fetch(\`/api/v1/admin/alerts/\${id}\`, { method: 'DELETE', headers: getAuthHeaders() });
         const json = await res.json();
         if (json.success) {
           showToast('Alert deleted');
@@ -2144,7 +2144,7 @@ Active real records preserved: ${json.data.current.users} users, ${json.data.cur
     async function deleteDiagnosis(id) {
       if (!confirm('Delete this pathology record?')) return;
       try {
-        const res = await fetch(`/api/v1/admin/diagnoses/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
+        const res = await fetch(\`/api/v1/admin/diagnoses/\${id}\`, { method: 'DELETE', headers: getAuthHeaders() });
         const json = await res.json();
         if (json.success) {
           showToast('Diagnosis record deleted');
@@ -2180,3 +2180,12 @@ Active real records preserved: ${json.data.current.users} users, ${json.data.cur
   </script>
 </body>
 </html>
+`;
+
+fs.writeFileSync(
+  path.resolve(__dirname, '../src/modules/admin/templates/dashboard.html'),
+  dashboardHtml,
+  'utf8'
+);
+
+console.log('✅ Enterprise Admin Console & Spatial Command template updated with interactive GIS Map and complete CRUD controls!');
