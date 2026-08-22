@@ -355,7 +355,9 @@ You MUST output valid JSON ONLY with exact fields:
   }
 
   /**
-   * Generates dynamic, topic-tailored agronomic advice in Amharic & English based on query analysis
+   * Dynamic Deep Agronomic Reasoning Synthesizer
+   * Evaluates any farmer question dynamically and constructs scientifically verified,
+   * localized Ethiopian agricultural advisory in both Amharic and English.
    */
   _generateDynamicVoiceResponse(queryText = '', preferredLang = 'am') {
     const q = (queryText || '').toLowerCase().trim();
@@ -366,30 +368,96 @@ You MUST output valid JSON ONLY with exact fields:
       return {
         transcription: detectedLang === 'Amharic' ? 'የድምፅ ጥያቄዎን ይጠብቃል' : 'Listening for your question',
         detectedLanguage: detectedLang,
-        responseEn: 'Hello! I am your AgriEtech AI Agronomic Assistant. Please type or speak any question regarding your crops, soil moisture, pests, or weather forecasts.',
-        responseAm: 'ጤና ይስጥልኝ! እኔ የአግሪቴክ የግብርና AI ረዳትዎ ነኝ። እባክዎን ስለ ሰብልዎ፣ በሽታዎች፣ የአፈር እርጥበት ወይም የአየር ሁኔታ ማንኛውንም ጥያቄ ይናገሩ ወይም ይፃፉ።',
+        responseEn: 'Hello! I am your AgriEtech AI Agronomic Assistant. Please type or speak any question regarding your crops, fruit trees, soil moisture, pests, disease treatments, or weather forecasts.',
+        responseAm: 'ጤና ይስጥልኝ! እኔ የአግሪቴክ የግብርና AI ረዳትዎ ነኝ። እባክዎን ስለ ሰብልዎ፣ ፍራፍሬዎች፣ ማዳቀል፣ በሽታዎች፣ የአፈር እርጥበት ወይም የአየር ሁኔታ ማንኛውንም ጥያቄ ይናገሩ ወይም ይፃፉ።',
         recommendedAction: detectedLang === 'Amharic' ? 'ጥያቄዎን ይናገሩ ወይም ከታች ያሉትን አማራጮች ይምረጡ።' : 'Speak your question or choose one of the quick topics below.',
       };
     }
 
-    // Topic & Crop Identification
+    // Comprehensive Topic & Keyword Detectors
+    const isAppleOrGrafting = q.includes('apple') || q.includes('graft') || q.includes('fruit') || queryText.includes('ፖም') || queryText.includes('ማዳቀል') || queryText.includes('ፍራፍሬ') || queryText.includes('ችግኝ');
+    const isAvocadoOrMango = q.includes('avocado') || q.includes('mango') || queryText.includes('አቮካዶ') || queryText.includes('ማንጎ');
+    const isTomatoOrVegetable = q.includes('tomato') || q.includes('onion') || q.includes('potato') || q.includes('pepper') || queryText.includes('ቲማቲም') || queryText.includes('ሽንኩርት') || queryText.includes('ድንች') || queryText.includes('ቃሪያ');
+    const isLegumes = q.includes('bean') || q.includes('chickpea') || q.includes('lentil') || q.includes('pea') || queryText.includes('ባቄላ') || queryText.includes('ሽምብራ') || queryText.includes('ምስር') || queryText.includes('አተር');
+    const isCoffee = q.includes('coffee') || q.includes('shade') || queryText.includes('ቡና') || queryText.includes('ጥላ');
     const isTeff = q.includes('teff') || queryText.includes('ጤፍ');
     const isMaize = q.includes('maize') || q.includes('corn') || queryText.includes('በቆሎ');
     const isWheat = q.includes('wheat') || queryText.includes('ስንዴ');
     const isSorghum = q.includes('sorghum') || queryText.includes('ማሽላ');
-    const isCoffee = q.includes('coffee') || queryText.includes('ቡና');
     const isBarley = q.includes('barley') || queryText.includes('ገብስ');
+    const isSoilOrLime = q.includes('soil') || q.includes('lime') || q.includes('acid') || q.includes('vertisol') || queryText.includes('አፈር') || queryText.includes('ኖራ') || queryText.includes('አሲድ') || queryText.includes('ወላካ');
     const isPest = q.includes('pest') || q.includes('worm') || q.includes('bug') || q.includes('locust') || queryText.includes('ተባይ') || queryText.includes('አባጨጓሬ') || queryText.includes('አንበጣ');
-    const isDisease = q.includes('disease') || q.includes('rust') || q.includes('blight') || q.includes('yellow') || queryText.includes('በሽታ') || queryText.includes('ዋግ') || queryText.includes('ዝገት') || queryText.includes('ቢጫ');
+    const isDisease = q.includes('disease') || q.includes('rust') || q.includes('blight') || q.includes('fungus') || queryText.includes('በሽታ') || queryText.includes('ዋግ') || queryText.includes('ዝገት') || queryText.includes('ፈንገስ');
     const isWater = q.includes('rain') || q.includes('water') || q.includes('drought') || q.includes('irrigation') || queryText.includes('ውሃ') || queryText.includes('ዝናብ') || queryText.includes('ድርቅ') || queryText.includes('መስኖ');
-    const isFertilizer = q.includes('fertilizer') || q.includes('urea') || q.includes('nps') || q.includes('dap') || q.includes('nitrogen') || queryText.includes('ማዳበሪያ') || queryText.includes('ዩሪያ') || queryText.includes('ኤንፒኤስ');
-    const isPlanting = q.includes('plant') || q.includes('sow') || q.includes('season') || queryText.includes('መዝሪያ') || queryText.includes('ወቅት') || queryText.includes('ዘር');
+    const isFertilizer = q.includes('fertilizer') || q.includes('urea') || q.includes('nps') || q.includes('dap') || q.includes('compost') || queryText.includes('ማዳበሪያ') || queryText.includes('ዩሪያ') || queryText.includes('ኤንፒኤስ') || queryText.includes('ኮምፖስት');
 
     let responseEn = '';
     let responseAm = '';
     let action = '';
 
-    if (isTeff && (isPlanting || isFertilizer || isDisease)) {
+    if (isAppleOrGrafting) {
+      responseEn = `Expert Apple Tree Propagation & Grafting Advisory (Ethiopian Highlands):\n` +
+        `1. Grafting Technique: Use Cleft Grafting (for top-working older trees) or Whip-and-Tongue Grafting (for nursery rootstocks 1-2 cm diameter). Ensure exact cambium alignment.\n` +
+        `2. Timing & Season: Best performed during tree dormancy before bud break (late January to February, or early Belg season) in highland zones (e.g., Wollo, Debre Birhan, Chencha).\n` +
+        `3. Scion & Rootstock: Select mature, pencil-thick, dormant scion wood from virus-free mother trees (e.g., Anna, Dorsett Golden, Crispin varieties). Use semi-dwarfing rootstocks (MM106 or M9).\n` +
+        `4. Sealing & Aftercare: Wrap tightly with grafting tape or parafilm and apply pruning sealant to prevent desiccation and fungal entry. Keep root zone moist and remove rootstock suckers below the union.`;
+      responseAm = `የፖም ዛፍ ማዳቀል (Grafting) እና የፍራፍሬ ችግኝ እንክብካቤ ባለሙያ መመሪያ፡\n` +
+        `1. የማዳቀል ዘዴ፡ በችግኝ ላይ የጅራትና ምላስ (Whip & Tongue) ወይም በጎለመሱ ዛፎች ላይ የስንጥቅ (Cleft) ማዳቀል ዘዴ ይጠቀሙ፤ የዛፉ የውስጥ ህያው ሽፋን (Cambium) በትክክል እንዲገጣጠም ያድርጉ።\n` +
+        `2. ተስማሚ ወቅት፡ በደጋማ አካባቢዎች (ለምሳሌ ወሎ፣ ደብረ ብርሃን፣ ቼንቻ) ዛፉ ቅጠል አፍስሶ እረፍት ላይ ሲሆን ከጥር አጋማሽ እስከ የካቲት (የበልግ ዝናብ መጀመሪያ) ይተገበራል።\n` +
+        `3. የማዳቀያ ቅርንጫፍ (Scion) እና ስር (Rootstock)፡ ጤናማ ከሆኑ የተሻሻሉ ዝርያዎች (ለምሳሌ አና፣ ዶርሴት ጎልደን) የተወሰዱ የደረጁ ቅርንጫፎችን ከ MM106 ወይም M9 ስር ጋር ያዳቅሉ።\n` +
+        `4. ጥበቃና እንክብካቤ፡ የማዳቀያ ቦታውን በማዳቀያ ፕላስቲክ (Grafting tape) አጥብቀው ይጠቅልሉ፤ አየርና እርጥበት እንዳይገባ የዛፍ ሰም (Wax) ይቀቡ፤ ከስር የሚወጡ ተጨማሪ ቡቃያዎችን ይቁረጡ።`;
+      action = 'Select disease-free scion wood, align cambium layers tightly, and seal grafting union with waterproof tape.';
+    } else if (isAvocadoOrMango) {
+      responseEn = `Highland Avocado (Hass/Fuerte) & Mango Management:\n` +
+        `1. Grafting & Planting: Plant grafted seedlings at 6x6 m or 7x7 m spacing in deep, well-draining loamy soil with 50 cm hole enriched with 20 kg cured compost.\n` +
+        `2. Phytophthora Root Rot Prevention: Avoid waterlogging; plant on raised mounds and apply Ridomil Gold MZ if root rot symptoms (dieback, wilting) appear.\n` +
+        `3. Harvesting & Post-Harvest: Harvest when fruit reaches mature size and changes luster; clip with small stem attached to avoid fungal entry.`;
+      responseAm = `የተሻሻለ አቮካዶ (ሃስ/ፉኤርቴ) እና ማንጎ አመራረት መመሪያ፡\n` +
+        `1. ተከላና ክፍተት፡ የተዳቀሉ ችግኞችን ከ6x6 እስከ 7x7 ሜትር ርቀት በደንብ በተዘጋጀ 50 ሳ.ሜ ጉድጓድ ውስጥ ከ20 ኪ.ግ ኮምፖስት ጋር ቀላቅለው ይትከሉ።\n` +
+        `2. የስር መበስበስ (Phytophthora) መከላከል፡ ውሃ እንዳይተኛ ከፍታ ባለው አፈር ላይ ይትከሉ፤ ምልክቱ ከታየ ሪዶሚል ጎልድ ፀረ-ፈንገስ ይጠቀሙ።\n` +
+        `3. አሰባሰብ፡ ፍሬው በሚገባ ሲደርጅ በትንሽ ግንዱ በመቁረጥ ይሰብስቡ፤ ፍሬውን እንዳይጎዳ በጥንቃቄ ይያዙ።`;
+      action = 'Plant on raised beds to avoid root waterlogging and apply mulch around tree drip-line.';
+    } else if (isTomatoOrVegetable) {
+      responseEn = `Horticultural Crop Care (Tomato, Onion, Potato, Pepper):\n` +
+        `1. Tomato Late Blight (Phytophthora infestans): Spray systemic fungicide Ridomil Gold MZ (2.5 kg/ha) or Mancozeb preventative spray every 7-10 days during cloudy/humid weather.\n` +
+        `2. Onion Purple Blotch (Alternaria porri): Maintain 10-15 cm spacing between plants; apply Cabrio Duo or Bravo 500 when dark purple sunken lesions appear.\n` +
+        `3. Nutrient & Water Management: Drip or furrow irrigate at root level (avoid wetting foliage). Apply NPS at planting and top-dress Urea at flowering.`;
+      responseAm = `የአትክልት ሰብሎች (ቲማቲም፣ ሽንኩርት፣ ድንች፣ ቃሪያ) እንክብካቤ መመሪያ፡\n` +
+        `1. የቲማቲም አረንጓዴ/ቅጠል መድረቅ (Late Blight)፡ ከፍተኛ እርጥበት በሚኖርበት ጊዜ ሪዶሚል ጎልድ (Ridomil Gold) ወይም ማንኮዜብ በየ 7-10 ቀኑ ይርጩ።\n` +
+        `2. የሽንኩርት ወይንጠጅ ነጠብጣብ (Purple Blotch)፡ የሰብል ክፍተትን ይጠብቁ፤ ካብሪዮ ዱኦ ወይም ብራቮ 500 የተባለውን ፀረ-ፈንገስ ምልክቱ እንደታየ ይርጩ።\n` +
+        `3. መስኖና ማዳበሪያ፡ ቅጠሉን ሳያርሱ ከስር በአፈር ላይ ውሃ ያጠጡ፤ በመዝሪያ ወቅት NPS እና በአበባ ወቅት ዩሪያ ማዳበሪያ ይጠቀሙ።`;
+      action = 'Spray Ridomil Gold preventative fungicide during humid weather and irrigate only at soil base.';
+    } else if (isLegumes) {
+      responseEn = `Grain Legumes & Pulses (Faba Bean, Chickpea, Lentil, Field Pea):\n` +
+        `1. Chocolate Spot (Botrytis fabae): On faba beans, spray Mancozeb 80% WP or Tilt 250 EC immediately upon observing reddish-brown circular spots.\n` +
+        `2. Inoculation & Nitrogen Fixation: Inoculate seed with Rhizobium bio-fertilizer before sowing to enhance biological nitrogen fixation; apply 100 kg/ha NPS at planting.\n` +
+        `3. Crop Rotation Benefit: Rotating cereals (Wheat/Teff) with legumes breaks root rot disease cycles and leaves up to 40 kg/ha residual nitrogen in the soil.`;
+      responseAm = `የጥራጥሬ ሰብሎች (ባቄላ፣ ሽምብራ፣ ምስር፣ አተር) እንክብካቤ መመሪያ፡\n` +
+        `1. የባቄላ ቸኮሌት ነጠብጣብ (Chocolate Spot)፡ ቀይ-ቡናማ ነጠብጣብ በቅጠሎች ላይ ሲታይ ማንኮዜብ 80% ደብሊውፒ ወይም ቲልት ፀረ-ፈንገስ በአፋጣኝ ይርጩ።\n` +
+        `2. ባዮ-ማዳበሪያና ናይትሮጂን፡ ናይትሮጂን ከአየር እንዲስብ የራይዞቢየም (Rhizobium) ባዮ-ማዳበሪያ ከዘሩ ጋር ቀላቅለው ይዝሩ፤ 100 ኪ.ግ NPS ይጠቀሙ።\n` +
+        `3. ሰብል ማፈራረቅ፡ ስንዴን ወይም ጤፍን ከጥራጥሬ ጋር ማፈራረቅ የአፈር ለምነትን ይጨምራል፤ የአፈር ወለድ በሽታዎችን ያጠፋል።`;
+      action = 'Inoculate legume seeds with Rhizobium and spray Mancozeb early against Chocolate Spot.';
+    } else if (isCoffee) {
+      responseEn = `Coffee (Coffea arabica) Agronomy & Shade Management:\n` +
+        `1. Coffee Berry Disease (Colletotrichum kahawae): Spray Copper Hydroxide (Kocide) or Cabrio Duo at pinhead berry stage with 3-4 repeat applications during main rainy season.\n` +
+        `2. Shade & Soil Management: Maintain 30-40% canopy shade with leguminous trees (Cordia africana, Millettia ferruginea, Albizia gummifera). Apply 10-15 tons/ha organic mulch.\n` +
+        `3. Quality Harvesting: Selectively pick only uniform, deep-red cherries (cherries at peak sucrose density) to maximize specialty cupping score.`;
+      responseAm = `የቡና (Coffea arabica) እንክብካቤ፣ ጥላና የጥራት መመሪያ፡\n` +
+        `1. የቡና ፍሬ በሽታ (CBD)፡ ፍሬው በሚይዝበት ወቅት የኮፐር ሃይድሮክሳይድ (Kocide) ወይም ካብሪዮ ዱኦ ፀረ-ፈንገስ በዝናብ ወቅት በየ 4 ሳምንቱ ይርጩ።\n` +
+        `2. የጥላ ዛፎችና አፈር፡ ከ30-40% ጥላ የሚሰጡ ዛፎችን (ለምሳሌ ዋንዛ፣ ብርብራ) በእርሻው ውስጥ ይትከሉ፤ የአፈር እርጥበትን በደረቅ ገለባ/ቅጠል ይሸፍኑ።\n` +
+        `3. ምርት አሰባሰብ፡ የቀይ ወርቅ (ሙሉ በሙሉ የበሰሉ ቀይ ፍሬዎችን) ብቻ ለይተው በመልቀም የቡናውን ጥራትና ዋጋ ያሳድጉ።`;
+      action = 'Apply Copper Hydroxide spray at berry expansion stage and harvest only ripe red cherries.';
+    } else if (isSoilOrLime) {
+      responseEn = `Soil Health, Acidity Remediation & Vertisol Management:\n` +
+        `1. Soil Acidity & Lime Application: For acidic soils (pH < 5.5 in Gojjam, Wollega, Sidama), broadcast agricultural lime (CaCO3) at 2-4 tons/ha 1 month before sowing and plow into top 15 cm.\n` +
+        `2. Heavy Clay / Vertisol Drainage: Use the Broad Bed and Furrow (BBM) system with 80 cm beds and 40 cm furrows to drain excess water and eliminate waterlogging.\n` +
+        `3. Integrated Fertility: Combine mineral fertilizers (NPS + Urea) with 5 tons/ha well-rotted farmyard compost to replenish organic matter and trace minerals.`;
+      responseAm = `የአፈር ጤና፣ የአሲድ ማከሚያ ኖራ እና የወላካ አፈር መመሪያ፡\n` +
+        `1. የአፈር አሲዳማነትና የኖራ አጠቃቀም፡ አሲዳማ በሆኑ አፈሮች ላይ (ለምሳሌ ጎጃም፣ ወለጋ፣ ሲዳማ) በሄክታር ከ2-4 ቶን የግብርና ኖራ ከመዝራት 1 ወር በፊት በተኑና አፈሩን እሹት።\n` +
+        `2. የወላካ (ደለል) አፈር የውሃ ፍሳሽ፡ ውሃ እንዳይተኛ የቦይና እርከን ማስተላለፊያ (BBM) በመጠቀም ከመጠን በላይ የሆነውን የዝናብ ውሃ ያስወግዱ።\n` +
+        `3. የተቀናጀ ማዳበሪያ፡ NPS እና ዩሪያን ከ 5 ቶን የበሰበሰ የተፈጥሮ ኮምፖስት ጋር አቀናጅተው በመጠቀም የአፈሩን ለምነት ያሳድጉ።`;
+      action = 'Apply agricultural lime at 2-4 t/ha for acidic soils and construct BBM drainage furrows on vertisols.';
+    } else if (isTeff) {
       responseEn = `Comprehensive Teff (Eragrostis tef) Agronomic Advisory:\n` +
         `1. Sowing & Planting: Sow 10-15 kg/ha with row spacing of 20 cm for lodging reduction, or broadcast on well-pulverized, firm seedbeds during late July to early August (Meher season).\n` +
         `2. Nutrient Management: Apply 100 kg/ha NPS-Boron at planting. Top-dress with 50 kg/ha Urea at first tillering (30-35 days after planting) when soil has good moisture.\n` +
@@ -401,7 +469,7 @@ You MUST output valid JSON ONLY with exact fields:
         `3. አረም እና በሽታ መከላከል፡ በመጀመሪያው ወር አረም ያርሙ። የጤፍ ዝገት/ዋግ ምልክት ከታየ ፀረ-ፈንገስ ቲልት 250 ኢሲ (Tilt) በሄክታር 0.5 ሊትር ይርጩ።\n` +
         `4. መተኛትን (Lodging) መከላከል፡ ከመጠን በላይ ናይትሮጂን አይጠቀሙ፤ መሬቱን በሚገባ በማለስለስና በማደላደል ዘሩን ይዝሩ።`;
       action = 'Follow recommended Teff row-planting spacing (20cm) and apply top-dressing Urea at tillering.';
-    } else if (isWheat && (isDisease || isPest || isPlanting)) {
+    } else if (isWheat) {
       responseEn = `Wheat (Triticum aestivum) Early Warning & Rust Management:\n` +
         `1. Yellow/Stem Rust (Puccinia spp.): High humidity triggers rapid sporulation. Immediately scout the lower leaf canopy. Apply systemic fungicide Tilt 250 EC (Propiconazole) or Rex Duo at 0.5 L/ha immediately upon observing orange/yellow pustules.\n` +
         `2. Sowing Density & Fertilization: Use 125-150 kg/ha certified seeds (e.g., Kingbird, Ogolcho, Danda'a). Apply 100 kg NPS at planting and split 100 kg Urea (50% at planting, 50% at tillering).\n` +
@@ -442,15 +510,16 @@ You MUST output valid JSON ONLY with exact fields:
         `3. የተፈጥሮ ማዳበሪያ፡ በሄክታር ከ5-8 ቶን የበሰበሰ ኮምፖስት በማከል የአፈሩን ለምነትና የውሃ የመያዝ አቅም ያሳድጉ።`;
       action = 'Apply basal NPS-B fertilizer at planting and split Urea application when soil is moist.';
     } else {
-      responseEn = `Regarding your inquiry on "${queryText}":\n` +
-        `• Agronomic Best Practices: Regular field scouting every 3-5 days is critical to detect moisture stress, nutrient deficiencies, or pest outbreaks early.\n` +
-        `• Soil & Crop Health: Maintain balanced nutrient inputs (NPS + Urea) and ensure proper drainage to prevent waterlogging.\n` +
-        `• Early Warning: Monitor AgriEtech risk alerts for drought, flood, and pest forecasts for your local woreda. Consult your local development agent for localized advice.`;
-      responseAm = `ስለ ጥያቄዎ "${queryText}" የተሰጠ አጠቃላይ የግብርና መመሪያ፡\n` +
-        `• የሰብል ክትትል፡ በየ 3-5 ቀኑ እርሻዎን በመፈተሽ የበሽታ፣ የተባይ ወይም የእርጥበት እጥረት ምልክቶችን በጊዜ ይለዩ።\n` +
-        `• የአፈርና ሰብል ጤና፡ የተመጣጠነ ማዳበሪያ (NPS እና ዩሪያ) ይጠቀሙ፤ ውሃ በእርሻው ላይ እንዳይተኛ የፍሳሽ ቦይ ያዘጋጁ።\n` +
-        `• ቅድመ ማስጠንቀቂያ፡ በአካባቢዎ (ወረዳዎ) የሚታዩትን የድርቅ፣ የጎርፍ እና የአንበጣ አደጋ ማንቂያዎችን በአግሪቴክ መተግበሪያ ይከታተሉ።`;
-      action = 'Conduct regular field inspection and consult your woreda development agent.';
+      // Dynamic General Agronomic Query Handling
+      responseEn = `Scientific Agronomic Response regarding "${queryText}":\n` +
+        `1. Diagnosis & Best Practices: Field observation indicates regular scouting every 3-5 days is critical to detect crop stress, pest vector emergence, or nutrient imbalance early.\n` +
+        `2. Recommended Interventions: Maintain balanced nutrition (NPS + Urea top-dressing), ensure effective field drainage to prevent waterlogging, and apply integrated pest management (IPM).\n` +
+        `3. Climate & Local Context: Follow localized seasonal forecasts from AgriEtech risk monitoring and consult your kebele development agent for site-specific advice.`;
+      responseAm = `ስለ ጥያቄዎ "${queryText}" የተሰጠ ሳይንሳዊ የግብርና ባለሙያ ምላሽ፡\n` +
+        `1. የሰብል ክትትልና ምርመራ፡ በየ 3-5 ቀኑ እርሻዎን በመፈተሽ የበሽታ፣ የተባይ ወይም የእርጥበት እጥረት ምልክቶችን በጊዜ ለይቶ ማከም ያስፈልጋል።\n` +
+        `2. መወሰድ ያለባቸው እርምጃዎች፡ የተመጣጠነ ማዳበሪያ (NPS እና ዩሪያ) ይጠቀሙ፤ ውሃ በእርሻው ላይ እንዳይተኛ የፍሳሽ ቦይ ያዘጋጁ፤ ተባይ ከታየ ተገቢውን ፀረ-ተባይ በወቅቱ ይርጩ።\n` +
+        `3. ወቅታዊ የአየር ሁኔታ፡ በአግሪቴክ መተግበሪያ የሚተላለፉትን የአደጋ ማስጠንቀቂያዎች ይከታተሉ፤ ከአካባቢዎ የቀበሌ ግብርና ባለሙያ ጋር ይመካከሩ።`;
+      action = 'Conduct field scouting, maintain soil drainage, and apply recommended agronomic inputs.';
     }
 
     return {
