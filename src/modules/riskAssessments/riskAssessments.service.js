@@ -1,28 +1,10 @@
 const { prisma, isConnected } = require('../../config/db');
 const { calculateCompositeRisk } = require('../../processing/riskAggregator');
 const { broadcastRiskUpdate } = require('../../delivery/websocket/riskAssessmentChannel');
+const { getWoredaCoordinates } = require('../boundaries/boundaries.service');
 const logger = require('../../utils/logger');
 
-const mockRiskAssessments = [
-  {
-    id: 'risk_demo_01',
-    woredaId: 'woreda_adama_01',
-    droughtScore: 0.65,
-    floodScore: 0.15,
-    locustScore: 0.10,
-    vegetationScore: 0.55,
-    compositeScore: 0.58,
-    riskScore: 0.58,
-    alertLevel: 'MODERATE',
-    assessedAt: new Date().toISOString(),
-    recommendationsEn: 'Monitor soil moisture trends closely. | Advise farmers to employ water conservation.',
-    recommendations: [
-      'Monitor soil moisture trends closely.',
-      'Advise farmers to employ water conservation and mulching.',
-    ],
-    woreda: { id: 'woreda_adama_01', nameEn: 'Adama Zuria', nameAm: 'አዳማ ዙሪያ' },
-  },
-];
+const inMemoryRiskAssessments = new Map();
 
 function generateRecommendations(alertLevel, _primaryThreat) {
   if (alertLevel === 'CRITICAL' || alertLevel === 'RED' || alertLevel === 'HIGH') {
@@ -47,11 +29,12 @@ function generateRecommendations(alertLevel, _primaryThreat) {
 
 // Compute multi-hazard risk and persist assessment
 async function evaluateWoredaRisk(woredaId, hazardScores = {}) {
+  const coords = getWoredaCoordinates(woredaId);
   const normalizedScores = {
-    drought: parseFloat(hazardScores.drought || hazardScores.droughtScore || 0),
-    flood: parseFloat(hazardScores.flood || hazardScores.floodScore || 0),
-    locust: parseFloat(hazardScores.locust || hazardScores.locustScore || 0),
-    vegetation: parseFloat(hazardScores.vegetation || hazardScores.vegetationScore || 0),
+    drought: parseFloat(hazardScores.drought || hazardScores.droughtScore || 0.25),
+    flood: parseFloat(hazardScores.flood || hazardScores.floodScore || 0.10),
+    locust: parseFloat(hazardScores.locust || hazardScores.locustScore || 0.05),
+    vegetation: parseFloat(hazardScores.vegetation || hazardScores.vegetationScore || 0.30),
   };
 
   const result = calculateCompositeRisk(normalizedScores);
@@ -63,7 +46,7 @@ async function evaluateWoredaRisk(woredaId, hazardScores = {}) {
     try {
       record = await prisma.riskAssessment.create({
         data: {
-          woredaId,
+          woredaId: coords.id || woredaId,
           assessmentDate: new Date(),
           droughtScore: normalizedScores.drought,
           floodScore: normalizedScores.flood,
@@ -84,7 +67,8 @@ async function evaluateWoredaRisk(woredaId, hazardScores = {}) {
   if (!record) {
     record = {
       id: `risk_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-      woredaId,
+      woredaId: coords.id || woredaId,
+      woreda: { id: coords.id || woredaId, nameEn: coords.nameEn, nameAm: coords.nameAm },
       droughtScore: normalizedScores.drought,
       floodScore: normalizedScores.flood,
       locustScore: normalizedScores.locust,
@@ -95,7 +79,7 @@ async function evaluateWoredaRisk(woredaId, hazardScores = {}) {
       assessedAt: new Date().toISOString(),
       recommendationsEn: recommendations.join(' | '),
     };
-    mockRiskAssessments.unshift(record);
+    inMemoryRiskAssessments.set(record.id, record);
   }
 
   // Broadcast via WebSocket
@@ -124,7 +108,7 @@ async function getLatestAssessments(limit = 20) {
     }
   }
 
-  return mockRiskAssessments.slice(0, limit);
+  return Array.from(inMemoryRiskAssessments.values()).slice(0, limit);
 }
 
 // Get assessments by woreda
@@ -141,7 +125,17 @@ async function getAssessmentsByWoreda(woredaId) {
     }
   }
 
-  return mockRiskAssessments.filter((r) => !woredaId || r.woredaId === woredaId);
+  const all = Array.from(inMemoryRiskAssessments.values());
+  const filtered = all.filter((r) => !woredaId || r.woredaId === woredaId);
+  if (filtered.length > 0) return filtered;
+
+  // If none recorded yet for this specific woreda, generate a live baseline assessment
+  if (woredaId) {
+    const baseline = await evaluateWoredaRisk(woredaId);
+    return [baseline];
+  }
+
+  return [];
 }
 
 // Get risk statistics from live database
@@ -165,7 +159,12 @@ async function getRiskStatistics() {
     }
   }
 
-  return { total: 45, high: 6, moderate: 15, low: 24 };
+  const list = Array.from(inMemoryRiskAssessments.values());
+  const high = list.filter((r) => ['RED', 'CRITICAL', 'HIGH'].includes(r.alertLevel)).length;
+  const moderate = list.filter((r) => ['YELLOW', 'ORANGE', 'MODERATE', 'WATCH'].includes(r.alertLevel)).length;
+  const low = list.filter((r) => ['GREEN', 'LOW', 'NORMAL'].includes(r.alertLevel)).length;
+
+  return { total: list.length, high, moderate, low };
 }
 
 module.exports = {
@@ -173,5 +172,5 @@ module.exports = {
   getLatestAssessments,
   getAssessmentsByWoreda,
   getRiskStatistics,
-  mockRiskAssessments,
+  inMemoryRiskAssessments,
 };

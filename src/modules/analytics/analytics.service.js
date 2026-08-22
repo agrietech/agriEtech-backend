@@ -251,46 +251,84 @@ async function getRegionalBreakdown() {
   return FALLBACK_REGIONAL_BREAKDOWN;
 }
 
-// Multi-horizon temporal trends
+// Multi-horizon temporal trends with live location-specific weather
 async function getTemporalTrends({ timeframe = 'DAILY', woredaId, includeAi = false, language = 'am' }) {
+  const axios = require('axios');
+  const { getWoredaCoordinates } = require('../boundaries/boundaries.service');
   const normTimeframe = (timeframe || 'DAILY').toUpperCase();
-  const targetWoredaId = woredaId || 'woreda_adama_01';
+  const coords = getWoredaCoordinates(woredaId);
 
   let metrics = [];
   let summary = null;
   let decadalShifts = null;
 
   if (normTimeframe === 'DAILY') {
-    const today = new Date();
-    for (let i = 13; i >= 0; i--) {
-      const d = new Date(today.getTime() - i * 86400000);
-      metrics.push({
-        date: d.toISOString().split('T')[0],
-        rainfallMm: Math.round((Math.random() * 15 + 2) * 10) / 10,
-        tempMaxC: 26.5 + (i % 3),
-        tempMinC: 14.0 + (i % 2),
-        ndvi: 0.55 + (i * 0.005),
-        soilMoisturePercent: 35.0 + (i % 10),
-      });
+    try {
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${coords.lat}&longitude=${coords.lng}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,soil_moisture_0_to_1cm_mean&timezone=Africa%2FAddis_Ababa&past_days=14&forecast_days=7`;
+      const response = await axios.get(url, { timeout: 8000 });
+      const daily = response.data?.daily;
+
+      if (daily && Array.isArray(daily.time)) {
+        metrics = daily.time.map((dateStr, idx) => {
+          const rain = daily.precipitation_sum?.[idx] ?? 0;
+          const tempMax = daily.temperature_2m_max?.[idx] ?? 24.0;
+          const tempMin = daily.temperature_2m_min?.[idx] ?? 14.0;
+          const soilRaw = daily.soil_moisture_0_to_1cm_mean?.[idx] ?? 0.32;
+          const soilMoisturePercent = Math.round(soilRaw * 100 * 10) / 10;
+          const estimatedNdvi = Math.min(0.85, Math.max(0.25, 0.45 + (rain > 2 ? 0.15 : 0) + (tempMax < 28 ? 0.05 : -0.05)));
+
+          return {
+            date: dateStr,
+            rainfallMm: Math.round(rain * 10) / 10,
+            tempMaxC: Math.round(tempMax * 10) / 10,
+            tempMinC: Math.round(tempMin * 10) / 10,
+            ndvi: Math.round(estimatedNdvi * 100) / 100,
+            soilMoisturePercent: soilMoisturePercent,
+          };
+        });
+      }
+    } catch (_err) {
+      // Fallback calculated series based on geographic latitude
+      const today = new Date();
+      for (let i = 13; i >= 0; i--) {
+        const d = new Date(today.getTime() - i * 86400000);
+        const baseTemp = 22.0 + (coords.lat > 10 ? 2.0 : -1.0);
+        metrics.push({
+          date: d.toISOString().split('T')[0],
+          rainfallMm: Math.round((i % 4 === 0 ? 8.5 : 0.0) * 10) / 10,
+          tempMaxC: Math.round((baseTemp + 4.0) * 10) / 10,
+          tempMinC: Math.round((baseTemp - 6.0) * 10) / 10,
+          ndvi: 0.55,
+          soilMoisturePercent: 38.0,
+        });
+      }
     }
 
+    const totalRain = metrics.reduce((acc, m) => acc + (m.rainfallMm || 0), 0);
+    const avgNdvi = metrics.length > 0 ? metrics.reduce((acc, m) => acc + (m.ndvi || 0), 0) / metrics.length : 0.55;
+    const avgSoil = metrics.length > 0 ? metrics.reduce((acc, m) => acc + (m.soilMoisturePercent || 0), 0) / metrics.length : 38.0;
+
     summary = {
-      totalRainfallMm: 48.5,
-      avgNdvi: 0.58,
-      avgSoilMoisture: 38.2,
+      woredaName: coords.nameEn,
+      woredaNameAm: coords.nameAm,
+      totalRainfallMm: Math.round(totalRain * 10) / 10,
+      avgNdvi: Math.round(avgNdvi * 100) / 100,
+      avgSoilMoisture: Math.round(avgSoil * 10) / 10,
       dataPoints: metrics.length,
     };
   } else if (normTimeframe === 'MONTHLY') {
     const months = ['2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08'];
     metrics = months.map((m, idx) => ({
       month: m,
-      rainfallMm: 40.0 + (idx * 5) % 60,
-      ndvi: 0.45 + (idx * 0.02) % 0.3,
+      rainfallMm: 35.0 + (coords.lat > 10 ? 10 : 0) + ((idx * 7) % 50),
+      ndvi: 0.48 + (idx * 0.015) % 0.25,
       spiValue: 0.25,
       spiStatus: 'NEAR_NORMAL',
     }));
 
     summary = {
+      woredaName: coords.nameEn,
+      woredaNameAm: coords.nameAm,
       periodCovered: '12 months',
       currentSpiStatus: 'NEAR_NORMAL',
       spi3Month: 0.25,
@@ -307,6 +345,8 @@ async function getTemporalTrends({ timeframe = 'DAILY', woredaId, includeAi = fa
     ];
 
     summary = {
+      woredaName: coords.nameEn,
+      woredaNameAm: coords.nameAm,
       yearsCovered: 5,
       dataPoints: metrics.length,
     };
@@ -320,7 +360,9 @@ async function getTemporalTrends({ timeframe = 'DAILY', woredaId, includeAi = fa
 
   const responseData = {
     timeframe: normTimeframe,
-    woredaId: targetWoredaId,
+    woredaId: coords.id || woredaId,
+    woredaName: coords.nameEn,
+    woredaNameAm: coords.nameAm,
     metrics,
   };
 
@@ -330,7 +372,7 @@ async function getTemporalTrends({ timeframe = 'DAILY', woredaId, includeAi = fa
   if (includeAi === true || includeAi === 'true') {
     try {
       const aiResult = await openRouterClient.analyzeGraphSeries({
-        woredaName: targetWoredaId || 'Adama Zuria',
+        woredaName: coords.nameEn || 'Ethiopia Region',
         timeframe: normTimeframe,
         metrics,
         language,
@@ -339,17 +381,17 @@ async function getTemporalTrends({ timeframe = 'DAILY', woredaId, includeAi = fa
     } catch (_aiErr) {
       responseData.aiInsights = {
         trendSummary: {
-          en: 'Rainfall is within expected seasonal range with stable vegetation indices.',
-          am: 'የዝናብ መጠኑ በመደበኛ ወቅታዊ ክልል ውስጥ ሲሆን የሰብል እድገቱም የተረጋጋ ነው።',
+          en: `Rainfall in ${coords.nameEn} is within expected seasonal range with stable vegetation vigor.`,
+          am: `በ${coords.nameAm || coords.nameEn} የተመዘገበው ዝናብ በመደበኛ ወቅታዊ ክልል ውስጥ ሲሆን የሰብል እድገቱም የተረጋጋ ነው።`,
         },
         droughtRiskStatus: {
           status: 'NORMAL',
-          en: 'Normal conditions observed.',
+          en: 'Normal agro-meteorological conditions observed.',
           am: 'መደበኛ የአየር ሁኔታ።',
         },
         actionableGuidance: {
-          en: ['Maintain regular irrigation.'],
-          am: ['መደበኛ መስኖን ይቀጥሉ።'],
+          en: ['Maintain regular irrigation and standard weeding practices.'],
+          am: ['መደበኛ የመስኖና የአረም እንክብካቤን ይቀጥሉ።'],
         },
       };
     }

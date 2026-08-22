@@ -133,41 +133,275 @@ const FALLBACK_ZONES = [
   { id: 'zone_dire_dawa_city', nameEn: 'Dire Dawa City', nameAm: 'ድሬዳዋ ከተማ', regionId: 'ET15' },
 ];
 
-// Major Woredas (expanded fallback list)
+// Major Woredas across Ethiopia with authentic geographical center coordinates
 const FALLBACK_WOREDAS = [
+  // Amhara Region Woredas
+  {
+    id: 'ET030701',
+    code: 'woreda_bahirdar_01',
+    zoneId: 'zone_amhara_west_gojjam',
+    nameEn: 'Bahir Dar Zuria',
+    nameAm: 'ባሕር ዳር ዙሪያ',
+    centerLat: 11.5936,
+    centerLng: 37.3908,
+  },
+  {
+    id: 'ET030401',
+    code: 'woreda_gondar_01',
+    zoneId: 'zone_amhara_north_gondar',
+    nameEn: 'Gondar Zuria',
+    nameAm: 'ጎንደር ዙሪያ',
+    centerLat: 12.6030,
+    centerLng: 37.4521,
+  },
+  {
+    id: 'ET030601',
+    code: 'woreda_debremarkos_01',
+    zoneId: 'zone_amhara_east_gojjam',
+    nameEn: 'Debre Markos',
+    nameAm: 'ደብረ ማርቆስ',
+    centerLat: 10.3326,
+    centerLng: 37.7258,
+  },
+  {
+    id: 'ET030101',
+    code: 'woreda_debreberhan_01',
+    zoneId: 'zone_amhara_north_shewa',
+    nameEn: 'Debre Berhan',
+    nameAm: 'ደብረ ብርሃን',
+    centerLat: 9.6800,
+    centerLng: 39.5300,
+  },
+  {
+    id: 'ET030201',
+    code: 'woreda_dessie_01',
+    zoneId: 'zone_amhara_south_wollo',
+    nameEn: 'Dessie Zuria',
+    nameAm: 'ደሴ ዙሪያ',
+    centerLat: 11.1300,
+    centerLng: 39.6300,
+  },
+  {
+    id: 'ET030301',
+    code: 'woreda_woldiya_01',
+    zoneId: 'zone_amhara_north_wollo',
+    nameEn: 'Woldiya',
+    nameAm: 'ወልዲያ',
+    centerLat: 11.8300,
+    centerLng: 39.5900,
+  },
+
+  // Oromia Region Woredas
   {
     id: 'ET040101',
+    code: 'woreda_adama_01',
     zoneId: 'zone_oromia_east_shewa',
     nameEn: 'Adama Zuria',
     nameAm: 'አዳማ ዙሪያ',
-    centerLat: 8.54,
-    centerLng: 39.27,
+    centerLat: 8.5400,
+    centerLng: 39.2700,
   },
   {
     id: 'ET040102',
+    code: 'woreda_bishoftu_01',
     zoneId: 'zone_oromia_east_shewa',
     nameEn: 'Bishoftu',
     nameAm: 'ቢሾፍቱ',
-    centerLat: 8.75,
-    centerLng: 38.98,
+    centerLat: 8.7500,
+    centerLng: 38.9800,
   },
   {
     id: 'ET040103',
+    code: 'woreda_mojo_01',
     zoneId: 'zone_oromia_east_shewa',
     nameEn: 'Mojo',
     nameAm: 'ሞጆ',
-    centerLat: 8.6,
-    centerLng: 39.12,
+    centerLat: 8.6000,
+    centerLng: 39.1200,
   },
   {
     id: 'ET040104',
+    code: 'woreda_dukem_01',
     zoneId: 'zone_oromia_east_shewa',
     nameEn: 'Dukem',
     nameAm: 'ዱከም',
-    centerLat: 8.8,
-    centerLng: 38.9,
+    centerLat: 8.8000,
+    centerLng: 38.9000,
+  },
+  {
+    id: 'ET041601',
+    code: 'woreda_jimma_01',
+    zoneId: 'zone_oromia_jimma',
+    nameEn: 'Jimma / Mana',
+    nameAm: 'ጅማ / ማና',
+    centerLat: 7.6734,
+    centerLng: 36.8344,
+  },
+  {
+    id: 'ET040201',
+    code: 'woreda_asella_01',
+    zoneId: 'zone_oromia_arsi',
+    nameEn: 'Asella / Tiyo',
+    nameAm: 'አሰላ / ጢዮ',
+    centerLat: 7.9500,
+    centerLng: 39.1300,
+  },
+  {
+    id: 'ET040105',
+    code: 'woreda_shashamane_01',
+    zoneId: 'zone_oromia_west_arsi',
+    nameEn: 'Shashamane',
+    nameAm: 'ሻሸመኔ',
+    centerLat: 7.2000,
+    centerLng: 38.6000,
+  },
+
+  // Tigray Region Woredas
+  {
+    id: 'ET010601',
+    code: 'woreda_mekelle_01',
+    zoneId: 'zone_tigray_mekelle',
+    nameEn: 'Mekelle / Enderta',
+    nameAm: 'መቐለ / እንዳርታ',
+    centerLat: 13.4967,
+    centerLng: 39.4753,
+  },
+
+  // Sidama Region Woredas
+  {
+    id: 'ET100201',
+    code: 'woreda_hawassa_01',
+    zoneId: 'zone_sidama_hawassa',
+    nameEn: 'Hawassa Zuria',
+    nameAm: 'ሐዋሳ ዙሪያ',
+    centerLat: 7.0504,
+    centerLng: 38.4955,
+  },
+
+  // South Ethiopia / SNNPR Woredas
+  {
+    id: 'ET070401',
+    code: 'woreda_wolaita_01',
+    zoneId: 'zone_snnpr_wolaita',
+    nameEn: 'Wolaita Sodo',
+    nameAm: 'ወላይታ ሶዶ',
+    centerLat: 6.8600,
+    centerLng: 37.7600,
+  },
+  {
+    id: 'ET070601',
+    code: 'woreda_arbaminch_01',
+    zoneId: 'zone_snnpr_gamo',
+    nameEn: 'Arba Minch Zuria',
+    nameAm: 'አርባ ምንጭ ዙሪያ',
+    centerLat: 6.0333,
+    centerLng: 37.5500,
+  },
+
+  // Somali Region Woredas
+  {
+    id: 'ET050301',
+    code: 'woreda_jijiga_01',
+    zoneId: 'zone_somali_fafan',
+    nameEn: 'Jijiga',
+    nameAm: 'ጅጅጋ',
+    centerLat: 9.3500,
+    centerLng: 42.8000,
+  },
+
+  // Afar Region Woredas
+  {
+    id: 'ET020101',
+    code: 'woreda_semara_01',
+    zoneId: 'zone_afar_zone1',
+    nameEn: 'Semara / Awsi Rasu',
+    nameAm: 'ሰመራ',
+    centerLat: 11.7900,
+    centerLng: 41.0100,
+  },
+
+  // Benishangul-Gumuz Woredas
+  {
+    id: 'ET060101',
+    code: 'woreda_assosa_01',
+    zoneId: 'zone_benishangul_assosa',
+    nameEn: 'Assosa',
+    nameAm: 'አሶሳ',
+    centerLat: 10.0667,
+    centerLng: 34.5333,
+  },
+
+  // Gambela Region Woredas
+  {
+    id: 'ET080101',
+    code: 'woreda_gambela_01',
+    zoneId: 'zone_gambela_anuak',
+    nameEn: 'Gambela Zuria',
+    nameAm: 'ጋምቤላ ዙሪያ',
+    centerLat: 8.2500,
+    centerLng: 34.5833,
+  },
+
+  // Harari & Dire Dawa
+  {
+    id: 'ET090101',
+    code: 'woreda_harar_01',
+    zoneId: 'zone_harari_city',
+    nameEn: 'Harar City',
+    nameAm: 'ሐረር ከተማ',
+    centerLat: 9.3139,
+    centerLng: 42.1182,
+  },
+  {
+    id: 'ET150101',
+    code: 'woreda_diredawa_01',
+    zoneId: 'zone_dire_dawa_city',
+    nameEn: 'Dire Dawa City',
+    nameAm: 'ድሬዳዋ ከተማ',
+    centerLat: 9.5931,
+    centerLng: 41.8661,
+  },
+  {
+    id: 'ET140101',
+    code: 'woreda_addis_01',
+    zoneId: 'zone_aa_bole',
+    nameEn: 'Addis Ababa',
+    nameAm: 'አዲስ አበባ',
+    centerLat: 9.0320,
+    centerLng: 38.7469,
   },
 ];
+
+/**
+ * Resolve accurate geographical coordinates for any woredaId or city name
+ */
+function getWoredaCoordinates(woredaIdOrName) {
+  if (!woredaIdOrName) {
+    return { lat: 9.0320, lng: 38.7469, nameEn: 'Addis Ababa', nameAm: 'አዲስ አበባ' };
+  }
+
+  const query = String(woredaIdOrName).toLowerCase().trim();
+  const match = FALLBACK_WOREDAS.find(
+    (w) =>
+      w.id.toLowerCase() === query ||
+      (w.code && w.code.toLowerCase() === query) ||
+      w.nameEn.toLowerCase().includes(query) ||
+      query.includes(w.nameEn.toLowerCase()) ||
+      (w.nameAm && (w.nameAm.includes(query) || query.includes(w.nameAm)))
+  );
+
+  if (match) {
+    return {
+      lat: match.centerLat,
+      lng: match.centerLng,
+      nameEn: match.nameEn,
+      nameAm: match.nameAm,
+      id: match.id,
+    };
+  }
+
+  return { lat: 9.0320, lng: 38.7469, nameEn: 'Ethiopia Region', nameAm: 'ኢትዮጵያ' };
+}
 
 /**
  * List all administrative regions with their zones
@@ -414,5 +648,7 @@ module.exports = {
   getWoredas,
   getWoredaById,
   resolveWoredaByCoords,
+  getWoredaCoordinates,
+  FALLBACK_WOREDAS,
 };
 
