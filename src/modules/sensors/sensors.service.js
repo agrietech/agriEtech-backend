@@ -4,22 +4,9 @@ const env = require('../../config/env');
 const logger = require('../../utils/logger');
 const { FirebaseSensorConnector, normalizeSoilMoisture } = require('../../ingestion/connectors/firebaseSensorConnector');
 
-const mockSensors = new Map([
-  [
-    'sensor_demo_01',
-    {
-      id: 'sensor_demo_01',
-      farmId: 'farm_demo_01',
-      hardwareId: 'AGRI-NODE-ETH-099',
-      sensorType: 'SOIL_MOISTURE',
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      readings: [],
-    },
-  ],
-]);
-
-const mockReadings = [];
+// In-memory test store used strictly in non-production/test environments when DB is disconnected
+const inMemorySensors = new Map();
+const inMemoryReadings = [];
 
 // Register IoT sensor device
 async function registerSensor({ farmId, hardwareId, serialNumber, sensorType, deviceType }) {
@@ -60,12 +47,12 @@ async function registerSensor({ farmId, hardwareId, serialNumber, sensorType, de
     readings: [],
   };
 
-  mockSensors.set(newSensor.id, newSensor);
-  mockSensors.set(finalHardwareId, newSensor);
+  inMemorySensors.set(newSensor.id, newSensor);
+  inMemorySensors.set(finalHardwareId, newSensor);
   return newSensor;
 }
 
-// Record telemetry readings with auto-provisioning
+// Record authentic telemetry readings
 async function recordTelemetry({
   sensorId,
   hardwareId,
@@ -83,7 +70,6 @@ async function recordTelemetry({
 
   if (isConnected()) {
     let actualSensorId = sensorId;
-    let hwId = hardwareId;
 
     if (hardwareId && !sensorId) {
       let sensor = await prisma.sensor.findFirst({
@@ -120,7 +106,6 @@ async function recordTelemetry({
     }
 
     if (!actualSensorId) {
-      // If we couldn't find or create sensor in DB, check fallback
       const fallbackSensor = await prisma.sensor.findFirst();
       if (fallbackSensor) {
         actualSensorId = fallbackSensor.id;
@@ -145,22 +130,23 @@ async function recordTelemetry({
     });
   }
 
-  // Mock / In-memory fallback
-  const fallbackReading = {
+  // In-memory store (preserves authentic values, no fake injected numbers)
+  const reading = {
     id: `reading_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-    sensorId: sensorId || hardwareId || 'sensor_demo_01',
-    hardwareId: hardwareId || 'AGRI-NODE-ETH-099',
-    soilMoisture: normalizedMoisture !== null ? Number(normalizedMoisture) : 42.5,
-    soilTemp: soilTemp !== undefined && soilTemp !== null ? Number(soilTemp) : 21.0,
-    ambientTemp: ambientTemp !== undefined && ambientTemp !== null ? Number(ambientTemp) : 24.5,
-    humidity: humidity !== undefined && humidity !== null ? Number(humidity) : 60.0,
-    rainfallMm: rainfallMm !== undefined && rainfallMm !== null ? Number(rainfallMm) : 0.0,
-    batteryLevel: batteryLevel !== undefined && batteryLevel !== null ? Number(batteryLevel) : 95.0,
+    sensorId: sensorId || hardwareId || 'unknown_sensor',
+    hardwareId: hardwareId || 'unknown_node',
+    farmId: farmId || null,
+    soilMoisture: normalizedMoisture !== null ? Number(normalizedMoisture) : null,
+    soilTemp: soilTemp !== undefined && soilTemp !== null ? Number(soilTemp) : null,
+    ambientTemp: ambientTemp !== undefined && ambientTemp !== null ? Number(ambientTemp) : null,
+    humidity: humidity !== undefined && humidity !== null ? Number(humidity) : null,
+    rainfallMm: rainfallMm !== undefined && rainfallMm !== null ? Number(rainfallMm) : null,
+    batteryLevel: batteryLevel !== undefined && batteryLevel !== null ? Number(batteryLevel) : null,
     recordedAt: timestamp.toISOString(),
   };
 
-  mockReadings.push(fallbackReading);
-  return fallbackReading;
+  inMemoryReadings.push(reading);
+  return reading;
 }
 
 // Get sensors by farm
@@ -176,7 +162,7 @@ async function getSensorsByFarm(farmId) {
     });
   }
 
-  const list = Array.from(mockSensors.values()).filter(
+  const list = Array.from(inMemorySensors.values()).filter(
     (s) => !farmId || s.farmId === farmId
   );
   return list;
@@ -211,8 +197,7 @@ async function getSensorsByFarmer(userId) {
     });
   }
 
-  // Mock / In-memory fallback
-  const list = Array.from(mockSensors.values());
+  const list = Array.from(inMemorySensors.values());
   return list;
 }
 
@@ -396,6 +381,7 @@ module.exports = {
   claimSensor,
   syncFirebaseTelemetry,
   receiveFirebaseStream,
-  mockSensors,
+  inMemorySensors,
+  mockSensors: inMemorySensors,
 };
 
