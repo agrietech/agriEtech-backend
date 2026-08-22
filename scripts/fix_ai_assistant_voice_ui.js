@@ -11,7 +11,10 @@ import '../../../../core/theme/app_theme.dart';
 import '../providers/ai_voice_provider.dart';
 
 /// Professional Full-Screen AI Agronomic Voice & Chat Assistant
-/// Fixed: Resilient to soft keyboard, in-app voice read-out, and no canned unasked questions.
+/// - High-contrast text input (never obscured by keyboard)
+/// - Multi-line auto-expanding input box
+/// - Bilingual Voice Synthesis & Auto-readout toggle
+/// - Dynamic Agronomic Knowledge
 class AiAssistantScreen extends ConsumerStatefulWidget {
   const AiAssistantScreen({super.key});
 
@@ -26,18 +29,20 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen>
   final FocusNode _focusNode = FocusNode();
   late AnimationController _pulseController;
   bool _isRecording = false;
+  bool _autoSpeak = true;
+  String? _currentlyPlayingText;
 
   @override
   void initState() {
     super.initState();
     _pulseController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1000),
+      duration: const Duration(milliseconds: 900),
     )..repeat(reverse: true);
 
     _focusNode.addListener(() {
       if (_focusNode.hasFocus) {
-        Future.delayed(const Duration(milliseconds: 300), _scrollToBottom);
+        Future.delayed(const Duration(milliseconds: 250), _scrollToBottom);
       }
     });
   }
@@ -55,7 +60,7 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent + 120,
+          _scrollController.position.maxScrollExtent + 80,
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOut,
         );
@@ -88,25 +93,40 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen>
     }
   }
 
-  void _submitQuery(String query) {
+  Future<void> _submitQuery(String query) async {
     final text = query.trim();
     if (text.isEmpty) return;
 
     _textController.clear();
     FocusScope.of(context).unfocus();
-    ref.read(aiVoiceProvider.notifier).sendQuestion(text);
-    Future.delayed(const Duration(milliseconds: 100), _scrollToBottom);
+
+    await ref.read(aiVoiceProvider.notifier).sendQuestion(text);
+    _scrollToBottom();
+
+    // Auto-readout if enabled
+    if (_autoSpeak) {
+      final state = ref.read(aiVoiceProvider);
+      final lastMsg = state.messages.isNotEmpty ? state.messages.last : null;
+      if (lastMsg != null && !lastMsg.isUser) {
+        _playVoiceAudio(lastMsg.aiResponse?.audioUrl, lastMsg.text);
+      }
+    }
   }
 
   Future<void> _playVoiceAudio(String? audioUrl, String text) async {
     final lang = ref.read(aiVoiceProvider).language;
     final clean = text
         .replaceAll(RegExp(r'[*#_~>]'), '')
-        .replaceAll(RegExp(r'\s+'), ' ')
+        .replaceAll(RegExp(r'\\s+'), ' ')
         .trim();
-    final sample = clean.length > 200 ? clean.substring(0, 200) : clean;
+    final sample = clean.length > 220 ? clean.substring(0, 220) : clean;
     final streamUrl = audioUrl ??
-        'https://translate.google.com/translate_tts?ie=UTF-8&q=' + Uri.encodeComponent(sample) + '&tl=' + lang + '&client=tw-ob';
+        'https://agrietech.onrender.com/api/v1/ai/tts-stream?text=' +
+            Uri.encodeComponent(sample) +
+            '&lang=' +
+            lang;
+
+    setState(() => _currentlyPlayingText = text);
 
     try {
       final uri = Uri.parse(streamUrl);
@@ -117,11 +137,20 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(lang == 'am' ? 'የድምፅ ንባብ ተጀምሯል...' : 'Reading advisory aloud...'),
-            backgroundColor: AppTheme.primaryColor,
+            content: Text(
+              lang == 'am'
+                  ? 'የድምፅ መልዕክት እየተጫወተ ነው...'
+                  : 'Playing voice audio advisory...',
+            ),
+            backgroundColor: const Color(0xFF2E7D32),
+            duration: const Duration(seconds: 2),
           ),
         );
       }
+    } finally {
+      Future.delayed(const Duration(seconds: 4), () {
+        if (mounted) setState(() => _currentlyPlayingText = null);
+      });
     }
   }
 
@@ -145,18 +174,22 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen>
         ? [
             '🌾 ጤፍ ለመዝራት የተሻለው ወቅት መቼ ነው?',
             '🌽 የበቆሎ አባጨጓሬ (ፎል አርሚዎርም) መከላከያ',
+            '🍎 የፖም ዛፍ ማዳቀልና የፍራፍሬ እንክብካቤ',
+            '🍅 የቲማቲም ቅጠል መድረቅ (Late Blight) መፍትሄ',
             '🌾 የስንዴ ግንድ ዋግ በሽታ መከላከያ ዘዴዎች',
             '💧 የአፈር እርጥበት እና የመስኖ አጠቃቀም',
-            '🧪 የዩሪያ እና የNPS ማዳበሪያ አጠቃቀም',
-            '⛅ የአየር ሁኔታ እና የዝናብ ትንበያ',
+            '🧪 የአፈር አሲዳማነትና የኖራ አጠቃቀም',
+            '☕ የቡና ፍሬ በሽታ (CBD) መከላከያ',
           ]
         : [
             '🌾 Best time to plant Teff & spacing?',
             '🌽 Maize Fall Armyworm IPM control',
+            '🍎 Apple tree grafting & nursery care',
+            '🍅 Tomato Late Blight fungicide guide',
             '🌾 Wheat Stem Rust fungicide treatment',
             '💧 Soil moisture & furrow irrigation',
-            '🧪 Urea & NPS balanced fertilizer guide',
-            '⛅ Weather & climate risk forecast',
+            '🧪 Soil acidity & agricultural lime guide',
+            '☕ Coffee Berry Disease (CBD) prevention',
           ];
 
     return Scaffold(
@@ -165,7 +198,7 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen>
         title: Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(6),
+              padding: const EdgeInsets.all(7),
               decoration: const BoxDecoration(
                 color: Color(0xFF2E7D32),
                 shape: BoxShape.circle,
@@ -173,22 +206,50 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen>
               child: const Icon(Icons.psychology, color: Colors.white, size: 20),
             ),
             const SizedBox(width: 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  isAmharic ? 'የአግሪቴክ AI ረዳት' : 'AgriEtech AI Assistant',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-                Text(
-                  isAmharic ? 'የድምፅና የጽሑፍ የግብርና አማካሪ' : 'Bilingual Voice & Text Advisory',
-                  style: const TextStyle(fontSize: 11, color: Colors.white70),
-                ),
-              ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    isAmharic ? 'የአግሪቴክ AI አማካሪ' : 'AgriEtech AI Advisor',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                  Text(
+                    isAmharic ? 'ቀጥታ የድምፅና የጽሑፍ የግብርና መመሪያ' : 'Live Voice & Text Agronomic Guidance',
+                    style: const TextStyle(fontSize: 10.5, color: Colors.white70),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
         actions: [
+          // Auto-Speak Voice Toggle
+          IconButton(
+            icon: Icon(
+              _autoSpeak ? Icons.volume_up_rounded : Icons.volume_off_rounded,
+              color: _autoSpeak ? const Color(0xFF81C784) : Colors.white60,
+              size: 22,
+            ),
+            tooltip: isAmharic
+                ? (_autoSpeak ? 'የድምፅ ንባብ በርቷል' : 'የድምፅ ንባብ ጠፍቷል')
+                : (_autoSpeak ? 'Auto-speak Voice ON' : 'Auto-speak Voice OFF'),
+            onPressed: () {
+              setState(() => _autoSpeak = !_autoSpeak);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    _autoSpeak
+                        ? (isAmharic ? 'ድምፅ በራስ-ሰር ይጫወታል' : 'Auto Voice Output Enabled')
+                        : (isAmharic ? 'የድምፅ ንባብ ተዘግቷል' : 'Auto Voice Output Muted'),
+                  ),
+                  duration: const Duration(seconds: 1),
+                ),
+              );
+            },
+          ),
+
+          // Language Selector
           Container(
             margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
             padding: const EdgeInsets.all(2),
@@ -249,7 +310,7 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen>
       body: SafeArea(
         child: Column(
           children: [
-            // Quick Topic Chips
+            // Quick Topic Chips Carousel
             Container(
               height: 48,
               padding: const EdgeInsets.symmetric(vertical: 6),
@@ -262,7 +323,14 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen>
                 itemBuilder: (context, index) {
                   final chip = quickChips[index];
                   return ActionChip(
-                    label: Text(chip, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                    label: Text(
+                      chip,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? const Color(0xFF81C784) : const Color(0xFF1B5E20),
+                      ),
+                    ),
                     backgroundColor: isDark ? const Color(0xFF1F331F) : Colors.white,
                     side: BorderSide(color: const Color(0xFF2E7D32).withValues(alpha: 0.3)),
                     onPressed: () => _submitQuery(chip.replaceFirst(RegExp(r'^[^\s]+\s'), '')),
@@ -298,8 +366,8 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen>
                             const SizedBox(height: 8),
                             Text(
                               isAmharic
-                                  ? 'ስለ ሰብል እንክብካቤ፣ ተባዮች፣ ዝገት፣ ማዳበሪያና የአየር ሁኔታ ማንኛውንም ጥያቄ ይጠይቁ'
-                                  : 'Get scientifically verified advice on Ethiopian crops, rust, armyworm, soil moisture, and weather.',
+                                  ? 'ስለ ሰብል እንክብካቤ፣ ፍራፍሬዎች፣ ተባዮች፣ ዝገት፣ ማዳበሪያና የአየር ሁኔታ ማንኛውንም ጥያቄ ይጠይቁ'
+                                  : 'Get scientifically verified advice on Ethiopian crops, fruit trees, pests, rust, soil management, and weather.',
                               textAlign: TextAlign.center,
                               style: TextStyle(fontSize: 13, color: Colors.grey.shade600, height: 1.4),
                             ),
@@ -335,6 +403,7 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen>
                         final msg = aiState.messages[index];
                         final isUser = msg.isUser;
                         final audioUrl = msg.aiResponse?.audioUrl;
+                        final isPlaying = _currentlyPlayingText == msg.text;
 
                         if (isUser) {
                           return Align(
@@ -360,7 +429,7 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen>
                         }
 
                         return Container(
-                          margin: const EdgeInsets.only(bottom: 16, right: 28),
+                          margin: const EdgeInsets.only(bottom: 16, right: 24),
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
                             color: isDark ? const Color(0xFF1B2C1B) : const Color(0xFFF4F9F4),
@@ -370,7 +439,10 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen>
                               bottomRight: Radius.circular(18),
                               bottomLeft: Radius.circular(4),
                             ),
-                            border: Border.all(color: const Color(0xFFC8E6C9)),
+                            border: Border.all(
+                              color: isPlaying ? const Color(0xFF2E7D32) : const Color(0xFFC8E6C9),
+                              width: isPlaying ? 2 : 1,
+                            ),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -391,7 +463,11 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen>
                                   Row(
                                     children: [
                                       IconButton(
-                                        icon: const Icon(Icons.volume_up_rounded, size: 20, color: Color(0xFF2E7D32)),
+                                        icon: Icon(
+                                          isPlaying ? Icons.graphic_eq_rounded : Icons.volume_up_rounded,
+                                          size: 20,
+                                          color: isPlaying ? const Color(0xFFF59E0B) : const Color(0xFF2E7D32),
+                                        ),
                                         tooltip: isAmharic ? 'ድምፅ አዳምጥ' : 'Listen with Voice',
                                         onPressed: () => _playVoiceAudio(audioUrl, msg.text),
                                       ),
@@ -407,7 +483,11 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen>
                               const SizedBox(height: 6),
                               SelectableText(
                                 msg.text,
-                                style: const TextStyle(fontSize: 13.5, height: 1.5),
+                                style: TextStyle(
+                                  fontSize: 13.5,
+                                  height: 1.55,
+                                  color: isDark ? Colors.white : const Color(0xFF1F2937),
+                                ),
                               ),
                               if (msg.aiResponse?.recommendedAction != null &&
                                   msg.aiResponse!.recommendedAction!.isNotEmpty) ...[
@@ -440,7 +520,7 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen>
                     ),
             ),
 
-            // Bottom Input Bar with SafeArea & Keyboard Insets Protection
+            // Bottom Input Bar with Multi-line Expansion & Keyboard Protection
             Container(
               padding: EdgeInsets.only(
                 left: 14,
@@ -452,7 +532,7 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen>
                 color: isDark ? const Color(0xFF142214) : Colors.white,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.06),
+                    color: Colors.black.withValues(alpha: 0.08),
                     blurRadius: 12,
                     offset: const Offset(0, -3),
                   ),
@@ -493,11 +573,13 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen>
                       },
                     )
                   : Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         // Mic Button
                         GestureDetector(
                           onTap: _toggleRecording,
                           child: Container(
+                            margin: const EdgeInsets.only(bottom: 2),
                             padding: const EdgeInsets.all(12),
                             decoration: const BoxDecoration(
                               gradient: LinearGradient(
@@ -510,31 +592,58 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen>
                         ),
                         const SizedBox(width: 10),
 
-                        // Text Field
+                        // High-Contrast Multi-line Text Field (Never Hides Typed Text)
                         Expanded(
-                          child: TextField(
-                            controller: _textController,
-                            focusNode: _focusNode,
-                            decoration: InputDecoration(
-                              hintText: isAmharic ? 'የግብርና ጥያቄዎን እዚህ ይጻፉ ወይም ይናገሩ...' : 'Ask agronomic or pest question...',
-                              hintStyle: const TextStyle(fontSize: 13),
-                              filled: true,
-                              fillColor: isDark ? const Color(0xFF1F331F) : const Color(0xFFF1F5F1),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(24),
-                                borderSide: BorderSide.none,
+                          child: Container(
+                            constraints: const BoxConstraints(maxHeight: 120),
+                            decoration: BoxDecoration(
+                              color: isDark ? const Color(0xFF1F331F) : const Color(0xFFF1F5F1),
+                              borderRadius: BorderRadius.circular(22),
+                              border: Border.all(
+                                color: isDark ? Colors.white24 : Colors.grey.shade300,
                               ),
                             ),
-                            onSubmitted: _submitQuery,
+                            child: TextField(
+                              controller: _textController,
+                              focusNode: _focusNode,
+                              minLines: 1,
+                              maxLines: 4,
+                              keyboardType: TextInputType.multiline,
+                              textInputAction: TextInputAction.send,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: isDark ? Colors.white : const Color(0xFF111827),
+                                fontWeight: FontWeight.w500,
+                              ),
+                              decoration: InputDecoration(
+                                hintText: isAmharic
+                                    ? 'ጥያቄዎን እዚህ ይጻፉ ወይም ይናገሩ...'
+                                    : 'Type crop or pest question...',
+                                hintStyle: TextStyle(
+                                  fontSize: 13,
+                                  color: isDark ? Colors.white54 : Colors.grey.shade600,
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                border: InputBorder.none,
+                              ),
+                              onSubmitted: _submitQuery,
+                            ),
                           ),
                         ),
                         const SizedBox(width: 8),
 
                         // Send Button
-                        IconButton(
-                          icon: const Icon(Icons.send_rounded, color: Color(0xFF2E7D32), size: 26),
-                          onPressed: () => _submitQuery(_textController.text),
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 2),
+                          child: IconButton.filled(
+                            icon: const Icon(Icons.send_rounded, size: 20),
+                            style: IconButton.styleFrom(
+                              backgroundColor: const Color(0xFF2E7D32),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.all(12),
+                            ),
+                            onPressed: () => _submitQuery(_textController.text),
+                          ),
                         ),
                       ],
                     ),
@@ -568,18 +677,19 @@ class _AiAssistantSheetState extends ConsumerState<AiAssistantSheet>
   final FocusNode _focusNode = FocusNode();
   late AnimationController _pulseController;
   bool _isRecording = false;
+  bool _autoSpeak = true;
 
   @override
   void initState() {
     super.initState();
     _pulseController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1000),
+      duration: const Duration(milliseconds: 900),
     )..repeat(reverse: true);
 
     _focusNode.addListener(() {
       if (_focusNode.hasFocus) {
-        Future.delayed(const Duration(milliseconds: 300), _scrollToBottom);
+        Future.delayed(const Duration(milliseconds: 250), _scrollToBottom);
       }
     });
   }
@@ -597,7 +707,7 @@ class _AiAssistantSheetState extends ConsumerState<AiAssistantSheet>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent + 120,
+          _scrollController.position.maxScrollExtent + 80,
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOut,
         );
@@ -632,26 +742,37 @@ class _AiAssistantSheetState extends ConsumerState<AiAssistantSheet>
     }
   }
 
-  void _submitQuestion(String query) {
+  Future<void> _submitQuestion(String query) async {
     final text = query.trim();
     if (text.isEmpty) return;
 
     _questionController.clear();
     FocusScope.of(context).unfocus();
 
-    ref.read(aiVoiceProvider.notifier).sendQuestion(text);
-    Future.delayed(const Duration(milliseconds: 100), _scrollToBottom);
+    await ref.read(aiVoiceProvider.notifier).sendQuestion(text);
+    _scrollToBottom();
+
+    if (_autoSpeak) {
+      final state = ref.read(aiVoiceProvider);
+      final lastMsg = state.messages.isNotEmpty ? state.messages.last : null;
+      if (lastMsg != null && !lastMsg.isUser) {
+        _playVoiceAudio(lastMsg.aiResponse?.audioUrl, lastMsg.text);
+      }
+    }
   }
 
   Future<void> _playVoiceAudio(String? audioUrl, String text) async {
     final lang = ref.read(aiVoiceProvider).language;
     final clean = text
         .replaceAll(RegExp(r'[*#_~>]'), '')
-        .replaceAll(RegExp(r'\s+'), ' ')
+        .replaceAll(RegExp(r'\\s+'), ' ')
         .trim();
-    final sample = clean.length > 200 ? clean.substring(0, 200) : clean;
+    final sample = clean.length > 220 ? clean.substring(0, 220) : clean;
     final streamUrl = audioUrl ??
-        'https://translate.google.com/translate_tts?ie=UTF-8&q=' + Uri.encodeComponent(sample) + '&tl=' + lang + '&client=tw-ob';
+        'https://agrietech.onrender.com/api/v1/ai/tts-stream?text=' +
+            Uri.encodeComponent(sample) +
+            '&lang=' +
+            lang;
 
     try {
       final uri = Uri.parse(streamUrl);
@@ -662,8 +783,11 @@ class _AiAssistantSheetState extends ConsumerState<AiAssistantSheet>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(lang == 'am' ? 'የድምፅ መልዕክት እየተዘጋጀ ነው...' : 'Playing AI Voice speech...'),
-            backgroundColor: AppTheme.primaryColor,
+            content: Text(
+              lang == 'am' ? 'የድምፅ መልዕክት እየተጫወተ ነው...' : 'Playing AI voice advisory...',
+            ),
+            backgroundColor: const Color(0xFF2E7D32),
+            duration: const Duration(seconds: 2),
           ),
         );
       }
@@ -680,16 +804,18 @@ class _AiAssistantSheetState extends ConsumerState<AiAssistantSheet>
         ? [
             '🌾 ጤፍ መቼ ይዘራል?',
             '🌽 የበቆሎ ተባይ ቁጥጥር',
+            '🍎 የፖም ዛፍ ማዳቀል ዘዴ',
+            '🍅 የቲማቲም ቅጠል መድረቅ',
             '🌿 የስንዴ ግንድ ዋግ መከላከያ',
             '💧 የመስኖና የአፈር እርጥበት',
-            '⛅ የዝናብና አየር ትንበያ',
           ]
         : [
             '🌾 Best time to plant Teff?',
             '🌽 Maize Fall Armyworm treatment',
+            '🍎 Apple tree grafting guide',
+            '🍅 Tomato Late Blight treatment',
             '🌿 Wheat Stem Rust prevention',
             '💧 Soil moisture & irrigation',
-            '⛅ Weather & rainfall advisory',
           ];
 
     return Container(
@@ -977,7 +1103,7 @@ class _AiAssistantSheetState extends ConsumerState<AiAssistantSheet>
               ),
             ),
 
-          // Bottom Input Bar with Keyboard Inset Protection
+          // Bottom Input Bar with Multi-line Protection & Keyboard Inset
           Container(
             padding: EdgeInsets.only(
               left: 16,
@@ -990,21 +1116,41 @@ class _AiAssistantSheetState extends ConsumerState<AiAssistantSheet>
               border: Border(top: BorderSide(color: Colors.grey.shade200)),
             ),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Expanded(
-                  child: TextField(
-                    controller: _questionController,
-                    focusNode: _focusNode,
-                    decoration: InputDecoration(
-                      hintText: isAmharic ? 'ጥያቄዎን እዚህ ይጻፉ ወይም ማይኩን ይጫኑ...' : 'Type question or hold mic to speak...',
-                      hintStyle: TextStyle(fontSize: 12.5, color: Colors.grey.shade500),
-                      filled: true,
-                      fillColor: isDark ? const Color(0xFF2E402E) : const Color(0xFFF4F6F4),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
+                  child: Container(
+                    constraints: const BoxConstraints(maxHeight: 110),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF2E402E) : const Color(0xFFF4F6F4),
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(
+                        color: isDark ? Colors.white24 : Colors.grey.shade300,
+                      ),
                     ),
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: _submitQuestion,
+                    child: TextField(
+                      controller: _questionController,
+                      focusNode: _focusNode,
+                      minLines: 1,
+                      maxLines: 3,
+                      keyboardType: TextInputType.multiline,
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        color: isDark ? Colors.white : const Color(0xFF111827),
+                        fontWeight: FontWeight.w500,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: isAmharic ? 'ጥያቄዎን እዚህ ይጻፉ ወይም ማይኩን ይጫኑ...' : 'Type question or hold mic to speak...',
+                        hintStyle: TextStyle(
+                          fontSize: 12.5,
+                          color: isDark ? Colors.white54 : Colors.grey.shade500,
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        border: InputBorder.none,
+                      ),
+                      textInputAction: TextInputAction.send,
+                      onSubmitted: _submitQuestion,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -1077,4 +1223,4 @@ class _AiAssistantSheetState extends ConsumerState<AiAssistantSheet>
 
 fs.writeFileSync(screenPath, screenCode, 'utf8');
 fs.writeFileSync(sheetPath, sheetCode, 'utf8');
-console.log('✅ Successfully updated frontend ai_assistant_screen.dart & ai_assistant_sheet.dart!');
+console.log('✅ Expert UI, High-Contrast Visibility, & Voice Auto-Reply Applied Successfully!');
