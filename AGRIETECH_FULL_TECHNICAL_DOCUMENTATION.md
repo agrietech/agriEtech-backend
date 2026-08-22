@@ -245,7 +245,7 @@ Provides real-time agronomic Q&A in Amharic and English with streamable TTS audi
                                             │
                                             ▼
                             [ OpenRouter Client LLM Fallback ]
-                            (openrouter/free ➔ gemma-4-31b-it)
+                            (openrouter/fre![alt text](image.png)e ➔ gemma-4-31b-it)
                                             │
                                             ▼
                             [ Dynamic Token Budget Retry Loop ]

@@ -37,13 +37,28 @@ describe('Sensors Module API Suite', () => {
     expect(res.body.data.soilMoisture).toBe(42.5);
   });
 
-  it('GET /api/v1/sensors/farm/:farmId - should return sensors deployed on a farm', async () => {
+  it('GET /api/v1/sensors/my-sensors - should return all sensors owned by logged-in farmer', async () => {
     const res = await request(app)
-      .get('/api/v1/sensors/farm/farm_demo_01')
+      .get('/api/v1/sensors/my-sensors')
       .set('Authorization', `Bearer ${token}`);
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     expect(Array.isArray(res.body.data)).toBe(true);
+  });
+
+  it('POST /api/v1/sensors/claim - should allow farmer to claim/attach an IoT device', async () => {
+    const res = await request(app)
+      .post('/api/v1/sensors/claim')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        farmId: 'farm_demo_01',
+        hardwareId: 'ARDUINO-MOISTURE-01',
+        sensorType: 'SOIL_MOISTURE',
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.hardwareId).toBe('ARDUINO-MOISTURE-01');
   });
 });

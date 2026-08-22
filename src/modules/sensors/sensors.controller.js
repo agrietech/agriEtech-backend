@@ -1,4 +1,6 @@
 const sensorsService = require('./sensors.service');
+const { FirebaseSensorConnector } = require('../../ingestion/connectors/firebaseSensorConnector');
+const env = require('../../config/env');
 
 async function registerSensor(req, res, next) {
   try {
@@ -22,10 +24,11 @@ async function registerSensor(req, res, next) {
 
 async function recordTelemetry(req, res, next) {
   try {
-    const { sensorId, hardwareId, soilMoisture, soilTemp, ambientTemp, humidity, rainfallMm, batteryLevel, recordedAt } = req.body;
+    const { sensorId, hardwareId, farmId, soilMoisture, soilTemp, ambientTemp, humidity, rainfallMm, batteryLevel, recordedAt } = req.body;
     const reading = await sensorsService.recordTelemetry({
       sensorId,
       hardwareId,
+      farmId,
       soilMoisture,
       soilTemp,
       ambientTemp,
@@ -50,14 +53,60 @@ async function getSensors(req, res, next) {
   }
 }
 
+async function getMySensors(req, res, next) {
+  try {
+    const userId = req.user?.id || req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+    const data = await sensorsService.getSensorsByFarmer(userId);
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function getFarmerSensors(req, res, next) {
+  try {
+    const userId = req.params.userId || req.query.userId;
+    const data = await sensorsService.getSensorsByFarmer(userId);
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function claimSensor(req, res, next) {
+  try {
+    const userId = req.user?.id || req.user?.userId;
+    const { farmId, hardwareId, serialNumber, sensorType } = req.body || {};
+    const sensor = await sensorsService.claimSensor({
+      userId,
+      farmId,
+      hardwareId,
+      serialNumber,
+      sensorType,
+    });
+    res.status(201).json({ success: true, message: 'Sensor attached to farm successfully', data: sensor });
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function syncFirebase(req, res, next) {
   try {
-    const { firebaseUrl, apiKey, hardwareId, farmId } = req.body || {};
-    const url = firebaseUrl || req.query.firebaseUrl || process.env.FIREBASE_DATABASE_URL;
-    const key = apiKey || req.query.apiKey || process.env.FIREBASE_API_KEY;
+    const body = req.body || {};
+    const query = req.query || {};
+    const firebaseUrl = body.firebaseUrl || query.firebaseUrl || env.FIREBASE_DATABASE_URL;
+    const apiKey = body.apiKey || query.apiKey || env.FIREBASE_API_KEY;
+    const path = body.path || query.path;
+    const hardwareId = body.hardwareId || query.hardwareId;
+    const farmId = body.farmId || query.farmId;
+
     const result = await sensorsService.syncFirebaseTelemetry({
-      firebaseUrl: url,
-      apiKey: key,
+      firebaseUrl,
+      apiKey,
+      path,
       hardwareId,
       farmId,
     });
@@ -76,18 +125,44 @@ async function receiveFirebaseStream(req, res, next) {
   }
 }
 
+async function testFirebaseConnection(req, res, next) {
+  try {
+    const query = req.query || {};
+    const body = req.body || {};
+    const url = body.firebaseUrl || query.firebaseUrl || env.FIREBASE_DATABASE_URL;
+    const apiKey = body.apiKey || query.apiKey || env.FIREBASE_API_KEY;
+    const path = body.path || query.path || '';
+
+    const connector = new FirebaseSensorConnector({ baseUrl: url, apiKey });
+    const result = await connector.testConnection(path);
+    res.status(result.success ? 200 : (result.statusCode || 502)).json({
+      success: result.success,
+      databaseUrl: url,
+      apiKeyConfigured: Boolean(apiKey),
+      diagnostics: result,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function getFirebaseStatus(req, res) {
-  const isConfigured = Boolean(process.env.FIREBASE_PROJECT_ID || process.env.FIREBASE_DATABASE_URL);
+  const dbUrl = env.FIREBASE_DATABASE_URL || process.env.FIREBASE_DATABASE_URL;
+  const isConfigured = Boolean(dbUrl);
   res.status(200).json({
     success: true,
     status: isConfigured ? 'CONFIGURED' : 'READY_FOR_INTEGRATION',
+    databaseUrl: dbUrl,
+    projectId: env.FIREBASE_PROJECT_ID || 'arduinomoisture',
+    apiKeyConfigured: Boolean(env.FIREBASE_API_KEY),
     receiverEndpoints: {
       sync: '/api/v1/sensors/firebase/sync',
       stream: '/api/v1/sensors/firebase/stream',
       webhook: '/api/v1/sensors/firebase/webhook',
+      test: '/api/v1/sensors/firebase/test',
     },
     supportedPayloadFormat: {
-      hardwareId: 'AGRI-NODE-ETH-001',
+      hardwareId: 'ARDUINO-MOISTURE-01',
       farmId: 'uuid-optional',
       soilMoisture: 38.5,
       soilTemp: 22.0,
@@ -95,7 +170,7 @@ async function getFirebaseStatus(req, res) {
       humidity: 62.0,
       rainfallMm: 0.0,
       batteryLevel: 98.0,
-      timestamp: '2026-08-22T19:40:00Z',
+      timestamp: new Date().toISOString(),
     },
   });
 }
@@ -104,7 +179,12 @@ module.exports = {
   registerSensor,
   recordTelemetry,
   getSensors,
+  getMySensors,
+  getFarmerSensors,
+  claimSensor,
   syncFirebase,
   receiveFirebaseStream,
+  testFirebaseConnection,
   getFirebaseStatus,
 };
+

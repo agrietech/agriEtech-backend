@@ -34,6 +34,10 @@ const env = {
   OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
   OPENROUTER_MODEL: process.env.OPENROUTER_MODEL || 'google/gemini-2.5-flash',
   OPENROUTER_BASE_URL: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
+  FIREBASE_DATABASE_URL:
+    process.env.FIREBASE_DATABASE_URL || 'https://arduinomoisture-default-rtdb.firebaseio.com',
+  FIREBASE_API_KEY: process.env.FIREBASE_API_KEY || 'AIzaSyDt0I0HwHRlr1qpBHDh_fLlxmtXx3OqVG0',
+  FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID || 'arduinomoisture',
   FIREBASE_SERVICE_ACCOUNT_PATH:
     process.env.FIREBASE_SERVICE_ACCOUNT_PATH || './config/firebase-service-account.json',
   SMTP_HOST: process.env.SMTP_HOST || '',
