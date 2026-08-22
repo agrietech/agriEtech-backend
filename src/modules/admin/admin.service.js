@@ -1,6 +1,7 @@
 const { prisma, isConnected } = require('../../config/db');
 const redis = require('../../config/redis');
 const { getQueueStats, addJob } = require('../../ingestion/jobs/queue');
+const boundariesService = require('../boundaries/boundaries.service');
 const logger = require('../../utils/logger');
 const { BadRequestError } = require('../../utils/errors');
 const os = require('os');
@@ -771,6 +772,9 @@ async function createFarm(data, adminContext = {}) {
       }
 
       let woredaId = data.woredaId;
+      if (!woredaId && data.latitude && data.longitude) {
+        woredaId = await boundariesService.resolveWoredaByCoords(parseFloat(data.latitude), parseFloat(data.longitude));
+      }
       if (!woredaId) {
         const firstWoreda = await prisma.woreda.findFirst({ select: { id: true } });
         woredaId = firstWoreda ? firstWoreda.id : 'woreda_adama_01';

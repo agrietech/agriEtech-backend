@@ -44,6 +44,7 @@ async function processVoiceInquiry({ userQuestion, audioTranscript, audioFile, l
       voiceAmharic: 'am-ET-Standard-A',
       voiceEnglish: 'en-US-Standard-C',
       playbackText: language === 'en' ? data.responseEn : data.responseAm,
+      audioUrl: `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(((language === 'en' ? data.responseEn : data.responseAm) || '').substring(0, 200))}&tl=${language === 'en' ? 'en' : 'am'}&client=tw-ob`,
     },
     aiModel: 'Google Gemini 2.5 Flash (OpenRouter Voice Intelligence)',
     timestamp: new Date().toISOString(),
@@ -59,16 +60,20 @@ async function synthesizeSpeech({ text, language = 'am' }) {
   }
 
   const isAmharic = language === 'am' || /[\u1200-\u137F]/.test(text);
+  const targetLang = isAmharic ? 'am' : 'en';
+  const audioUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text.substring(0, 200))}&tl=${targetLang}&client=tw-ob`;
 
   return {
     success: true,
     text,
     language: isAmharic ? 'am-ET' : 'en-US',
     voice: isAmharic ? 'am-ET-Standard-A' : 'en-US-Standard-C',
+    audioUrl,
     audioConfig: {
       audioEncoding: 'MP3',
       speakingRate: 0.95,
       pitch: 0.0,
+      mimeType: 'audio/mpeg',
     },
     synthesisReady: true,
   };

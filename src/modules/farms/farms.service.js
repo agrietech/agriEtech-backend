@@ -197,6 +197,7 @@ async function getFarmById(id) {
 
 module.exports = {
   createFarm,
+  registerFarm: createFarm,
   getFarmsByUser,
   getFarmById,
   mockFarms,

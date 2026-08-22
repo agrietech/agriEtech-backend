@@ -30,12 +30,11 @@ class OpenRouterClient {
   }) {
     const primaryModel = model || this.model;
     const candidateModels = [
+      'openrouter/free',
+      'liquid/lfm-2.5-2.6b:free',
+      'google/gemma-4-31b-it:free',
       primaryModel,
-      'google/gemini-2.5-flash:free',
-      'meta-llama/llama-3.3-70b-instruct:free',
-      'google/gemini-flash-1.5:free',
-      'qwen/qwen-2.5-72b-instruct:free',
-    ].filter((m, i, arr) => arr.indexOf(m) === i);
+    ].filter((m, i, arr) => m && arr.indexOf(m) === i);
 
     if (!this.isConfigured()) {
       logger.warn('[OpenRouterClient] OPENROUTER_API_KEY not set. Using intelligent dynamic offline synthesizer.');
