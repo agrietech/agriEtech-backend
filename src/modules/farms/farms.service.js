@@ -43,6 +43,8 @@ const mockFarms = new Map([
  * Register a new farm plot.
  */
 async function createFarm({ userId, farmName, primaryCrop, areaHectares, woredaId, polygonGeojson, latitude: inputLat, longitude: inputLng }) {
+  let resolvedWoredaId = woredaId;
+
   // Validate coordinates if provided directly
   if (inputLat !== undefined && inputLat !== null && inputLng !== undefined && inputLng !== null) {
     const lat = Number(inputLat);
@@ -57,21 +59,26 @@ async function createFarm({ userId, farmName, primaryCrop, areaHectares, woredaI
     ) {
       throw createHttpError('Coordinates fall outside Ethiopia', 400);
     }
+
+    if (!resolvedWoredaId) {
+      resolvedWoredaId = await boundariesService.resolveWoredaByCoords(lat, lng);
+    }
   }
 
   let finalPolygon = polygonGeojson;
   if (!finalPolygon && inputLat !== undefined && inputLng !== undefined) {
     const lat = Number(inputLat);
     const lng = Number(inputLng);
+    const offset = 0.002; // ~220m box for point GPS capture
     finalPolygon = {
       type: 'Polygon',
       coordinates: [
         [
-          [lng - 0.005, lat - 0.005],
-          [lng + 0.005, lat - 0.005],
-          [lng + 0.005, lat + 0.005],
-          [lng - 0.005, lat + 0.005],
-          [lng - 0.005, lat - 0.005],
+          [lng - offset, lat - offset],
+          [lng + offset, lat - offset],
+          [lng + offset, lat + offset],
+          [lng - offset, lat + offset],
+          [lng - offset, lat - offset],
         ],
       ],
     };
@@ -84,25 +91,25 @@ async function createFarm({ userId, farmName, primaryCrop, areaHectares, woredaI
   // Step 1 – deep polygon validation (coordinate ranges, closure, kinks)
   const farmPolygon = validateFarmPolygon(finalPolygon);
 
-  // Step 2 – retrieve woreda and its boundary
-  if (!woredaId) {
-    throw createHttpError('woredaId is required', 400);
+  // Step 2 – derive centroid for the flat lat/lng columns
+  const [derivedLng, derivedLat] = getCoord(centroid(farmPolygon));
+  const latitude = inputLat !== undefined && inputLat !== null ? Number(inputLat) : derivedLat;
+  const longitude = inputLng !== undefined && inputLng !== null ? Number(inputLng) : derivedLng;
+
+  if (!resolvedWoredaId) {
+    resolvedWoredaId = await boundariesService.resolveWoredaByCoords(latitude, longitude);
   }
-  const woreda = await boundariesService.getWoredaById(woredaId);
+
+  // Step 3 – retrieve woreda and its boundary
+  const woreda = await boundariesService.getWoredaById(resolvedWoredaId);
   if (!woreda) {
     throw createHttpError('Selected woreda was not found', 404);
   }
-  if (!woreda.geojson) {
-    throw createHttpError('Selected woreda has no boundary configured', 422);
+
+  if (woreda.geojson) {
+    // Step 4 – spatial containment check
+    assertContainedByWoreda(farmPolygon, woreda.geojson);
   }
-
-  // Step 3 – spatial containment check
-  assertContainedByWoreda(farmPolygon, woreda.geojson);
-
-  // Step 4 – derive centroid for the flat lat/lng columns
-  const [derivedLng, derivedLat] = getCoord(centroid(farmPolygon));
-  const latitude = inputLat !== undefined ? Number(inputLat) : derivedLat;
-  const longitude = inputLng !== undefined ? Number(inputLng) : derivedLng;
 
   if (isConnected()) {
     return await prisma.$transaction(async (tx) => {
@@ -114,7 +121,7 @@ async function createFarm({ userId, farmName, primaryCrop, areaHectares, woredaI
           areaHectares: areaHectares ?? null,
           latitude,
           longitude,
-          woredaId,
+          woredaId: resolvedWoredaId,
           polygonGeojson: farmPolygon.geometry,
         },
       });
@@ -142,10 +149,10 @@ async function createFarm({ userId, farmName, primaryCrop, areaHectares, woredaI
     areaHectares: areaHectares ? Number(areaHectares) : 1.0,
     latitude,
     longitude,
-    woredaId,
+    woredaId: resolvedWoredaId,
     polygonGeojson: farmPolygon.geometry,
     createdAt: new Date().toISOString(),
-    woreda: { id: woredaId, nameEn: woreda.nameEn, nameAm: woreda.nameAm },
+    woreda: { id: resolvedWoredaId, nameEn: woreda.nameEn, nameAm: woreda.nameAm },
     sensors: [],
   };
 

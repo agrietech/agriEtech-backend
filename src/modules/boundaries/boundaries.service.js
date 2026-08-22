@@ -358,9 +358,61 @@ async function getWoredaById(id) {
   };
 }
 
+/**
+ * Automatically resolve the nearest/containing Woreda ID from GPS coordinates (lat, lng)
+ */
+async function resolveWoredaByCoords(lat, lng) {
+  const latitude = Number(lat);
+  const longitude = Number(lng);
+
+  if (Number.isNaN(latitude) || Number.isNaN(longitude)) {
+    return 'ET040101'; // Default fallback
+  }
+
+  if (isConnected()) {
+    try {
+      const woredas = await prisma.woreda.findMany({
+        select: { id: true, centerLat: true, centerLng: true },
+      });
+
+      if (woredas.length > 0) {
+        let bestWoreda = woredas[0];
+        let minDistance = Infinity;
+
+        for (const w of woredas) {
+          if (w.centerLat !== null && w.centerLng !== null) {
+            const dist = Math.pow(w.centerLat - latitude, 2) + Math.pow(w.centerLng - longitude, 2);
+            if (dist < minDistance) {
+              minDistance = dist;
+              bestWoreda = w;
+            }
+          }
+        }
+        return bestWoreda.id;
+      }
+    } catch (_err) {
+      // Fallback
+    }
+  }
+
+  let best = FALLBACK_WOREDAS[0];
+  let minDist = Infinity;
+  for (const w of FALLBACK_WOREDAS) {
+    const dist = Math.pow(w.centerLat - latitude, 2) + Math.pow(w.centerLng - longitude, 2);
+    if (dist < minDist) {
+      minDist = dist;
+      best = w;
+    }
+  }
+
+  return best.id;
+}
+
 module.exports = {
   getRegions,
   getZones,
   getWoredas,
   getWoredaById,
+  resolveWoredaByCoords,
 };
+
