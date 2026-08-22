@@ -34,8 +34,8 @@ const mockDiagnoses = [
  * Perform Dual-AI Crop Disease Diagnosis:
  * Combines Plant.id Botanical Taxonomy + Google Gemini 2.5 Flash Vision & Bilingual Agronomic Reasoning
  */
-async function diagnoseCropImage({ farmId, cropType, imageUrl, imageFile, language = 'en' }) {
-  let imageBase64 = null;
+async function diagnoseCropImage({ farmId, cropType, imageUrl, imageFile, imageBase64: rawBase64, language = 'en' }) {
+  let imageBase64 = rawBase64 || null;
   let uploadPath = imageUrl || null;
 
   if (imageFile && imageFile.path && fs.existsSync(imageFile.path)) {
@@ -113,50 +113,60 @@ async function diagnoseCropImage({ farmId, cropType, imageUrl, imageFile, langua
   };
 
   if (isConnected()) {
-    const saved = await prisma.diseaseDiagnosis.create({
-      data: {
-        farmId: farmId || null,
-        cropType: cropType || resolvedCropEn,
-        cropIdentified: resolvedCropEn,
-        imageUrl: uploadPath || '/uploads/diagnoses/sample_wheat_rust.jpg',
-        diseaseName: resolvedDiseaseEn,
-        pathogen: resolvedPathogen,
-        severity: resolvedSeverity,
-        confidenceScore: Math.round(resolvedConfidence * 100) / 100,
-        symptomsEn,
-        symptomsAm,
-        treatmentEn,
-        treatmentAm,
-        treatmentOm,
-        preventionEn,
-        preventionAm,
-        rawResponse,
-      },
-    });
+    try {
+      let validFarmId = null;
+      if (farmId) {
+        const existingFarm = await prisma.farm.findUnique({ where: { id: farmId } });
+        if (existingFarm) validFarmId = farmId;
+      }
 
-    return {
-      id: saved.id,
-      farmId: saved.farmId,
-      cropType: saved.cropType,
-      cropIdentified: saved.cropIdentified,
-      cropIdentifiedAm: resolvedCropAm,
-      imageUrl: saved.imageUrl,
-      diseaseName: saved.diseaseName,
-      diseaseNameAm: resolvedDiseaseAm,
-      pathogen: saved.pathogen,
-      severity: saved.severity,
-      confidenceScore: saved.confidenceScore,
-      symptomsEn: saved.symptomsEn,
-      symptomsAm: saved.symptomsAm,
-      treatmentEn: saved.treatmentEn,
-      treatmentAm: saved.treatmentAm,
-      treatmentOm: saved.treatmentOm,
-      preventionEn: saved.preventionEn,
-      preventionAm: saved.preventionAm,
-      aiModel: 'Plant.id Botanical + Google Gemini 2.5 Flash (OpenRouter)',
-      rawResponse: saved.rawResponse,
-      createdAt: saved.createdAt,
-    };
+      const saved = await prisma.diseaseDiagnosis.create({
+        data: {
+          farmId: validFarmId,
+          cropType: cropType || resolvedCropEn,
+          cropIdentified: resolvedCropEn,
+          imageUrl: uploadPath || '/uploads/diagnoses/sample_wheat_rust.jpg',
+          diseaseName: resolvedDiseaseEn,
+          pathogen: resolvedPathogen,
+          severity: resolvedSeverity,
+          confidenceScore: Math.round(resolvedConfidence * 100) / 100,
+          symptomsEn,
+          symptomsAm,
+          treatmentEn,
+          treatmentAm,
+          treatmentOm,
+          preventionEn,
+          preventionAm,
+          rawResponse,
+        },
+      });
+
+      return {
+        id: saved.id,
+        farmId: saved.farmId,
+        cropType: saved.cropType,
+        cropIdentified: saved.cropIdentified,
+        cropIdentifiedAm: resolvedCropAm,
+        imageUrl: saved.imageUrl,
+        diseaseName: saved.diseaseName,
+        diseaseNameAm: resolvedDiseaseAm,
+        pathogen: saved.pathogen,
+        severity: saved.severity,
+        confidenceScore: saved.confidenceScore,
+        symptomsEn: saved.symptomsEn,
+        symptomsAm: saved.symptomsAm,
+        treatmentEn: saved.treatmentEn,
+        treatmentAm: saved.treatmentAm,
+        treatmentOm: saved.treatmentOm,
+        preventionEn: saved.preventionEn,
+        preventionAm: saved.preventionAm,
+        aiModel: 'Plant.id Botanical + Google Gemini 2.5 Flash (OpenRouter)',
+        rawResponse: saved.rawResponse,
+        createdAt: saved.createdAt,
+      };
+    } catch (saveErr) {
+      logger.warn(`[DiseaseDiagnosis] DB save notice: ${saveErr.message}`);
+    }
   }
 
   const fallbackRecord = {

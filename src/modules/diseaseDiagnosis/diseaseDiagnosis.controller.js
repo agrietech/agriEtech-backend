@@ -2,10 +2,18 @@ const diseaseService = require('./diseaseDiagnosis.service');
 
 async function diagnose(req, res, next) {
   try {
-    const { farmId, cropType, imageUrl, language } = req.body;
+    const { farmId, cropType, imageUrl, imageBase64, image, language } = req.body;
     const lang = language || req.query.lang || req.user?.preferredLang || 'en';
     const imageFile = req.file || null;
-    const data = await diseaseService.diagnoseCropImage({ farmId, cropType, imageUrl, imageFile, language: lang });
+    const resolvedBase64 = imageBase64 || image || null;
+    const data = await diseaseService.diagnoseCropImage({
+      farmId,
+      cropType,
+      imageUrl,
+      imageFile,
+      imageBase64: resolvedBase64,
+      language: lang,
+    });
     res.status(201).json({ success: true, data });
   } catch (error) {
     next(error);
