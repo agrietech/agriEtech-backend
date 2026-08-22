@@ -1,29 +1,10 @@
 const { prisma, isConnected } = require('../../config/db');
 const { dispatchHazardAlertSms } = require('../../delivery/sms/smsDispatcher');
 const { broadcastEmergencyAlert } = require('../../delivery/websocket/riskAssessmentChannel');
+const { sendPushNotification } = require('../../delivery/push/fcmDispatcher');
 const logger = require('../../utils/logger');
 
-const mockAlerts = new Map([
-  [
-    'alert_demo_01',
-    {
-      id: 'alert_demo_01',
-      woredaId: 'woreda_adama_01',
-      hazardType: 'DROUGHT',
-      severity: 'WARNING',
-      headline: 'Early Seasonal Moisture Deficit Warning',
-      status: 'ACTIVE',
-      titleEn: 'Early Seasonal Moisture Deficit Warning',
-      titleAm: 'የአፈር እርጥበት እጥረት ማስጠንቀቂያ',
-      titleOm: 'Akeekkachiisa Hanqina Jiidha Biyyee',
-      messageEn: 'Rainfall is 35% below 10-year historical mean. Conserve soil moisture.',
-      messageAm: 'የዝናብ መጠኑ ካለፉት 10 ዓመታት አማካይ በ35% ዝቅ ብሏል። የአፈር እርጥበትን ይቆጥቡ።',
-      messageOm: 'Roobni %35 gadi bu\'eera. Jiidha biyyee qusadhaa.',
-      createdAt: new Date().toISOString(),
-      woreda: { id: 'woreda_adama_01', nameEn: 'Adama Zuria', nameAm: 'አዳማ ዙሪያ' },
-    },
-  ],
-]);
+const inMemoryAlerts = new Map();
 
 // Create emergency early warning alert
 async function createAlert({
@@ -88,10 +69,29 @@ async function createAlert({
       createdAt: new Date().toISOString(),
       woreda: { id: woredaId, nameEn: woredaName || 'Adama Zuria', nameAm: 'አዳማ ዙሪያ' },
     };
-    mockAlerts.set(alert.id, alert);
+    inMemoryAlerts.set(alert.id, alert);
   }
 
-  // Dispatch SMS alerts to targeted phone numbers
+  // 1. Dispatch Push Notifications via Firebase Cloud Messaging
+  try {
+    const pushTitle = alert.titleAm || alert.titleEn || alert.headline;
+    const pushBody = alert.messageAm || alert.messageEn || 'New agricultural advisory alert.';
+    await sendPushNotification({
+      topic: `woreda_${woredaId}`,
+      title: `⚠️ ${pushTitle}`,
+      body: pushBody,
+      data: {
+        alertId: alert.id,
+        hazardType: alert.hazardType,
+        severity: alert.severity,
+        woredaId: alert.woredaId,
+      },
+    });
+  } catch (pushErr) {
+    logger.warn(`[Alerts] Push notification dispatch failed (non-fatal): ${pushErr.message}`);
+  }
+
+  // 2. Dispatch SMS alerts to targeted phone numbers
   if (targetPhones.length > 0) {
     try {
       await dispatchHazardAlertSms({
@@ -105,7 +105,7 @@ async function createAlert({
     }
   }
 
-  // Broadcast via WebSocket
+  // 3. Broadcast via WebSocket
   try {
     broadcastEmergencyAlert(alert);
   } catch (wsErr) {
@@ -141,7 +141,7 @@ async function getActiveAlerts({ severity, woredaId, hazardType, status } = {}) 
     }
   }
 
-  const list = Array.from(mockAlerts.values());
+  const list = Array.from(inMemoryAlerts.values());
   return list;
 }
 
@@ -160,12 +160,12 @@ async function getAlertById(id) {
     }
   }
 
-  return mockAlerts.get(id) || mockAlerts.get('alert_demo_01');
+  return inMemoryAlerts.get(id) || null;
 }
 
 module.exports = {
   createAlert,
   getActiveAlerts,
   getAlertById,
-  mockAlerts,
+  inMemoryAlerts,
 };
