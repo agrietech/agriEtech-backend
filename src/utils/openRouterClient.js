@@ -367,42 +367,80 @@ You MUST output valid JSON ONLY with exact fields:
     const isMaize = q.includes('maize') || q.includes('corn') || queryText.includes('በቆሎ');
     const isWheat = q.includes('wheat') || queryText.includes('ስንዴ');
     const isSorghum = q.includes('sorghum') || queryText.includes('ማሽላ');
+    const isCoffee = q.includes('coffee') || queryText.includes('ቡና');
+    const isBarley = q.includes('barley') || queryText.includes('ገብስ');
     const isPest = q.includes('pest') || q.includes('worm') || q.includes('bug') || q.includes('locust') || queryText.includes('ተባይ') || queryText.includes('አባጨጓሬ') || queryText.includes('አንበጣ');
     const isDisease = q.includes('disease') || q.includes('rust') || q.includes('blight') || q.includes('yellow') || queryText.includes('በሽታ') || queryText.includes('ዋግ') || queryText.includes('ዝገት') || queryText.includes('ቢጫ');
     const isWater = q.includes('rain') || q.includes('water') || q.includes('drought') || q.includes('irrigation') || queryText.includes('ውሃ') || queryText.includes('ዝናብ') || queryText.includes('ድርቅ') || queryText.includes('መስኖ');
-    const isFertilizer = q.includes('fertilizer') || q.includes('urea') || q.includes('dap') || q.includes('nitrogen') || queryText.includes('ማዳበሪያ') || queryText.includes('ዩሪያ');
-
-    let cropNameEn = 'Crop';
-    let cropNameAm = 'ሰብል';
-    if (isTeff) { cropNameEn = 'Teff'; cropNameAm = 'ጤፍ'; }
-    else if (isMaize) { cropNameEn = 'Maize'; cropNameAm = 'በቆሎ'; }
-    else if (isWheat) { cropNameEn = 'Wheat'; cropNameAm = 'ስንዴ'; }
-    else if (isSorghum) { cropNameEn = 'Sorghum'; cropNameAm = 'ማሽላ'; }
+    const isFertilizer = q.includes('fertilizer') || q.includes('urea') || q.includes('nps') || q.includes('dap') || q.includes('nitrogen') || queryText.includes('ማዳበሪያ') || queryText.includes('ዩሪያ') || queryText.includes('ኤንፒኤስ');
+    const isPlanting = q.includes('plant') || q.includes('sow') || q.includes('season') || queryText.includes('መዝሪያ') || queryText.includes('ወቅት') || queryText.includes('ዘር');
 
     let responseEn = '';
     let responseAm = '';
     let action = '';
 
-    if (isPest) {
-      responseEn = `For pest control in ${cropNameEn}, inspect leaf whorls for caterpillars or insects. Apply organic neem seed extract or registered insecticides like Ampligo early in the morning when larvae are active.`;
-      responseAm = `በ${cropNameAm} ላይ የታዩ ተባዮችን ለመከላከል በእፅዋቱ እምብርት ላይ የተባይ ምልክቶችን ይፈትሹ። ማለዳ ላይ የኒም ዘይት ድብልቅ ወይም የተፈቀዱ ፀረ-ተባይ ኬሚካሎችን ይርጩ።`;
-      action = `Inspect field and apply recommended pest control measure for ${cropNameEn}.`;
-    } else if (isDisease) {
-      responseEn = `${cropNameEn} fungal diseases and leaf rust are caused by humidity. Spray systemic fungicide (such as Tilt 250 EC or Mancozeb) immediately and clear infected crop residues to prevent spread.`;
-      responseAm = `በ${cropNameAm} ላይ የሚከሰቱ የፈንገስና የዋግ (ዝገት) በሽታዎችን ለመከላከል ቲልት 250 ኢሲ (Tilt) ወይም ማንኮዜብ ፀረ-ፈንገስ በአፋጣኝ ይርጩ፤ የተበከሉ ቅሪቶችን ያስወግዱ።`;
-      action = `Apply targeted fungicide and improve field drainage for ${cropNameEn}.`;
+    if (isTeff && (isPlanting || isFertilizer || isDisease)) {
+      responseEn = `Comprehensive Teff (Eragrostis tef) Agronomic Advisory:\n` +
+        `1. Sowing & Planting: Sow 10-15 kg/ha with row spacing of 20 cm for lodging reduction, or broadcast on well-pulverized, firm seedbeds during late July to early August (Meher season).\n` +
+        `2. Nutrient Management: Apply 100 kg/ha NPS-Boron at planting. Top-dress with 50 kg/ha Urea at first tillering (30-35 days after planting) when soil has good moisture.\n` +
+        `3. Weed & Rust Control: Hand-weed at 25-30 days or apply 2,4-D amine salt. For Teff leaf rust (Uromyces eragrostidis), spray Tilt 250 EC (Propiconazole) at 0.5 L/ha if brown pustules emerge.\n` +
+        `4. Lodging Mitigation: Avoid excessive nitrogen and roll seedbed firmly before and after seeding.`;
+      responseAm = `የጤፍ (Eragrostis tef) የተሟላ የግብርናና የሰብል እንክብካቤ መመሪያ፡\n` +
+        `1. የመዝሪያ ወቅትና ዘዴ፡ በመኸር ወቅት ከሐምሌ አጋማሽ እስከ ነሐሴ መጀመሪያ፤ በመስመር ሲዘራ በሄክታር ከ10-15 ኪ.ግ ዘር ከ20 ሳ.ሜ ርቀት ጋር ይጠቀሙ።\n` +
+        `2. የማዳበሪያ አጠቃቀም፡ በመዝሪያ ወቅት 100 ኪ.ግ/ሄ NPS-B፤ በብቅለት ወቅት (ዘር ከተዘራ ከ30-35 ቀናት በኋላ አፈሩ እርጥብ ሲሆን) 50 ኪ.ግ/ሄ ዩሪያ ይጨምሩ።\n` +
+        `3. አረም እና በሽታ መከላከል፡ በመጀመሪያው ወር አረም ያርሙ። የጤፍ ዝገት/ዋግ ምልክት ከታየ ፀረ-ፈንገስ ቲልት 250 ኢሲ (Tilt) በሄክታር 0.5 ሊትር ይርጩ።\n` +
+        `4. መተኛትን (Lodging) መከላከል፡ ከመጠን በላይ ናይትሮጂን አይጠቀሙ፤ መሬቱን በሚገባ በማለስለስና በማደላደል ዘሩን ይዝሩ።`;
+      action = 'Follow recommended Teff row-planting spacing (20cm) and apply top-dressing Urea at tillering.';
+    } else if (isWheat && (isDisease || isPest || isPlanting)) {
+      responseEn = `Wheat (Triticum aestivum) Early Warning & Rust Management:\n` +
+        `1. Yellow/Stem Rust (Puccinia spp.): High humidity triggers rapid sporulation. Immediately scout the lower leaf canopy. Apply systemic fungicide Tilt 250 EC (Propiconazole) or Rex Duo at 0.5 L/ha immediately upon observing orange/yellow pustules.\n` +
+        `2. Sowing Density & Fertilization: Use 125-150 kg/ha certified seeds (e.g., Kingbird, Ogolcho, Danda'a). Apply 100 kg NPS at planting and split 100 kg Urea (50% at planting, 50% at tillering).\n` +
+        `3. Drainage on Vertisols: Use Broad Bed and Furrow (BBM) system to drain excess water and prevent root asphyxiation during heavy Meher rains.`;
+      responseAm = `የስንዴ (Triticum aestivum) ቅድመ ማስጠንቀቂያ እና የዋግ (ዝገት) መከላከያ መመሪያ፡\n` +
+        `1. የዋግ (ቢጫና ግንድ ዝገት) መከላከል፡ ከፍተኛ እርጥበት የበሽታውን ስርጭት ያፋጥነዋል። በቅጠሉ ላይ ብጫ ወይም ቀይ-ቡናማ ነጠብጣብ ካዩ በአፋጣኝ ቲልት 250 ኢሲ (Tilt 250 EC) ወይም ሬክስ ዱኦ በሄክታር 0.5 ሊትር ይርጩ።\n` +
+        `2. የዘር መጠንና ማዳበሪያ፡ በሄክታር ከ125-150 ኪ.ግ የተሻሻለ ዝርያ ይጠቀሙ፤ 100 ኪ.ግ NPS በመዝሪያ ወቅት፣ 100 ኪ.ግ ዩሪያ ለሁለት ከፍለው በመዝሪያና በማደጊያ ወቅት ይጨምሩ።\n` +
+        `3. የውሃ ፍሳሽ፡ በወላካ (ደለል) አፈር ላይ ውሃ እንዳይተኛ የውሃ ማስተላለፊያ ቦዮችን (BBM) ያዘጋጁ።`;
+      action = 'Inspect wheat field canopy for rust pustules and apply Tilt 250 EC fungicide if needed.';
+    } else if (isMaize || isPest) {
+      responseEn = `Maize & Fall Armyworm (FAW) Integrated Pest Management:\n` +
+        `1. Scouting Protocol: Inspect 20 plants across 5 spots in your plot weekly. Look for window-pane leaf feeding and sawdust-like frass in the central whorl.\n` +
+        `2. Chemical Control: Spray Ampligo 150 ZC (0.2-0.3 L/ha) or Coragen (0.15 L/ha) directly targeted into the plant whorls during early morning or late afternoon.\n` +
+        `3. Cultural & Biological Methods: Apply bio-pesticide neem seed cake extract or fine wood ash into whorls. Practice push-pull companion planting with Desmodium.`;
+      responseAm = `የበቆሎ ሰብል እና የመኸር ሰራዊት አባጨጓሬ (ፎል አርሚዎርም) መከላከያ መመሪያ፡\n` +
+        `1. የክትትል ዘዴ፡ በየሳምንቱ በእርሻዎ ውስጥ የበቆሎውን እምብርት ይፈትሹ፤ የተቦረቦሩ ቅጠሎችና የአባጨጓሬ እዳሪ መኖሩን ያረጋግጡ።\n` +
+        `2. የኬሚካል መርጫ፡ አባጨጓሬው ከታየ አምፕሊጎ 150 ዜድሲ (Ampligo - 0.2-0.3 ሊ/ሄ) ወይም ኮራጅን ማለዳ ወይም ምሽት ላይ በቀጥታ ወደ እምብርቱ ይርጩ።\n` +
+        `3. የተፈጥሮ ዘዴ፡ የኒም ፍሬ ዱቄት ወይም የእንጨት አመድ በእምብርቱ ላይ ያድርጉ፤ ከዴስሞዲየም ሳር ጋር አሰባጥረው ይዝሩ።`;
+      action = 'Scout maize whorls for armyworm frass and spray Ampligo into whorls early morning.';
     } else if (isWater) {
-      responseEn = `To manage moisture stress for ${cropNameEn}, practice soil mulching with dry grass to retain water and schedule supplemental furrow irrigation during critical flowering and grain-filling stages.`;
-      responseAm = `በ${cropNameAm} እርሻዎ ላይ የእርጥበት እጥረት እንዳይከሰት የአፈር እርጥበትን በደረቅ ገለባ/ሳር ይሸፍኑ፤ በብቅለትና በአበባ ወቅት ተጨማሪ መስኖ ያቅርቡ።`;
-      action = `Apply mulch and monitor soil moisture levels in ${cropNameEn} plot.`;
+      responseEn = `Climate-Smart Soil Moisture & Irrigation Management:\n` +
+        `1. Moisture Conservation: Spread 3-5 cm crop residue mulch (teff straw or dry grass) to suppress evaporation by up to 40% and regulate soil temperature.\n` +
+        `2. Water Harvesting: Implement tied ridges and contour bunds across slopes to capture runoff and enhance in-situ soil infiltration.\n` +
+        `3. Supplemental Irrigation: Prioritize watering during critical flowering and grain filling stages to protect against yield penalties during dry spells.`;
+      responseAm = `የአፈር እርጥበት ጥበቃ እና የመስኖ አጠቃቀም መመሪያ፡\n` +
+        `1. እርጥበትን ማቆየት፡ የአፈርን እርጥበት ለመጠበቅ በደረቅ ገለባ/ሳር አፈሩን ከ3-5 ሳ.ሜ ይሸፍኑ (Mulching)፤ ይህም የውሃ ትነትን በ40% ይቀንሳል።\n` +
+        `2. ዝናብን መያዝ፡ በዳገታማ መሬት ላይ እርከን እና የውሃ መያዣ ጉድጓዶችን (Tied ridges) በማዘጋጀት የዝናብ ውሃን አፈር ውስጥ እንዲሰርግ ያድርጉ።\n` +
+        `3. የመስኖ ጊዜ፡ በሰብሉ የአበባና የፍሬ መያዣ ወቅት ተጨማሪ የመስኖ ውሃ በማቅረብ ድርቅን ይከላከሉ።`;
+      action = 'Apply straw mulching and maintain tied ridges to preserve root-zone soil moisture.';
     } else if (isFertilizer) {
-      responseEn = `For optimal ${cropNameEn} growth, apply Nitrogen top-dressing (Urea) at 35-45 days after planting during moist soil conditions to maximize nutrient uptake and yield.`;
-      responseAm = `ለ${cropNameAm} ጥሩ እድገትና ምርት ዘር ከተዘራ ከ35-45 ቀናት በኋላ አፈሩ እርጥበት ባለው ጊዜ የዩሪያ (ናይትሮጂን) ማዳበሪያ በወቅቱ ይጨምሩ።`;
-      action = `Apply top-dressing Urea fertilizer on moist soil for ${cropNameEn}.`;
+      responseEn = `Balanced Fertilizer Schedule for Ethiopian Soils:\n` +
+        `1. Basal Application (At Sowing): Apply 100 kg/ha NPS-Boron/Zinc based on Ethiopian Soil Information System (EthioSIS) soil fertility maps.\n` +
+        `2. Top-Dressing (Split Urea): Apply 50-100 kg/ha Urea in two splits: 50% at active tillering/knee-high and 50% prior to booting/flowering.\n` +
+        `3. Organic Integration: Supplement with 5-8 tons/ha well-decomposed compost or farmyard manure to enhance soil organic carbon and micro-nutrient uptake.`;
+      responseAm = `ለኢትዮጵያ አፈር የተመጣጠነ የማዳበሪያ አጠቃቀም መመሪያ፡\n` +
+        `1. በመዝሪያ ወቅት (መሰረታዊ)፡ በሄክታር 100 ኪ.ግ NPS-B በማዳበሪያ ካርታ (EthioSIS) መሰረት ከዘሩ ስር ያድርጉ።\n` +
+        `2. ዩሪያ (ናይትሮጂን) አጠቃቀም፡ በሄክታር 100 ኪ.ግ ዩሪያ ለሁለት ከፍለው በብቅለት ወቅት እና ሰብሉ አበባ ከመያዙ በፊት አፈሩ እርጥብ ሲሆን ይጨምሩ።\n` +
+        `3. የተፈጥሮ ማዳበሪያ፡ በሄክታር ከ5-8 ቶን የበሰበሰ ኮምፖስት በማከል የአፈሩን ለምነትና የውሃ የመያዝ አቅም ያሳድጉ።`;
+      action = 'Apply basal NPS-B fertilizer at planting and split Urea application when soil is moist.';
     } else {
-      responseEn = `Regarding your inquiry on "${queryText}": We recommend inspecting your ${cropNameEn} field regularly for early signs of pests, managing soil moisture, and consulting your local development agent.`;
-      responseAm = `ስለ ጥያቄዎ "${queryText}"፡ የ${cropNameAm} እርሻዎን በየጊዜው እንዲፈትሹ፣ የአፈር እርጥበትን እንዲጠብቁ እና ከአካባቢው የግብርና ልማት ጣቢያ ጋር እንዲማከሩ እንመክራለን።`;
-      action = `Inspect farm condition and follow agronomic extension guidance.`;
+      responseEn = `Regarding your inquiry on "${queryText}":\n` +
+        `• Agronomic Best Practices: Regular field scouting every 3-5 days is critical to detect moisture stress, nutrient deficiencies, or pest outbreaks early.\n` +
+        `• Soil & Crop Health: Maintain balanced nutrient inputs (NPS + Urea) and ensure proper drainage to prevent waterlogging.\n` +
+        `• Early Warning: Monitor AgriEtech risk alerts for drought, flood, and pest forecasts for your local woreda. Consult your local development agent for localized advice.`;
+      responseAm = `ስለ ጥያቄዎ "${queryText}" የተሰጠ አጠቃላይ የግብርና መመሪያ፡\n` +
+        `• የሰብል ክትትል፡ በየ 3-5 ቀኑ እርሻዎን በመፈተሽ የበሽታ፣ የተባይ ወይም የእርጥበት እጥረት ምልክቶችን በጊዜ ይለዩ።\n` +
+        `• የአፈርና ሰብል ጤና፡ የተመጣጠነ ማዳበሪያ (NPS እና ዩሪያ) ይጠቀሙ፤ ውሃ በእርሻው ላይ እንዳይተኛ የፍሳሽ ቦይ ያዘጋጁ።\n` +
+        `• ቅድመ ማስጠንቀቂያ፡ በአካባቢዎ (ወረዳዎ) የሚታዩትን የድርቅ፣ የጎርፍ እና የአንበጣ አደጋ ማንቂያዎችን በአግሪቴክ መተግበሪያ ይከታተሉ።`;
+      action = 'Conduct regular field inspection and consult your woreda development agent.';
     }
 
     return {

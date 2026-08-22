@@ -137,9 +137,129 @@ async function getSensorsByFarm(farmId) {
   return list;
 }
 
+const axios = require('axios');
+const logger = require('../../utils/logger');
+
+/**
+ * Ingest or sync telemetry data from Firebase (Realtime Database or Firestore REST)
+ */
+async function syncFirebaseTelemetry({ firebaseUrl, apiKey, hardwareId, farmId }) {
+  if (!firebaseUrl) {
+    throw new BadRequestError('firebaseUrl is required (e.g. https://<project>.firebaseio.com/sensors.json)');
+  }
+
+  let cleanUrl = firebaseUrl.trim();
+  if (apiKey && !cleanUrl.includes('auth=')) {
+    cleanUrl += cleanUrl.includes('?') ? `&auth=${apiKey}` : `?auth=${apiKey}`;
+  }
+
+  logger.info(`[FirebaseSensorConnector] Fetching telemetry from ${firebaseUrl.split('?')[0]}`);
+  
+  const response = await axios.get(cleanUrl, { timeout: 15000 });
+  const rawData = response.data;
+
+  const records = [];
+  if (Array.isArray(rawData)) {
+    records.push(...rawData);
+  } else if (rawData && typeof rawData === 'object') {
+    for (const [key, val] of Object.entries(rawData)) {
+      if (val && typeof val === 'object') {
+        records.push({ hardwareId: val.hardwareId || key, ...val });
+      }
+    }
+  }
+
+  const results = [];
+  for (const item of records) {
+    const hwId = item.hardwareId || item.device_id || item.sensorId || hardwareId || 'AGRI-FIREBASE-01';
+    const reading = await recordTelemetry({
+      hardwareId: hwId,
+      soilMoisture: item.soilMoisture ?? item.moisture ?? item.soil_moisture,
+      soilTemp: item.soilTemp ?? item.soil_temperature,
+      ambientTemp: item.ambientTemp ?? item.temperature ?? item.temp,
+      humidity: item.humidity ?? item.relative_humidity,
+      rainfallMm: item.rainfallMm ?? item.rainfall ?? item.rain,
+      batteryLevel: item.batteryLevel ?? item.battery ?? item.battery_pct,
+      recordedAt: item.timestamp || item.recordedAt || item.created_at,
+    });
+    results.push(reading);
+  }
+
+  return {
+    success: true,
+    message: `Successfully ingested ${results.length} telemetry readings from Firebase`,
+    count: results.length,
+    readings: results,
+  };
+}
+
+/**
+ * Ingest real-time stream / webhook push from Firebase Cloud Functions or ESP32/IoT device
+ */
+async function receiveFirebaseStream(data) {
+  const {
+    hardwareId,
+    device_id,
+    sensorId,
+    farmId,
+    soilMoisture,
+    moisture,
+    soil_moisture,
+    soilTemp,
+    soil_temperature,
+    ambientTemp,
+    temperature,
+    temp,
+    humidity,
+    rainfallMm,
+    rainfall,
+    batteryLevel,
+    battery,
+    timestamp,
+    recordedAt,
+  } = data || {};
+
+  const hwId = hardwareId || device_id || sensorId || 'AGRI-FIREBASE-STREAM';
+
+  if (isConnected()) {
+    let sensor = await prisma.sensor.findFirst({ where: { hardwareId: hwId } });
+    if (!sensor) {
+      let targetFarmId = farmId;
+      if (!targetFarmId) {
+        const firstFarm = await prisma.farm.findFirst();
+        targetFarmId = firstFarm ? firstFarm.id : null;
+      }
+
+      if (targetFarmId) {
+        await prisma.sensor.create({
+          data: {
+            farmId: targetFarmId,
+            hardwareId: hwId,
+            sensorType: 'SOIL_MOISTURE',
+            isActive: true,
+          },
+        }).catch((e) => logger.warn(`[FirebaseSensor] Auto-provision warning: ${e.message}`));
+      }
+    }
+  }
+
+  return await recordTelemetry({
+    hardwareId: hwId,
+    soilMoisture: soilMoisture ?? moisture ?? soil_moisture,
+    soilTemp: soilTemp ?? soil_temperature,
+    ambientTemp: ambientTemp ?? temperature ?? temp,
+    humidity,
+    rainfallMm: rainfallMm ?? rainfall,
+    batteryLevel: batteryLevel ?? battery,
+    recordedAt: timestamp || recordedAt,
+  });
+}
+
 module.exports = {
   registerSensor,
   recordTelemetry,
   getSensorsByFarm,
+  syncFirebaseTelemetry,
+  receiveFirebaseStream,
   mockSensors,
 };

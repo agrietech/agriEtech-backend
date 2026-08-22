@@ -22,4 +22,10 @@ router.get('/farm/:farmId', controller.getSensors);
 router.post('/', controller.registerSensor);
 router.get('/', controller.getSensors);
 
+// Firebase Realtime DB & Firestore Sensor Ingestion
+router.get('/firebase/status', controller.getFirebaseStatus);
+router.post('/firebase/sync', controller.syncFirebase);
+router.post('/firebase/stream', controller.receiveFirebaseStream);
+router.post('/firebase/webhook', controller.receiveFirebaseStream);
+
 module.exports = router;

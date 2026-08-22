@@ -53,10 +53,17 @@ const pool = new Pool({
   lookup: (hostname, _options, callback) => {
     dns.lookup(hostname, { family: 4 }, callback);
   },
-  max: 10, // Maximum pool size (safely within Supabase pool limit)
-  min: 2,  // Minimum pool size
-  idleTimeoutMillis: 60000,
-  connectionTimeoutMillis: 30000,
+  max: 5, // Keep connection count safely within Supabase pool limit
+  min: 1,  // Minimum pool size
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 15000,
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 10000,
+});
+
+// Prevent unhandled idle connection errors from triggering process-level uncaughtException
+pool.on('error', (err) => {
+  logger.warn(`[DB Pool] Idle client notice: ${err.message}`);
 });
 
 const adapter = new PrismaPg(pool);

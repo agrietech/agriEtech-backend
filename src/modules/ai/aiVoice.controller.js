@@ -14,7 +14,11 @@ async function handleVoiceInquiry(req, res, next) {
       language: lang,
     });
 
-    res.status(200).json(result);
+    res.status(200).json({
+      success: true,
+      data: result,
+      ...result,
+    });
   } catch (error) {
     next(error);
   }
@@ -30,7 +34,11 @@ async function handleTextToSpeech(req, res, next) {
       language: lang,
     });
 
-    res.status(200).json(result);
+    res.status(200).json({
+      success: true,
+      data: result,
+      ...result,
+    });
   } catch (error) {
     next(error);
   }

@@ -38,13 +38,19 @@ async function diagnoseCropImage({ farmId, cropType, imageUrl, imageFile, imageB
   let imageBase64 = rawBase64 || null;
   let uploadPath = imageUrl || null;
 
+  const { uploadToSupabase } = require('../../utils/supabaseStorage');
   if (imageFile && imageFile.path && fs.existsSync(imageFile.path)) {
     try {
       const fileBuffer = fs.readFileSync(imageFile.path);
       imageBase64 = fileBuffer.toString('base64');
-      uploadPath = `/uploads/diagnoses/${path.basename(imageFile.path)}`;
+      uploadPath = await uploadToSupabase({
+        bucketName: 'diagnoses',
+        localFilePath: imageFile.path,
+        fileName: path.basename(imageFile.path),
+        mimeType: imageFile.mimetype,
+      });
     } catch (err) {
-      logger.warn(`[DiseaseDiagnosis] Failed to read uploaded image file: ${err.message}`);
+      logger.warn(`[DiseaseDiagnosis] Failed to read or upload image: ${err.message}`);
     }
   }
 

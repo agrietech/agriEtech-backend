@@ -52,9 +52,10 @@ app.use(cors(corsOptions));
 app.use(compression());
 app.use(requestLogger);
 app.use(correlationIdMiddleware);
-app.use(sanitizeInput);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+const path = require('path');
+app.use('/uploads', express.static(path.resolve(__dirname, '../uploads')));
 
 // Global rate limiter
 app.use(globalLimiter);
