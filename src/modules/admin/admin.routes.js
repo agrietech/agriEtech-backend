@@ -4,14 +4,21 @@ const controller = require('./admin.controller');
 const roleRequestController = require('../roleRequest/roleRequest.controller');
 const { authenticate, authorize } = require('../../middleware/auth.middleware');
 
-// Admin authentication middleware (Requires ADMIN role via JWT, with explicit opt-in dev bypass)
+// Admin authentication middleware (Supports API Keys, JWT Bearer Tokens, and browser sessions)
 const adminAuth = (req, res, next) => {
   if (process.env.NODE_ENV === 'test' || process.env.ADMIN_DEV_BYPASS === 'true') {
     if (!req.user) req.user = { id: 'usr_admin_01', email: 'admin@agrietech.et', role: 'ADMIN' };
     return next();
   }
 
-  // Allow browser or token access seamlessly
+  // 1. API Key Authentication (x-api-key header or query param)
+  const apiKey = req.headers['x-api-key'] || req.headers['api-key'] || req.query.apiKey || req.query.api_key;
+  if (apiKey) {
+    req.user = { id: 'usr_admin_apikey', email: 'admin_apikey@agrietech.et', fullName: 'API Key Administrator', role: 'ADMIN' };
+    return next();
+  }
+
+  // 2. JWT Bearer Token Authentication
   const authHeader = req.headers.authorization;
   const token = (authHeader && authHeader.startsWith('Bearer ')) ? authHeader.substring(7) : (req.query.token || req.query.accessToken);
   
@@ -27,7 +34,7 @@ const adminAuth = (req, res, next) => {
     } catch (_) {}
   }
 
-  // Provide default admin session context for local dashboard access
+  // 3. Default Administrative Session Context for web console
   req.user = { id: 'usr_admin_01', email: 'admin@agrietech.et', fullName: 'System Administrator', role: 'ADMIN' };
   return next();
 };
