@@ -44,7 +44,18 @@ async function handleTextToSpeech(req, res, next) {
   }
 }
 
+async function handleStreamTts(req, res, next) {
+  try {
+    const text = req.query.text || req.body?.text || 'AgriEtech';
+    const lang = req.query.lang || req.body?.lang || req.query.language || 'am';
+    await aiVoiceService.streamTtsAudio({ text, lang }, res);
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   handleVoiceInquiry,
   handleTextToSpeech,
+  handleStreamTts,
 };

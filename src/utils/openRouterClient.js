@@ -358,9 +358,19 @@ You MUST output valid JSON ONLY with exact fields:
    * Generates dynamic, topic-tailored agronomic advice in Amharic & English based on query analysis
    */
   _generateDynamicVoiceResponse(queryText = '', preferredLang = 'am') {
-    const q = (queryText || '').toLowerCase();
+    const q = (queryText || '').toLowerCase().trim();
     const isAmharicInput = /[\u1200-\u137F]/.test(queryText);
     const detectedLang = isAmharicInput || preferredLang === 'am' ? 'Amharic' : 'English';
+
+    if (!q || q.length === 0) {
+      return {
+        transcription: detectedLang === 'Amharic' ? 'የድምፅ ጥያቄዎን ይጠብቃል' : 'Listening for your question',
+        detectedLanguage: detectedLang,
+        responseEn: 'Hello! I am your AgriEtech AI Agronomic Assistant. Please type or speak any question regarding your crops, soil moisture, pests, or weather forecasts.',
+        responseAm: 'ጤና ይስጥልኝ! እኔ የአግሪቴክ የግብርና AI ረዳትዎ ነኝ። እባክዎን ስለ ሰብልዎ፣ በሽታዎች፣ የአፈር እርጥበት ወይም የአየር ሁኔታ ማንኛውንም ጥያቄ ይናገሩ ወይም ይፃፉ።',
+        recommendedAction: detectedLang === 'Amharic' ? 'ጥያቄዎን ይናገሩ ወይም ከታች ያሉትን አማራጮች ይምረጡ።' : 'Speak your question or choose one of the quick topics below.',
+      };
+    }
 
     // Topic & Crop Identification
     const isTeff = q.includes('teff') || queryText.includes('ጤፍ');

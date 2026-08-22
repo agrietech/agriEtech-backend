@@ -12,6 +12,7 @@ router.post('/text-inquiry', optionalAuthenticate, controller.handleVoiceInquiry
 router.post('/text-to-speech', optionalAuthenticate, controller.handleTextToSpeech);
 router.get('/text-to-speech', optionalAuthenticate, controller.handleTextToSpeech);
 router.post('/speak', optionalAuthenticate, controller.handleTextToSpeech);
+router.get('/tts-stream', controller.handleStreamTts);
 
 module.exports = router;
 
