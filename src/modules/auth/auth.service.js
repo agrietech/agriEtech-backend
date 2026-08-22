@@ -116,12 +116,12 @@ async function registerUser({
     throw new BadRequestError('Full name and password are required');
   }
 
-  // EMAIL IS NOW REQUIRED (Phone is optional)
-  if (!resolvedEmail) {
-    throw new BadRequestError('Email address is required');
+  // Support registration by Email, Phone Number, or Both
+  if (!resolvedEmail && !resolvedPhone) {
+    throw new BadRequestError('Either email address or phone number is required');
   }
 
-  if (!isValidEmail(resolvedEmail)) {
+  if (resolvedEmail && !isValidEmail(resolvedEmail)) {
     throw new BadRequestError('Please provide a valid email address');
   }
 
@@ -155,7 +155,7 @@ async function registerUser({
     try {
       user = await prisma.user.create({
         data: {
-          email: resolvedEmail,
+          email: resolvedEmail || (resolvedPhone ? `user_${resolvedPhone.replace(/[^0-9]/g, '')}@phone.agrietech.et` : null),
           phoneNumber: resolvedPhone || null,
           fullName: resolvedName,
           passwordHash,
@@ -204,7 +204,7 @@ async function registerUser({
 
   const fallbackUser = {
     id: `usr_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-    email: resolvedEmail,
+    email: resolvedEmail || (resolvedPhone ? `user_${resolvedPhone.replace(/[^0-9]/g, '')}@phone.agrietech.et` : null),
     phoneNumber: resolvedPhone || null,
     fullName: resolvedName,
     passwordHash,
@@ -252,23 +252,27 @@ async function loginUser({ email, phoneNumber, phone, identifier, password }) {
     throw new BadRequestError('Email and password are required');
   }
 
-  // Validate email format
-  if (!rawIdentifier.includes('@')) {
-    throw new BadRequestError('Please login with your email address');
-  }
-
-  const normalizedEmail = rawIdentifier.toLowerCase();
-
+  const normalizedIdentifier = rawIdentifier.toLowerCase();
   let user = null;
 
   if (isConnected()) {
     try {
-      user = await prisma.user.findFirst({
-        where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
-      });
+      if (rawIdentifier.includes('@')) {
+        user = await prisma.user.findFirst({
+          where: { email: { equals: normalizedIdentifier, mode: 'insensitive' } },
+        });
+      } else {
+        user = await prisma.user.findFirst({
+          where: { phoneNumber: rawIdentifier },
+        });
+      }
     } catch (_err) {
       // Fallback to mock
     }
+  }
+
+  if (!user) {
+    user = mockUsers.get(normalizedIdentifier) || mockUsers.get(rawIdentifier);
   }
 
   if (!user) {

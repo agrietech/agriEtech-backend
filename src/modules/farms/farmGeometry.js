@@ -131,26 +131,17 @@ function validateFarmPolygon(geojson) {
  * Supports Polygon and MultiPolygon Woredas, with centroid fallback for GPS points.
  */
 function assertContainedByWoreda(farmPolygon, woredaGeojson) {
-  try {
-    const woredaFeature = asPolygon(woredaGeojson, 'Woreda boundary');
-    const isWithin = booleanWithin(farmPolygon, woredaFeature);
-    if (isWithin) return true;
+  const woredaFeature = asPolygon(woredaGeojson, 'Woreda boundary');
+  const isWithin = booleanWithin(farmPolygon, woredaFeature);
+  if (isWithin) return true;
 
-    // Check centroid containment if boundary buffer overlaps slightly
-    const farmCenter = centroid(farmPolygon);
-    const centerWithin = booleanPointInPolygon(farmCenter, woredaFeature);
-    if (centerWithin) {
-      logger.warn('[farmGeometry] Farm centroid is within woreda, allowing plot creation.');
-      return true;
-    }
-
-    // Soft notice instead of blocking registration
-    logger.warn('[farmGeometry] Farm boundary is near woreda border; accepting registration.');
-    return true;
-  } catch (err) {
-    logger.warn(`[farmGeometry] Spatial containment check notice: ${err.message}`);
+  const farmCenter = centroid(farmPolygon);
+  const centerWithin = booleanPointInPolygon(farmCenter, woredaFeature);
+  if (centerWithin) {
     return true;
   }
+
+  throw createHttpError('Farm boundary must be entirely within the selected woreda boundary');
 }
 
 module.exports = { assertContainedByWoreda, createHttpError, validateFarmPolygon };

@@ -5,7 +5,8 @@ describe('Utilities Suite: Date & Geospatial', () => {
   it('should identify Ethiopian agricultural seasons', () => {
     expect(getEthiopianSeason('2026-03-15')).toBe('Belg');
     expect(getEthiopianSeason('2026-07-20')).toBe('Kiremt');
-    expect(getEthiopianSeason('2026-11-10')).toBe('Bega');
+    expect(getEthiopianSeason('2026-11-10')).toBe('Meher');
+    expect(getEthiopianSeason('2026-01-10')).toBe('Bega');
   });
 
   it('should calculate Dekad index correctly', () => {
