@@ -83,8 +83,26 @@ function authorizeWoredaScope(paramName = 'woredaId') {
   };
 }
 
+// Optional authentication (attaches user if valid token present, allows through if not)
+async function optionalAuthenticate(req, res, next) {
+  try {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      const isBlacklisted = await isTokenBlacklisted(token);
+      if (!isBlacklisted) {
+        req.user = jwt.verify(token, env.JWT_SECRET);
+      }
+    }
+  } catch (_) {
+    // Gracefully ignore token errors for optional routes
+  }
+  next();
+}
+
 module.exports = {
   authenticate,
+  optionalAuthenticate,
   authorize,
   authorizeWoredaScope,
 };

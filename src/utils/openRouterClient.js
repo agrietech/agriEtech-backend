@@ -30,10 +30,12 @@ class OpenRouterClient {
   }) {
     const primaryModel = model || this.model;
     const candidateModels = [
-      'openrouter/free',
-      'liquid/lfm-2.5-2.6b:free',
-      'google/gemma-4-31b-it:free',
       primaryModel,
+      'meta-llama/llama-3.3-70b-instruct:free',
+      'mistralai/mistral-small-24b-instruct-2501:free',
+      'google/gemma-2-9b-it:free',
+      'liquid/lfm-2.5-2.6b:free',
+      'openrouter/free',
     ].filter((m, i, arr) => m && arr.indexOf(m) === i);
 
     if (!this.isConfigured()) {
