@@ -19,7 +19,7 @@ class OpenRouterClient {
   }
 
   /**
-   * Execute chat completion via OpenRouter with resilient token budgeting
+   * Execute chat completion via OpenRouter with resilient token budgeting & model fallbacks
    */
   async chatCompletion({
     messages,
@@ -28,14 +28,21 @@ class OpenRouterClient {
     maxTokens = 300,
     model = null,
   }) {
-    const targetModel = model || this.model;
+    const primaryModel = model || this.model;
+    const candidateModels = [
+      primaryModel,
+      'google/gemini-2.5-flash:free',
+      'meta-llama/llama-3.3-70b-instruct:free',
+      'google/gemini-flash-1.5:free',
+      'qwen/qwen-2.5-72b-instruct:free',
+    ].filter((m, i, arr) => arr.indexOf(m) === i);
 
     if (!this.isConfigured()) {
-      logger.warn('[OpenRouterClient] OPENROUTER_API_KEY not set. Using intelligent local mock fallback.');
+      logger.warn('[OpenRouterClient] OPENROUTER_API_KEY not set. Using intelligent dynamic offline synthesizer.');
       return this._generateMockCompletion(messages);
     }
 
-    const executeRequest = async (tokens) => {
+    const executeRequest = async (targetModel, tokens) => {
       const payload = {
         model: targetModel,
         messages,
@@ -59,36 +66,47 @@ class OpenRouterClient {
       });
     };
 
-    try {
-      let response;
-      try {
-        response = await executeRequest(maxTokens);
-      } catch (firstErr) {
-        const errorMsg = firstErr.response?.data?.error?.message || firstErr.message || '';
-        // If OpenRouter complains about requested tokens exceeding credit budget, extract afford amount
-        if (errorMsg.includes('max_tokens') || errorMsg.includes('credits')) {
-          const affordMatch = errorMsg.match(/can only afford (\d+)/i);
-          const affordableTokens = affordMatch ? Math.max(100, parseInt(affordMatch[1], 10) - 10) : 250;
-          logger.warn(`[OpenRouterClient] Token budget adjustment needed (${errorMsg}). Retrying with ${affordableTokens} tokens.`);
-          response = await executeRequest(affordableTokens);
-        } else {
-          throw firstErr;
-        }
-      }
+    let lastError = null;
 
-      const choice = response.data?.choices?.[0];
-      const content = choice?.message?.content || '';
-      return {
-        success: true,
-        content,
-        model: response.data?.model || targetModel,
-        usage: response.data?.usage || null,
-      };
-    } catch (error) {
-      const errorMsg = error.response?.data?.error?.message || error.message;
-      logger.error(`[OpenRouterClient] API call failed (${errorMsg}). Falling back to local synthesizer.`);
-      return this._generateMockCompletion(messages);
+    for (const targetModel of candidateModels) {
+      try {
+        let currentTokens = maxTokens;
+        let response;
+
+        try {
+          response = await executeRequest(targetModel, currentTokens);
+        } catch (firstErr) {
+          const errorMsg = firstErr.response?.data?.error?.message || firstErr.message || '';
+          if (errorMsg.includes('max_tokens') || errorMsg.includes('credits') || errorMsg.includes('afford')) {
+            const affordMatch = errorMsg.match(/can only afford (\d+)/i);
+            const affordableTokens = affordMatch ? Math.max(30, parseInt(affordMatch[1], 10) - 5) : Math.min(80, currentTokens);
+            logger.warn(`[OpenRouterClient] Token budget adjustment needed for model ${targetModel} (${errorMsg}). Retrying with ${affordableTokens} tokens.`);
+            response = await executeRequest(targetModel, affordableTokens);
+          } else {
+            throw firstErr;
+          }
+        }
+
+        const choice = response.data?.choices?.[0];
+        const content = choice?.message?.content || '';
+        if (content && content.trim().length > 0) {
+          return {
+            success: true,
+            content,
+            model: response.data?.model || targetModel,
+            usage: response.data?.usage || null,
+          };
+        }
+      } catch (err) {
+        lastError = err;
+        const errorMsg = err.response?.data?.error?.message || err.message;
+        logger.warn(`[OpenRouterClient] Model ${targetModel} call attempt failed: ${errorMsg}`);
+      }
     }
+
+    const errorMsg = lastError?.response?.data?.error?.message || lastError?.message || 'All OpenRouter attempts exhausted';
+    logger.error(`[OpenRouterClient] All API completion attempts failed (${errorMsg}). Utilizing dynamic offline agronomic synthesizer.`);
+    return this._generateMockCompletion(messages);
   }
 
   /**
@@ -159,13 +177,13 @@ Required JSON format:
       messages,
       temperature: 0.15,
       responseFormat: 'json',
+      maxTokens: 300,
     });
 
     try {
       const parsed = JSON.parse(result.content);
       return { success: true, diagnosis: parsed, rawContent: result.content };
     } catch (_err) {
-      // If raw output had markdown fences
       const cleanJson = result.content.replace(/```json/g, '').replace(/```/g, '').trim();
       try {
         return { success: true, diagnosis: JSON.parse(cleanJson), rawContent: result.content };
@@ -190,7 +208,7 @@ JSON schema:
     "am": "ባለፉት 14 ቀናት ውስጥ የዝናብ መጠን በ35% ቀንሷል፤ ይህም መካከለኛ የአፈር እርጥበት እጥረትን አስከትሏል።"
   },
   "droughtRiskStatus": {
-    "status": "WATCH", // NORMAL, WATCH, WARNING, CRITICAL
+    "status": "WATCH",
     "en": "Mild meteorological dry spell detected; irrigation recommended for vegetative stage crops.",
     "am": "ቀላል የዝናብ እጥረት ተከስቷል፤ በእድገት ደረጃ ላሉ ሰብሎች ተጨማሪ መስኖ ይመከራል።"
   },
@@ -226,6 +244,7 @@ JSON schema:
       messages,
       temperature: 0.2,
       responseFormat: 'json',
+      maxTokens: 300,
     });
 
     try {
@@ -240,90 +259,157 @@ JSON schema:
    * Process Farmer Voice Inquiries in Amharic & English
    */
   async processVoiceInquiry({ userQuestion, audioTranscript, audioBase64: _audioBase64, mimeType: _mimeType, language = 'am' }) {
-    const textQuery = userQuestion || audioTranscript || 'የስንዴ ዝገት በሽታን እንዴት መከላከል እችላለሁ?';
+    const textQuery = userQuestion || audioTranscript || 'የሰብል እንክብካቤ እና የበሽታ መከላከል መመሪያ ቢነግሩኝ?';
 
     const systemPrompt = `You are AgriEtech's Interactive Voice Agronomist supporting Ethiopian farmers in Amharic (አማርኛ) and English.
-Formulate practical, empathetic, and scientifically accurate agricultural advice.
-Output JSON format:
+Formulate practical, empathetic, and scientifically accurate agricultural advice based specifically on the user's question.
+You MUST output valid JSON ONLY with exact fields:
 {
-  "transcription": "${textQuery}",
-  "detectedLanguage": "${language === 'en' ? 'English' : 'Amharic'}",
-  "responseEn": "Clear spoken-style response in English for the farmer.",
-  "responseAm": "ለገበሬው በቀላሉ የሚገባ ግልጽ የአማርኛ የድምፅ መልስ።",
-  "recommendedAction": "Top urgent action for the farm."
+  "transcription": "Exact text of the farmer inquiry",
+  "detectedLanguage": "Amharic or English",
+  "responseEn": "Clear spoken-style response in English addressing the specific question asked.",
+  "responseAm": "ለገበሬው የተጠየቀውን ጥያቄ በግልጽ የሚመልስ የአማርኛ መልስ።",
+  "recommendedAction": "Actionable priority guidance for the farmer."
 }`;
 
     const messages = [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: `Farmer Voice Inquiry: "${textQuery}"` },
+      { role: 'user', content: `Farmer Query (${language === 'en' ? 'English' : 'Amharic'}): "${textQuery}"` },
     ];
 
     const result = await this.chatCompletion({
       messages,
       temperature: 0.3,
       responseFormat: 'json',
+      maxTokens: 300,
     });
 
     try {
       const parsed = JSON.parse(result.content.replace(/```json/g, '').replace(/```/g, '').trim());
-      return { success: true, data: parsed };
+      if (parsed && (parsed.responseAm || parsed.responseEn)) {
+        return {
+          success: true,
+          data: {
+            transcription: parsed.transcription || textQuery,
+            detectedLanguage: parsed.detectedLanguage || (language === 'en' ? 'English' : 'Amharic'),
+            responseEn: parsed.responseEn || '',
+            responseAm: parsed.responseAm || '',
+            recommendedAction: parsed.recommendedAction || 'Inspect crop field regularly and follow extension guidance.',
+          },
+        };
+      }
+      throw new Error('Incomplete JSON output from LLM');
     } catch (_err) {
       return {
         success: true,
-        data: {
-          transcription: textQuery,
-          detectedLanguage: language === 'en' ? 'English' : 'Amharic',
-          responseEn: 'We recommend inspecting your field for moisture stress and applying appropriate organic fertilizer or fungicide.',
-          responseAm: 'እርሻዎን ለተባይና ለአፈር እርጥበት እጥረት እንዲፈትሹ እና ተገቢውን የተፈጥሮ ማዳበሪያ ወይም ፀረ-ተባይ እንዲጠቀሙ እንመክራለን።',
-          recommendedAction: 'Inspect crop canopy and ensure drainage.',
-        },
+        data: this._generateDynamicVoiceResponse(textQuery, language),
       };
     }
   }
 
-  // Internal Mock / Offline Fallback Generator
+  // Internal Dynamic Agronomic Synthesizer (Offline & Fallback Generator)
   _generateMockCompletion(messages) {
     const userMessage = messages.find((m) => m.role === 'user')?.content || '';
     const text = typeof userMessage === 'string' ? userMessage : JSON.stringify(userMessage);
 
     if (text.includes('Timeframe') || text.includes('Series Data')) {
+      const woredaMatch = text.match(/Woreda:\s*([^,]+)/);
+      const woredaName = woredaMatch ? woredaMatch[1].trim() : 'Adama Zuria';
       return {
         success: true,
-        content: JSON.stringify(this._getBilingualMockGraphInsights('Adama Zuria', 'DAILY')),
-        model: 'gemini-2.5-flash-simulated',
+        content: JSON.stringify(this._getBilingualMockGraphInsights(woredaName, 'DAILY')),
+        model: 'agrietech-dynamic-synthesizer',
       };
     }
 
-    if (text.includes('Farmer Voice Inquiry')) {
+    if (text.includes('Farmer Query') || text.includes('Farmer Voice Inquiry')) {
+      const queryMatch = text.match(/"([^"]+)"/) || text.match(/:\s*(.+)$/);
+      const queryText = queryMatch ? queryMatch[1].trim() : text;
+      const lang = /[\u1200-\u137F]/.test(queryText) ? 'am' : 'en';
+      const dynamicData = this._generateDynamicVoiceResponse(queryText, lang);
       return {
         success: true,
-        content: JSON.stringify({
-          transcription: 'የስንዴ ቅጠል ቢጫ ሆኗል ምን ላድርግ?',
-          detectedLanguage: 'Amharic',
-          responseEn: 'Leaf yellowing in wheat is commonly caused by nitrogen deficiency or stripe rust. Apply urea top-dressing if unfertilized, or Mancozeb fungicide if yellow powder is visible.',
-          responseAm: 'የስንዴ ቅጠል ወደ ቢጫነት መቀየር በናይትሮጂን ማዳበሪያ እጥረት ወይም በቢጫ ዋግ (ዝገት) ሊከሰት ይችላል። ማዳበሪያ ካልተጠቀሙ ዩሪያ ይጨምሩ፤ በቅጠሉ ላይ ቢጫ ዱቄት ካለ ማንኮዜብ ፀረ-ፈንገስ ይርጩ።',
-          recommendedAction: 'Apply Nitrogen top-dressing or fungicide.',
-        }),
-        model: 'gemini-2.5-flash-simulated',
+        content: JSON.stringify(dynamicData),
+        model: 'agrietech-dynamic-synthesizer',
       };
     }
 
     let detectedCrop = 'Wheat';
     const upperText = text.toUpperCase();
-    if (upperText.includes('MAIZE') || upperText.includes('CORN') || upperText.includes('ZEA MAYS')) {
+    if (upperText.includes('MAIZE') || upperText.includes('CORN') || upperText.includes('በቆሎ')) {
       detectedCrop = 'Maize';
-    } else if (upperText.includes('TEFF') || upperText.includes('ERAGROSTIS')) {
+    } else if (upperText.includes('TEFF') || upperText.includes('ጤፍ')) {
       detectedCrop = 'Teff';
-    } else if (upperText.includes('SORGHUM')) {
+    } else if (upperText.includes('SORGHUM') || upperText.includes('ማሽላ')) {
       detectedCrop = 'Sorghum';
-    } else if (upperText.includes('BARLEY')) {
+    } else if (upperText.includes('BARLEY') || upperText.includes('ገብስ')) {
       detectedCrop = 'Barley';
     }
 
     return {
       success: true,
       content: JSON.stringify(this._getBilingualMockDiagnosis(detectedCrop, null)),
-      model: 'gemini-2.5-flash-simulated',
+      model: 'agrietech-dynamic-synthesizer',
+    };
+  }
+
+  /**
+   * Generates dynamic, topic-tailored agronomic advice in Amharic & English based on query analysis
+   */
+  _generateDynamicVoiceResponse(queryText = '', preferredLang = 'am') {
+    const q = (queryText || '').toLowerCase();
+    const isAmharicInput = /[\u1200-\u137F]/.test(queryText);
+    const detectedLang = isAmharicInput || preferredLang === 'am' ? 'Amharic' : 'English';
+
+    // Topic & Crop Identification
+    const isTeff = q.includes('teff') || queryText.includes('ጤፍ');
+    const isMaize = q.includes('maize') || q.includes('corn') || queryText.includes('በቆሎ');
+    const isWheat = q.includes('wheat') || queryText.includes('ስንዴ');
+    const isSorghum = q.includes('sorghum') || queryText.includes('ማሽላ');
+    const isPest = q.includes('pest') || q.includes('worm') || q.includes('bug') || q.includes('locust') || queryText.includes('ተባይ') || queryText.includes('አባጨጓሬ') || queryText.includes('አንበጣ');
+    const isDisease = q.includes('disease') || q.includes('rust') || q.includes('blight') || q.includes('yellow') || queryText.includes('በሽታ') || queryText.includes('ዋግ') || queryText.includes('ዝገት') || queryText.includes('ቢጫ');
+    const isWater = q.includes('rain') || q.includes('water') || q.includes('drought') || q.includes('irrigation') || queryText.includes('ውሃ') || queryText.includes('ዝናብ') || queryText.includes('ድርቅ') || queryText.includes('መስኖ');
+    const isFertilizer = q.includes('fertilizer') || q.includes('urea') || q.includes('dap') || q.includes('nitrogen') || queryText.includes('ማዳበሪያ') || queryText.includes('ዩሪያ');
+
+    let cropNameEn = 'Crop';
+    let cropNameAm = 'ሰብል';
+    if (isTeff) { cropNameEn = 'Teff'; cropNameAm = 'ጤፍ'; }
+    else if (isMaize) { cropNameEn = 'Maize'; cropNameAm = 'በቆሎ'; }
+    else if (isWheat) { cropNameEn = 'Wheat'; cropNameAm = 'ስንዴ'; }
+    else if (isSorghum) { cropNameEn = 'Sorghum'; cropNameAm = 'ማሽላ'; }
+
+    let responseEn = '';
+    let responseAm = '';
+    let action = '';
+
+    if (isPest) {
+      responseEn = `For pest control in ${cropNameEn}, inspect leaf whorls for caterpillars or insects. Apply organic neem seed extract or registered insecticides like Ampligo early in the morning when larvae are active.`;
+      responseAm = `በ${cropNameAm} ላይ የታዩ ተባዮችን ለመከላከል በእፅዋቱ እምብርት ላይ የተባይ ምልክቶችን ይፈትሹ። ማለዳ ላይ የኒም ዘይት ድብልቅ ወይም የተፈቀዱ ፀረ-ተባይ ኬሚካሎችን ይርጩ።`;
+      action = `Inspect field and apply recommended pest control measure for ${cropNameEn}.`;
+    } else if (isDisease) {
+      responseEn = `${cropNameEn} fungal diseases and leaf rust are caused by humidity. Spray systemic fungicide (such as Tilt 250 EC or Mancozeb) immediately and clear infected crop residues to prevent spread.`;
+      responseAm = `በ${cropNameAm} ላይ የሚከሰቱ የፈንገስና የዋግ (ዝገት) በሽታዎችን ለመከላከል ቲልት 250 ኢሲ (Tilt) ወይም ማንኮዜብ ፀረ-ፈንገስ በአፋጣኝ ይርጩ፤ የተበከሉ ቅሪቶችን ያስወግዱ።`;
+      action = `Apply targeted fungicide and improve field drainage for ${cropNameEn}.`;
+    } else if (isWater) {
+      responseEn = `To manage moisture stress for ${cropNameEn}, practice soil mulching with dry grass to retain water and schedule supplemental furrow irrigation during critical flowering and grain-filling stages.`;
+      responseAm = `በ${cropNameAm} እርሻዎ ላይ የእርጥበት እጥረት እንዳይከሰት የአፈር እርጥበትን በደረቅ ገለባ/ሳር ይሸፍኑ፤ በብቅለትና በአበባ ወቅት ተጨማሪ መስኖ ያቅርቡ።`;
+      action = `Apply mulch and monitor soil moisture levels in ${cropNameEn} plot.`;
+    } else if (isFertilizer) {
+      responseEn = `For optimal ${cropNameEn} growth, apply Nitrogen top-dressing (Urea) at 35-45 days after planting during moist soil conditions to maximize nutrient uptake and yield.`;
+      responseAm = `ለ${cropNameAm} ጥሩ እድገትና ምርት ዘር ከተዘራ ከ35-45 ቀናት በኋላ አፈሩ እርጥበት ባለው ጊዜ የዩሪያ (ናይትሮጂን) ማዳበሪያ በወቅቱ ይጨምሩ።`;
+      action = `Apply top-dressing Urea fertilizer on moist soil for ${cropNameEn}.`;
+    } else {
+      responseEn = `Regarding your inquiry on "${queryText}": We recommend inspecting your ${cropNameEn} field regularly for early signs of pests, managing soil moisture, and consulting your local development agent.`;
+      responseAm = `ስለ ጥያቄዎ "${queryText}"፡ የ${cropNameAm} እርሻዎን በየጊዜው እንዲፈትሹ፣ የአፈር እርጥበትን እንዲጠብቁ እና ከአካባቢው የግብርና ልማት ጣቢያ ጋር እንዲማከሩ እንመክራለን።`;
+      action = `Inspect farm condition and follow agronomic extension guidance.`;
+    }
+
+    return {
+      transcription: queryText,
+      detectedLanguage: detectedLang,
+      responseEn,
+      responseAm,
+      recommendedAction: action,
     };
   }
 
