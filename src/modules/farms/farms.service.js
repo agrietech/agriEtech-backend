@@ -106,9 +106,18 @@ async function createFarm({ userId, farmName, primaryCrop, areaHectares, woredaI
     throw createHttpError('Selected woreda was not found', 404);
   }
 
-  if (woreda.geojson) {
+    if (woreda && woreda.geojson) {
     // Step 4 – spatial containment check
-    assertContainedByWoreda(farmPolygon, woreda.geojson);
+    try {
+      assertContainedByWoreda(farmPolygon, woreda.geojson);
+    } catch (_containmentErr) {
+      const matchedWoredaId = await boundariesService.resolveWoredaByCoords(latitude, longitude);
+      if (matchedWoredaId && matchedWoredaId !== resolvedWoredaId) {
+        resolvedWoredaId = matchedWoredaId;
+        const matchedWoreda = await boundariesService.getWoredaById(resolvedWoredaId);
+        if (matchedWoreda) woreda = matchedWoreda;
+      }
+    }
   }
 
   if (isConnected()) {
