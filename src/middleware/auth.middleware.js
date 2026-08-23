@@ -13,7 +13,7 @@ async function authenticate(req, res, next) {
     }
 
     // 2. Dev / Admin Bypass (Instant tokenless access when ADMIN_DEV_BYPASS=true)
-    if ((process.env.ADMIN_DEV_BYPASS === 'true' || process.env.ADMIN_BYPASS === 'true' || process.env.NODE_ENV === 'test') && !req.headers.authorization) {
+    if ((process.env.ADMIN_DEV_BYPASS === 'true' || process.env.ADMIN_BYPASS === 'true') && !req.headers.authorization) {
       req.user = { id: 'usr_admin_01', email: 'admin@agrietech.et', fullName: 'System Administrator', role: 'ADMIN' };
       return next();
     }

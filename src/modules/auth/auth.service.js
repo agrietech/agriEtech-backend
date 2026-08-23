@@ -615,7 +615,10 @@ async function refreshAccessToken(refreshToken) {
   return { token: newAccessToken, accessToken: newAccessToken };
 }
 
+const localBlacklist = new Set();
+
 async function logout(token) {
+  if (token) localBlacklist.add(token);
   if (token) {
     try {
       const decoded = jwt.decode(token);
@@ -647,6 +650,7 @@ async function logoutUser(accessToken, refreshToken) {
 }
 
 async function isTokenBlacklisted(token) {
+  if (token && localBlacklist.has(token)) return true;
   if (!token) return false;
   
   try {

@@ -20,17 +20,27 @@ try {
 async function sendSms(to, message) {
   const recipients = Array.isArray(to) ? to : [to];
 
-  if (smsService && env.NODE_ENV === 'production') {
-    return await smsService.send({
-      to: recipients,
-      message,
-      from: env.AFRICAS_TALKING_SENDER_ID,
-    });
+  if (smsService) {
+    try {
+      const sendOptions = {
+        to: recipients,
+        message,
+      };
+      if (env.AFRICAS_TALKING_USERNAME !== 'sandbox' && env.AFRICAS_TALKING_SENDER_ID) {
+        sendOptions.from = env.AFRICAS_TALKING_SENDER_ID;
+      }
+      const response = await smsService.send(sendOptions);
+      logger.info(`[SMS Dispatch Success] Gateway response: ${JSON.stringify(response)}`);
+      return { success: true, count: recipients.length, gatewayResponse: response };
+    } catch (err) {
+      logger.error(`[SMS Gateway Error] Failed sending to ${recipients.join(', ')}: ${err.message}`);
+      throw err;
+    }
   }
 
-  // Development sandbox fallback
-  logger.info(`[SMS Dispatch] To: ${recipients.join(', ')} - "${message}"`);
-  return { success: true, count: recipients.length };
+  // Local fallback if no gateway configured
+  logger.info(`[SMS Dispatch Local Fallback] To: ${recipients.join(', ')} - "${message}"`);
+  return { success: true, count: recipients.length, fallback: true };
 }
 
 module.exports = {
