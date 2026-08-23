@@ -7,7 +7,7 @@ const { BadRequestError } = require('../utils/errors');
 function validateFarmData(data) {
   const errors = [];
   
-  if (!data.farmName || typeof data.farmName !== 'string' || data.farmName.trim().length < 2) {
+  if (!data || !(data.farmName || data.name || data.title) || typeof (data.farmName || data.name || data.title) !== 'string' || (data.farmName || data.name || data.title).trim().length < 2) {
     errors.push('Farm name must be at least 2 characters');
   }
   
@@ -15,22 +15,25 @@ function validateFarmData(data) {
     errors.push('Farm name must not exceed 100 characters');
   }
   
-  if (data.areaHectares !== undefined) {
-    const area = parseFloat(data.areaHectares);
+  const areaVal = data?.areaHectares !== undefined ? data.areaHectares : (data?.size !== undefined ? data.size : data?.area);
+  if (areaVal !== undefined && areaVal !== null) {
+    const area = parseFloat(areaVal);
     if (isNaN(area) || area < 0.01 || area > 100000) {
       errors.push('Area must be between 0.01 and 100,000 hectares');
     }
   }
   
-  if (data.latitude !== undefined) {
-    const lat = parseFloat(data.latitude);
+  const latVal = data?.latitude !== undefined ? data.latitude : data?.lat;
+  if (latVal !== undefined && latVal !== null) {
+    const lat = parseFloat(latVal);
     if (isNaN(lat) || lat < -90 || lat > 90) {
       errors.push('Latitude must be between -90 and 90 degrees');
     }
   }
   
-  if (data.longitude !== undefined) {
-    const lng = parseFloat(data.longitude);
+  const lngVal = data?.longitude !== undefined ? data.longitude : (data?.lng !== undefined ? data.lng : data?.lon);
+  if (lngVal !== undefined && lngVal !== null) {
+    const lng = parseFloat(lngVal);
     if (isNaN(lng) || lng < -180 || lng > 180) {
       errors.push('Longitude must be between -180 and 180 degrees');
     }
