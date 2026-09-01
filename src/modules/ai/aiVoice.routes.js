@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const controller = require('./aiVoice.controller');
 const { optionalAuthenticate } = require('../../middleware/auth.middleware');
-const upload = require('../../middleware/upload');
+const upload = require('../../middleware/upload.middleware');
 
 // Voice inquiry with audio upload or text question (open/optional auth for farmer ease of use)
 router.post('/voice-inquiry', optionalAuthenticate, upload.single('audio'), controller.handleVoiceInquiry);

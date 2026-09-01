@@ -87,6 +87,24 @@ function calculateArea(polygonOrFeature) {
   };
 }
 
+// Compute centroid [lng, lat] of a polygon
+function getCentroid(geojson) {
+  const coords = geojson?.geometry?.coordinates?.[0] || geojson?.coordinates?.[0] || geojson;
+  if (!Array.isArray(coords) || coords.length === 0) {
+    return [39.27, 8.54];
+  }
+  let sumLng = 0;
+  let sumLat = 0;
+  for (const [lng, lat] of coords) {
+    sumLng += lng;
+    sumLat += lat;
+  }
+  return [
+    Math.round((sumLng / coords.length) * 100000) / 100000,
+    Math.round((sumLat / coords.length) * 100000) / 100000,
+  ];
+}
+
 // Verify coordinates within Ethiopian boundary
 function isWithinEthiopia(lat, lng) {
   return lat >= 3.0 && lat <= 15.5 && lng >= 32.5 && lng <= 48.5;
@@ -95,7 +113,9 @@ function isWithinEthiopia(lat, lng) {
 module.exports = {
   isPointInPolygon,
   getBBox,
+  getCentroid,
   getDistanceKm,
   calculateArea,
   isWithinEthiopia,
 };
+

@@ -251,7 +251,7 @@ function renderForgotPasswordHtml() {
 </html>`;
 }
 
-function renderResetPasswordHtml({ token = '', email = '', code = '' } = {}) {
+function renderResetPasswordHtml({ token = '', email: _email = '', code = '' } = {}) {
   const prefillCode = code || token || '';
   return `<!DOCTYPE html>
 <html lang="en">

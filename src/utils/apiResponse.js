@@ -56,6 +56,23 @@ class ApiResponse {
   }
 
   /**
+   * Helper to parse and sanitize pagination query parameters from Express req
+   * Enforces min 1, default limit, and caps at maxLimit (default 100).
+   */
+  static parsePagination(req, { defaultLimit = 20, maxLimit = 100 } = {}) {
+    const rawPage = parseInt(req.query?.page, 10);
+    const rawLimit = parseInt(req.query?.limit, 10);
+
+    const page = Number.isInteger(rawPage) && rawPage > 0 ? rawPage : 1;
+    const limit = Number.isInteger(rawLimit) && rawLimit > 0
+      ? Math.min(rawLimit, maxLimit)
+      : defaultLimit;
+    const skip = (page - 1) * limit;
+
+    return { page, limit, skip };
+  }
+
+  /**
    * Send a formatted error response
    */
   static error(
@@ -83,3 +100,4 @@ class ApiResponse {
 }
 
 module.exports = ApiResponse;
+

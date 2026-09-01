@@ -8,15 +8,17 @@ const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
 const env = require('./config/env');
-const errorHandler = require('./middleware/errorHandler');
-const requestLogger = require('./middleware/requestLogger');
-const { correlationIdMiddleware, sanitizeInput, requestTimeout } = require('./middleware/security');
+const errorHandler = require('./middleware/error-handler.middleware');
+const requestLogger = require('./middleware/request-logger.middleware');
+const auditLogger = require('./middleware/audit-logger.middleware');
+const { correlationIdMiddleware, sanitizeInput, requestTimeout } = require('./middleware/security.middleware');
 const {
   globalLimiter,
   authLimiter,
   ussdLimiter,
   telemetryLimiter,
-} = require('./middleware/rateLimiter');
+  aiLimiter,
+} = require('./middleware/rate-limiter.middleware');
 
 const authRoutes = require('./modules/auth/auth.routes');
 const boundariesRoutes = require('./modules/boundaries/boundaries.routes');
@@ -51,9 +53,11 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(compression());
 app.use(requestLogger);
+app.use(auditLogger);
 app.use(correlationIdMiddleware);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(sanitizeInput);
 const path = require('path');
 app.use('/uploads', express.static(path.resolve(__dirname, '../uploads')));
 
@@ -63,9 +67,13 @@ app.use(globalLimiter);
 // Health check – comprehensive
 app.get('/health', (_req, res) => {
   const memUsage = process.memoryUsage();
-  const status = isConnected() ? 'UP' : 'DEGRADED';
-  res.status(isConnected() ? 200 : 503).json({
-    status,
+  const dbUp = isConnected();
+  const redis = require('./config/redis');
+  const redisUp = redis && typeof redis.isConnected === 'function' ? redis.isConnected() : false;
+  const overallStatus = dbUp ? (redisUp ? 'UP' : 'DEGRADED') : 'DOWN';
+
+  res.status(dbUp ? 200 : 503).json({
+    status: overallStatus,
     service: 'AgriEtech Multi-Hazard Early Warning Backend',
     timestamp: new Date().toISOString(),
     uptimeSeconds: Math.floor(process.uptime()),
@@ -76,8 +84,8 @@ app.get('/health', (_req, res) => {
       nodeVersion: process.version,
     },
     dependencies: {
-      database: isConnected() ? 'UP' : 'DOWN',
-      redis: 'OPTIONAL',
+      database: dbUp ? 'UP' : 'DOWN',
+      redis: redisUp ? 'UP' : 'DOWN',
     },
   });
 });
@@ -164,16 +172,16 @@ app.get('/forgot-password', (req, res) => {
 });
 
 // API feature routes with specialized rate limiters
-app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/auth', authLimiter, authRoutes);
 app.use('/api/v1/boundaries', boundariesRoutes);
 app.use('/api/v1/farms', farmsRoutes);
 app.use('/api/v1/sensors', telemetryLimiter, sensorsRoutes);
 app.use('/api/v1/satellite-observations', satelliteRoutes);
 app.use('/api/v1/risk-assessments', riskAssessmentsRoutes);
 app.use('/api/v1/alerts', alertsRoutes);
-app.use('/api/v1/disease-diagnosis', diseaseRoutes);
+app.use('/api/v1/disease-diagnosis', aiLimiter, diseaseRoutes);
 app.use('/api/v1/analytics', analyticsRoutes);
-app.use('/api/v1/ai', aiRoutes);
+app.use('/api/v1/ai', aiLimiter, aiRoutes);
 app.use('/api/v1/ingestion', telemetryLimiter, ingestionRoutes);
 app.use('/api/v1/delivery/ussd', ussdLimiter, ussdRoutes);
 app.use('/api/v1/admin', adminRoutes);

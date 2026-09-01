@@ -51,6 +51,6 @@ describe('farm geometry validation', () => {
         ],
       ],
     };
-    expect(() => assertContainedByWoreda(validateFarmPolygon(outside), woreda)).toThrow('entirely within');
+    expect(() => assertContainedByWoreda(validateFarmPolygon(outside), woreda)).toThrow(/intersect|entirely within/);
   });
 });

@@ -11,7 +11,7 @@ function cleanTextForSpeech(text) {
   if (!text) return '';
   return text
     .replace(/[*#_`~>]/g, '')
-    .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
     .replace(/\n\s*[-•]\s*/g, '. ')
     .replace(/\n+/g, ' ')
     .replace(/\s{2,}/g, ' ')
@@ -22,7 +22,7 @@ function cleanTextForSpeech(text) {
  * AI Voice & Speech Service
  * Supports Amharic (አማርኛ) and English farmer voice inquiries and audio synthesis.
  */
-async function processVoiceInquiry({ userQuestion, audioTranscript, audioFile, language = 'am' }) {
+async function processVoiceInquiry({ userQuestion, audioTranscript, audioFile, language = 'am', farmContext = null, userId = null }) {
   let audioBase64 = null;
   let mimeType = 'audio/wav';
 
@@ -36,9 +36,18 @@ async function processVoiceInquiry({ userQuestion, audioTranscript, audioFile, l
     }
   }
 
-  const query = (userQuestion || audioTranscript || '').trim();
+  let query = (userQuestion || audioTranscript || '').trim();
 
-  logger.info(`[AIVoiceService] Processing voice inquiry in language=${language}: "${query.substring(0, 50)}"`);
+  // Prepend farm context to personalize the AI advisory
+  if (farmContext && farmContext.length > 0) {
+    const contextSummary = farmContext
+      .map((f) => `${f.cropType} (${f.areaSqMeters ? Math.round(f.areaSqMeters / 10000) + ' ha' : 'unknown size'})`)
+      .join(', ');
+    query = `[Farmer's crops: ${contextSummary}] ${query}`;
+    logger.debug(`[AIVoiceService] Farm context injected for userId=${userId}: ${contextSummary}`);
+  }
+
+  logger.info(`[AIVoiceService] Processing voice inquiry in language=${language}: "${query.substring(0, 60)}"`);
 
   const aiResult = await openRouterClient.processVoiceInquiry({
     userQuestion: query,
@@ -47,6 +56,7 @@ async function processVoiceInquiry({ userQuestion, audioTranscript, audioFile, l
     mimeType,
     language,
   });
+
 
   const data = aiResult.data || {};
   const isEnglish = language === 'en' || data.detectedLanguage === 'English';
@@ -58,8 +68,14 @@ async function processVoiceInquiry({ userQuestion, audioTranscript, audioFile, l
   const proxyAudioUrl = `${backendBaseUrl}/api/v1/ai/tts-stream?text=${encodeURIComponent(speakableText.substring(0, 300))}&lang=${targetLang}`;
   const directTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(speakableText.substring(0, 200))}&tl=${targetLang}&client=tw-ob`;
 
+  // Surface AI degraded mode to the client so it can show a warning banner
+  const isAiOffline = Boolean(aiResult.isOfflineFallback);
+
   return {
     success: true,
+    isAiOffline,
+    degradedReason: isAiOffline ? (aiResult.degradedReason || 'AI service temporarily unavailable') : null,
+    offlineNotice: isAiOffline ? '⚠️ AI is offline — response uses cached agronomic advisory' : null,
     transcription: data.transcription || query || (isEnglish ? 'Voice inquiry received' : 'የድምፅ ጥያቄ ተቀብለናል'),
     detectedLanguage: data.detectedLanguage || (isEnglish ? 'English' : 'Amharic'),
     responseEn: data.responseEn || '',
@@ -77,7 +93,7 @@ async function processVoiceInquiry({ userQuestion, audioTranscript, audioFile, l
     audioUrl: proxyAudioUrl,
     audioUrlAm: `${backendBaseUrl}/api/v1/ai/tts-stream?text=${encodeURIComponent(cleanTextForSpeech(data.responseAm).substring(0, 300))}&lang=am`,
     audioUrlEn: `${backendBaseUrl}/api/v1/ai/tts-stream?text=${encodeURIComponent(cleanTextForSpeech(data.responseEn).substring(0, 300))}&lang=en`,
-    aiModel: data.aiModel || 'Google Gemini 2.5 Flash (OpenRouter Voice Intelligence)',
+    aiModel: isAiOffline ? 'agrietech-offline-synthesizer' : (data.aiModel || 'Google Gemini 2.5 Flash (OpenRouter Voice Intelligence)'),
     timestamp: new Date().toISOString(),
   };
 }
@@ -134,11 +150,20 @@ async function streamTtsAudio({ text, lang = 'am' }, res) {
 
     res.setHeader('Content-Type', 'audio/mpeg');
     res.setHeader('Cache-Control', 'public, max-age=86400');
+    upstreamRes.data.on('error', (streamErr) => {
+      logger.warn(`[AIVoiceService] Stream pipe error: ${streamErr.message}`);
+      if (!res.headersSent) res.status(502).end();
+    });
     upstreamRes.data.pipe(res);
   } catch (err) {
-    logger.warn(`[AIVoiceService] TTS stream fallback warning: ${err.message}`);
-    // Redirect to direct URL if stream proxy fails
-    res.redirect(googleTtsUrl);
+    logger.warn(`[AIVoiceService] TTS stream fallback notice: ${err.message}`);
+    if (!res.headersSent) {
+      try {
+        res.redirect(googleTtsUrl);
+      } catch (_redirErr) {
+        res.status(502).json({ error: 'TTS stream unavailable' });
+      }
+    }
   }
 }
 

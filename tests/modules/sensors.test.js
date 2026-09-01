@@ -3,7 +3,7 @@ const app = require('../../src/app');
 const { generateAccessToken } = require('../../src/modules/auth/auth.service');
 
 describe('Sensors Module API Suite', () => {
-  const user = { id: 'usr_farmer_01', phoneNumber: '+251911223344', role: 'FARMER' };
+  const user = { id: 'usr_agent_01', phoneNumber: '+251911223344', role: 'DEVELOPMENT_AGENT' };
   const token = generateAccessToken(user);
 
   it('POST /api/v1/sensors - should register an IoT probe', async () => {

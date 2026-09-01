@@ -40,7 +40,7 @@ class OpenRouterClient {
 
     if (!this.isConfigured()) {
       logger.warn('[OpenRouterClient] OPENROUTER_API_KEY not set. Using intelligent dynamic offline synthesizer.');
-      return this._generateMockCompletion(messages);
+      return { ...this._generateSynthesizedCompletion(messages), isOfflineFallback: true, degradedReason: 'API key not configured' };
     }
 
     const executeRequest = async (targetModel, tokens) => {
@@ -55,7 +55,7 @@ class OpenRouterClient {
         payload.response_format = { type: 'json_object' };
       }
 
-      const requestTimeout = process.env.NODE_ENV === 'test' ? 4000 : 20000;
+      const requestTimeout = 4000;
       return await axios.post(`${this.baseUrl}/chat/completions`, payload, {
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
@@ -78,7 +78,10 @@ class OpenRouterClient {
           response = await executeRequest(targetModel, currentTokens);
         } catch (firstErr) {
           const errorMsg = firstErr.response?.data?.error?.message || firstErr.message || '';
-          if (errorMsg.includes('max_tokens') || errorMsg.includes('credits') || errorMsg.includes('afford')) {
+          if (errorMsg.includes('credits') || errorMsg.includes('unavailable') || errorMsg.includes('No endpoints')) {
+            throw firstErr;
+          }
+          if (errorMsg.includes('max_tokens') || errorMsg.includes('afford')) {
             const affordMatch = errorMsg.match(/can only afford (\d+)/i);
             const affordableTokens = affordMatch ? Math.max(30, parseInt(affordMatch[1], 10) - 5) : Math.min(80, currentTokens);
             logger.warn(`[OpenRouterClient] Token budget adjustment needed for model ${targetModel} (${errorMsg}). Retrying with ${affordableTokens} tokens.`);
@@ -102,12 +105,15 @@ class OpenRouterClient {
         lastError = err;
         const errorMsg = err.response?.data?.error?.message || err.message;
         logger.warn(`[OpenRouterClient] Model ${targetModel} call attempt failed: ${errorMsg}`);
+        if (errorMsg.includes('credits') || errorMsg.includes('unavailable') || errorMsg.includes('No endpoints')) {
+          break; // Avoid wasting time across all fallback models if account has 0 credits
+        }
       }
     }
 
     const errorMsg = lastError?.response?.data?.error?.message || lastError?.message || 'All OpenRouter attempts exhausted';
     logger.error(`[OpenRouterClient] All API completion attempts failed (${errorMsg}). Utilizing dynamic offline agronomic synthesizer.`);
-    return this._generateMockCompletion(messages);
+    return { ...this._generateSynthesizedCompletion(messages), isOfflineFallback: true, degradedReason: errorMsg };
   }
 
   /**
@@ -189,7 +195,7 @@ Required JSON format:
       try {
         return { success: true, diagnosis: JSON.parse(cleanJson), rawContent: result.content };
       } catch (_e2) {
-        return { success: true, diagnosis: this._getBilingualMockDiagnosis(cropHint, plantIdData), rawContent: result.content };
+        return { success: true, diagnosis: this._getBilingualSynthesizedDiagnosis(cropHint, plantIdData), rawContent: result.content };
       }
     }
   }
@@ -252,7 +258,7 @@ JSON schema:
       const parsed = JSON.parse(result.content.replace(/```json/g, '').replace(/```/g, '').trim());
       return { success: true, insights: parsed };
     } catch (_err) {
-      return { success: true, insights: this._getBilingualMockGraphInsights(woredaName, timeframe) };
+      return { success: true, insights: this._getBilingualSynthesizedGraphInsights(woredaName, timeframe) };
     }
   }
 
@@ -309,7 +315,7 @@ You MUST output valid JSON ONLY with exact fields:
   }
 
   // Internal Dynamic Agronomic Synthesizer (Offline & Fallback Generator)
-  _generateMockCompletion(messages) {
+  _generateSynthesizedCompletion(messages) {
     const userMessage = messages.find((m) => m.role === 'user')?.content || '';
     const text = typeof userMessage === 'string' ? userMessage : JSON.stringify(userMessage);
 
@@ -318,7 +324,7 @@ You MUST output valid JSON ONLY with exact fields:
       const woredaName = woredaMatch ? woredaMatch[1].trim() : 'Adama Zuria';
       return {
         success: true,
-        content: JSON.stringify(this._getBilingualMockGraphInsights(woredaName, 'DAILY')),
+        content: JSON.stringify(this._getBilingualSynthesizedGraphInsights(woredaName, 'DAILY')),
         model: 'agrietech-dynamic-synthesizer',
       };
     }
@@ -349,7 +355,7 @@ You MUST output valid JSON ONLY with exact fields:
 
     return {
       success: true,
-      content: JSON.stringify(this._getBilingualMockDiagnosis(detectedCrop, null)),
+      content: JSON.stringify(this._getBilingualSynthesizedDiagnosis(detectedCrop, null)),
       model: 'agrietech-dynamic-synthesizer',
     };
   }
@@ -382,9 +388,7 @@ You MUST output valid JSON ONLY with exact fields:
     const isCoffee = q.includes('coffee') || q.includes('shade') || queryText.includes('ቡና') || queryText.includes('ጥላ');
     const isTeff = q.includes('teff') || queryText.includes('ጤፍ');
     const isMaize = q.includes('maize') || q.includes('corn') || queryText.includes('በቆሎ');
-    const isWheat = q.includes('wheat') || queryText.includes('ስንዴ');
-    const isSorghum = q.includes('sorghum') || queryText.includes('ማሽላ');
-    const isBarley = q.includes('barley') || queryText.includes('ገብስ');
+    const isWheatOrCereal = q.includes('wheat') || q.includes('barley') || q.includes('sorghum') || queryText.includes('ስንዴ') || queryText.includes('ገብስ') || queryText.includes('ማሽላ');
     const isSoilOrLime = q.includes('soil') || q.includes('lime') || q.includes('acid') || q.includes('vertisol') || queryText.includes('አፈር') || queryText.includes('ኖራ') || queryText.includes('አሲድ') || queryText.includes('ወላካ');
     const isPest = q.includes('pest') || q.includes('worm') || q.includes('bug') || q.includes('locust') || queryText.includes('ተባይ') || queryText.includes('አባጨጓሬ') || queryText.includes('አንበጣ');
     const isDisease = q.includes('disease') || q.includes('rust') || q.includes('blight') || q.includes('fungus') || queryText.includes('በሽታ') || queryText.includes('ዋግ') || queryText.includes('ዝገት') || queryText.includes('ፈንገስ');
@@ -469,7 +473,7 @@ You MUST output valid JSON ONLY with exact fields:
         `3. አረም እና በሽታ መከላከል፡ በመጀመሪያው ወር አረም ያርሙ። የጤፍ ዝገት/ዋግ ምልክት ከታየ ፀረ-ፈንገስ ቲልት 250 ኢሲ (Tilt) በሄክታር 0.5 ሊትር ይርጩ።\n` +
         `4. መተኛትን (Lodging) መከላከል፡ ከመጠን በላይ ናይትሮጂን አይጠቀሙ፤ መሬቱን በሚገባ በማለስለስና በማደላደል ዘሩን ይዝሩ።`;
       action = 'Follow recommended Teff row-planting spacing (20cm) and apply top-dressing Urea at tillering.';
-    } else if (isWheat) {
+    } else if (isWheatOrCereal || isDisease) {
       responseEn = `Wheat (Triticum aestivum) Early Warning & Rust Management:\n` +
         `1. Yellow/Stem Rust (Puccinia spp.): High humidity triggers rapid sporulation. Immediately scout the lower leaf canopy. Apply systemic fungicide Tilt 250 EC (Propiconazole) or Rex Duo at 0.5 L/ha immediately upon observing orange/yellow pustules.\n` +
         `2. Sowing Density & Fertilization: Use 125-150 kg/ha certified seeds (e.g., Kingbird, Ogolcho, Danda'a). Apply 100 kg NPS at planting and split 100 kg Urea (50% at planting, 50% at tillering).\n` +
@@ -531,7 +535,7 @@ You MUST output valid JSON ONLY with exact fields:
     };
   }
 
-  _getBilingualMockDiagnosis(cropHint = 'Wheat', plantIdData = null) {
+  _getBilingualSynthesizedDiagnosis(cropHint = 'Wheat', plantIdData = null) {
     // If Plant.id provided real botanical classification, use it directly
     if (plantIdData && plantIdData.crop && plantIdData.crop.scientificName && plantIdData.crop.scientificName !== 'Crop') {
       const sciName = plantIdData.crop.scientificName;
@@ -757,7 +761,7 @@ You MUST output valid JSON ONLY with exact fields:
     };
   }
 
-  _getBilingualMockGraphInsights(woredaName = 'Adama Zuria', _timeframe = 'DAILY') {
+  _getBilingualSynthesizedGraphInsights(woredaName = 'Adama Zuria', _timeframe = 'DAILY') {
     return {
       trendSummary: {
         en: `Rainfall in ${woredaName} has dropped 38% below the long-term seasonal median, indicating progressive soil moisture depletion.`,

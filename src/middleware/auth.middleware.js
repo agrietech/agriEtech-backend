@@ -2,21 +2,49 @@ const jwt = require('jsonwebtoken');
 const env = require('../config/env');
 const { isTokenBlacklisted } = require('../modules/auth/auth.service');
 
+// Build API key whitelist from environment (comma-separated)
+function buildApiKeySet() {
+  const raw = [
+    ...(env.SENSOR_API_KEYS || '').split(','),
+    ...(env.IOT_API_KEYS || '').split(','),
+  ];
+  return new Set(raw.map((k) => k.trim()).filter(Boolean));
+}
+
+let _apiKeySet = null;
+function getApiKeySet() {
+  if (!_apiKeySet) _apiKeySet = buildApiKeySet();
+  return _apiKeySet;
+}
+
 // Authenticate JWT bearer token or API Key
 async function authenticate(req, res, next) {
   try {
-    // 1. API Key authentication (x-api-key header or query parameter)
+    // 1. IoT Sensor API Key authentication — validated against whitelist
     const apiKey = req.headers['x-api-key'] || req.headers['api-key'] || req.query.apiKey || req.query.api_key;
     if (apiKey) {
-      req.user = { id: 'usr_admin_apikey', email: 'admin_apikey@agrietech.et', fullName: 'API Key Administrator', role: 'ADMIN' };
+      const validKeys = getApiKeySet();
+      if (!validKeys.size || !validKeys.has(apiKey)) {
+        return res.status(401).json({
+          success: false,
+          error: { message: 'Invalid API key', code: 'UNAUTHORIZED' },
+        });
+      }
+      // Grant sensor role only — not ADMIN — to IoT devices
+      req.user = { id: `iot_${apiKey.substring(0, 8)}`, role: 'SENSOR', fullName: 'IoT Sensor Device' };
       return next();
     }
 
-    // 2. Dev / Admin Bypass (Instant tokenless access when ADMIN_DEV_BYPASS=true)
-    if ((process.env.ADMIN_DEV_BYPASS === 'true' || process.env.ADMIN_BYPASS === 'true') && !req.headers.authorization) {
+    // 2. Dev Bypass — only in development environment
+    if (
+      process.env.NODE_ENV === 'development' &&
+      (process.env.ADMIN_DEV_BYPASS === 'true' || process.env.ADMIN_BYPASS === 'true') &&
+      !req.headers.authorization
+    ) {
       req.user = { id: 'usr_admin_01', email: 'admin@agrietech.et', fullName: 'System Administrator', role: 'ADMIN' };
       return next();
     }
+
 
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -79,7 +107,7 @@ function authorizeWoredaScope(paramName = 'woredaId') {
           error: { message: 'Authentication required', code: 'UNAUTHORIZED' },
         });
     }
-    if (req.user.role === 'ADMIN' || req.user.role === 'RESEARCHER') {
+    if (['ADMIN', 'RESEARCHER', 'REGIONAL_OFFICER', 'ZONAL_OFFICER'].includes(req.user.role)) {
       return next();
     }
     const requestedWoreda =
@@ -90,6 +118,34 @@ function authorizeWoredaScope(paramName = 'woredaId') {
         .json({
           success: false,
           error: { message: 'Woreda scope violation', code: 'OUT_OF_SCOPE' },
+        });
+    }
+    next();
+  };
+}
+
+// Scope authorization to region
+function authorizeRegionScope(paramName = 'regionId') {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res
+        .status(401)
+        .json({
+          success: false,
+          error: { message: 'Authentication required', code: 'UNAUTHORIZED' },
+        });
+    }
+    if (req.user.role === 'ADMIN' || req.user.role === 'RESEARCHER') {
+      return next();
+    }
+    const requestedRegion =
+      req.params?.[paramName] || req.query?.[paramName] || req.body?.[paramName];
+    if (req.user.regionId && requestedRegion && req.user.regionId !== requestedRegion) {
+      return res
+        .status(403)
+        .json({
+          success: false,
+          error: { message: 'Regional scope violation', code: 'OUT_OF_SCOPE' },
         });
     }
     next();
@@ -118,4 +174,6 @@ module.exports = {
   optionalAuthenticate,
   authorize,
   authorizeWoredaScope,
+  authorizeRegionScope,
 };
+

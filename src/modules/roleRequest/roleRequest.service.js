@@ -1,19 +1,27 @@
-const { prisma, isConnected } = require('../../config/db');
+const { prisma } = require('../../config/db');
 const { BadRequestError, NotFoundError, ForbiddenError } = require('../../utils/errors');
 
 /**
  * Role Request Service
- * Handles hierarchical role application and approval system
+ * Handles hierarchical role application and approval system across 1 National Admin + 6 Roles
  */
 
-// Requestable roles mapping
-const REQUESTABLE_ROLES = ['DEVELOPMENT_AGENT', 'WOREDA_OFFICER', 'RESEARCHER'];
+// 5 Requestable professional roles
+const REQUESTABLE_ROLES = [
+  'DEVELOPMENT_AGENT',
+  'WOREDA_OFFICER',
+  'ZONAL_OFFICER',
+  'REGIONAL_OFFICER',
+  'RESEARCHER',
+];
 
-// Role hierarchy for approval
+// Hierarchical delegation matrix for role approval
 const ROLE_HIERARCHY = {
-  DEVELOPMENT_AGENT: ['WOREDA_OFFICER', 'ADMIN'],
-  WOREDA_OFFICER: ['ADMIN'],
-  RESEARCHER: ['ADMIN'],
+  DEVELOPMENT_AGENT: ['WOREDA_OFFICER', 'ZONAL_OFFICER', 'REGIONAL_OFFICER', 'ADMIN'],
+  WOREDA_OFFICER: ['ZONAL_OFFICER', 'REGIONAL_OFFICER', 'ADMIN'],
+  ZONAL_OFFICER: ['REGIONAL_OFFICER', 'ADMIN'],
+  REGIONAL_OFFICER: ['ADMIN'],
+  RESEARCHER: ['REGIONAL_OFFICER', 'ADMIN'],
 };
 
 /**
@@ -84,13 +92,13 @@ async function submitRoleRequest(userId, requestData) {
       userEmail: user.email,
       currentRole: user.role,
       requestedRole,
-      regionId,
-      regionName,
-      zoneId,
-      zoneName,
-      woredaId,
-      woredaName,
-      kebeleName,
+      regionId: regionId || 'ET04',
+      regionName: regionName || 'Oromia',
+      zoneId: zoneId || 'zone_east_shewa',
+      zoneName: zoneName || 'East Shewa',
+      woredaId: woredaId || 'ET040101',
+      woredaName: woredaName || 'Adama Zuria',
+      kebeleName: kebeleName || null,
       staffIdNumber,
       organizationName,
       status: 'PENDING',
@@ -130,41 +138,43 @@ async function getUserRoleRequests(userId, filters = {}) {
 }
 
 /**
- * Get pending requests for review (hierarchical filtering)
+ * Get pending requests for review with hierarchical & geographical filtering
  */
 async function getPendingRequests(reviewerId, filters = {}) {
-  const { requestedRole, woredaId, limit = 20, offset = 0 } = filters;
+  const { requestedRole, woredaId, zoneId, regionId, limit = 50, offset = 0 } = filters;
 
   // Get reviewer details
   const reviewer = await prisma.user.findUnique({
     where: { id: reviewerId },
-    select: { role: true, woredaId: true },
+    select: { role: true, woredaId: true, zoneId: true, regionId: true },
   });
 
   if (!reviewer) {
     throw new NotFoundError('Reviewer not found');
   }
 
-  // Build where clause based on reviewer's role
   const where = { status: 'PENDING' };
 
-  // Apply role-based filtering
+  // Apply role-based and geographic scope filtering
   if (reviewer.role === 'WOREDA_OFFICER') {
-    // Woreda officers can only approve Development Agents in their woreda
+    // Woreda officers can only review Development Agents in their woreda
     where.requestedRole = 'DEVELOPMENT_AGENT';
-    if (reviewer.woredaId) {
-      where.woredaId = reviewer.woredaId;
-    }
+    if (reviewer.woredaId) where.woredaId = reviewer.woredaId;
+  } else if (reviewer.role === 'ZONAL_OFFICER') {
+    // Zonal officers can review Woreda Officers and Development Agents in their zone
+    where.requestedRole = { in: ['WOREDA_OFFICER', 'DEVELOPMENT_AGENT'] };
+    if (reviewer.zoneId) where.zoneId = reviewer.zoneId;
+  } else if (reviewer.role === 'REGIONAL_OFFICER') {
+    // Regional officers can review Zonal Officers, Woreda Officers, DAs, and Researchers in their region
+    where.requestedRole = { in: ['ZONAL_OFFICER', 'WOREDA_OFFICER', 'DEVELOPMENT_AGENT', 'RESEARCHER'] };
+    if (reviewer.regionId) where.regionId = reviewer.regionId;
   } else if (reviewer.role === 'ADMIN') {
-    // Admins can approve all requests
-    if (requestedRole) {
-      where.requestedRole = requestedRole;
-    }
-    if (woredaId) {
-      where.woredaId = woredaId;
-    }
+    // National admin can view and approve all requests across all levels
+    if (requestedRole) where.requestedRole = requestedRole;
+    if (woredaId) where.woredaId = woredaId;
+    if (zoneId) where.zoneId = zoneId;
+    if (regionId) where.regionId = regionId;
   } else {
-    // Other roles cannot review requests
     throw new ForbiddenError('You do not have permission to review role requests');
   }
 
@@ -201,7 +211,6 @@ async function getPendingRequests(reviewerId, filters = {}) {
  * Approve a role request
  */
 async function approveRoleRequest(requestId, reviewerId, reviewerName) {
-  // Get request
   const request = await prisma.roleRequest.findUnique({
     where: { id: requestId },
     include: {
@@ -219,17 +228,16 @@ async function approveRoleRequest(requestId, reviewerId, reviewerName) {
     throw new BadRequestError(`Request is already ${request.status.toLowerCase()}`);
   }
 
-  // Get reviewer details
   const reviewer = await prisma.user.findUnique({
     where: { id: reviewerId },
-    select: { role: true, woredaId: true },
+    select: { role: true, woredaId: true, zoneId: true, regionId: true },
   });
 
   if (!reviewer) {
     throw new NotFoundError('Reviewer not found');
   }
 
-  // Check if reviewer has permission to approve this request
+  // Check if reviewer's role is in the allowed approvers hierarchy
   const allowedApprovers = ROLE_HIERARCHY[request.requestedRole] || [];
   if (!allowedApprovers.includes(reviewer.role)) {
     throw new ForbiddenError(
@@ -237,14 +245,15 @@ async function approveRoleRequest(requestId, reviewerId, reviewerName) {
     );
   }
 
-  // Additional woreda-specific check for WOREDA_OFFICER reviewers
-  if (reviewer.role === 'WOREDA_OFFICER') {
-    if (reviewer.woredaId !== request.woredaId) {
-      throw new ForbiddenError('You can only approve requests from your own woreda');
-    }
-    if (request.requestedRole !== 'DEVELOPMENT_AGENT') {
-      throw new ForbiddenError('Woreda officers can only approve Development Agent requests');
-    }
+  // Enforce geographic boundary matching for subordinate reviewers
+  if (reviewer.role === 'WOREDA_OFFICER' && reviewer.woredaId && reviewer.woredaId !== request.woredaId) {
+    throw new ForbiddenError('You can only approve requests within your assigned Woreda');
+  }
+  if (reviewer.role === 'ZONAL_OFFICER' && reviewer.zoneId && reviewer.zoneId !== request.zoneId) {
+    throw new ForbiddenError('You can only approve requests within your assigned Zone');
+  }
+  if (reviewer.role === 'REGIONAL_OFFICER' && reviewer.regionId && reviewer.regionId !== request.regionId) {
+    throw new ForbiddenError('You can only approve requests within your assigned Region');
   }
 
   // Update request and user role in a transaction
@@ -260,14 +269,20 @@ async function approveRoleRequest(requestId, reviewerId, reviewerName) {
     }),
     prisma.user.update({
       where: { id: request.userId },
-      data: { role: request.requestedRole },
+      data: {
+        role: request.requestedRole,
+        regionId: request.regionId,
+        zoneId: request.zoneId,
+        woredaId: request.woredaId,
+        kebeleName: request.kebeleName,
+      },
     }),
     prisma.auditLog.create({
       data: {
         action: 'ROLE_REQUEST_APPROVED',
         adminId: reviewerId,
         adminEmail: reviewerName,
-        details: `Approved ${request.requestedRole} role for user ${request.userName} (${request.userId})`,
+        details: `Approved ${request.requestedRole} role for user ${request.userName} (${request.userId}) by ${reviewer.role}`,
       },
     }),
   ]);
@@ -279,7 +294,6 @@ async function approveRoleRequest(requestId, reviewerId, reviewerName) {
  * Reject a role request
  */
 async function rejectRoleRequest(requestId, reviewerId, reviewerName, rejectionReason) {
-  // Get request
   const request = await prisma.roleRequest.findUnique({
     where: { id: requestId },
   });
@@ -292,17 +306,15 @@ async function rejectRoleRequest(requestId, reviewerId, reviewerName, rejectionR
     throw new BadRequestError(`Request is already ${request.status.toLowerCase()}`);
   }
 
-  // Get reviewer details
   const reviewer = await prisma.user.findUnique({
     where: { id: reviewerId },
-    select: { role: true, woredaId: true },
+    select: { role: true, woredaId: true, zoneId: true, regionId: true },
   });
 
   if (!reviewer) {
     throw new NotFoundError('Reviewer not found');
   }
 
-  // Check if reviewer has permission
   const allowedApprovers = ROLE_HIERARCHY[request.requestedRole] || [];
   if (!allowedApprovers.includes(reviewer.role)) {
     throw new ForbiddenError(
@@ -310,16 +322,20 @@ async function rejectRoleRequest(requestId, reviewerId, reviewerName, rejectionR
     );
   }
 
-  // Additional woreda-specific check
-  if (reviewer.role === 'WOREDA_OFFICER' && reviewer.woredaId !== request.woredaId) {
-    throw new ForbiddenError('You can only review requests from your own woreda');
+  if (reviewer.role === 'WOREDA_OFFICER' && reviewer.woredaId && reviewer.woredaId !== request.woredaId) {
+    throw new ForbiddenError('You can only review requests within your assigned Woreda');
+  }
+  if (reviewer.role === 'ZONAL_OFFICER' && reviewer.zoneId && reviewer.zoneId !== request.zoneId) {
+    throw new ForbiddenError('You can only review requests within your assigned Zone');
+  }
+  if (reviewer.role === 'REGIONAL_OFFICER' && reviewer.regionId && reviewer.regionId !== request.regionId) {
+    throw new ForbiddenError('You can only review requests within your assigned Region');
   }
 
   if (!rejectionReason) {
     throw new BadRequestError('Rejection reason is required');
   }
 
-  // Update request
   const [updatedRequest] = await prisma.$transaction([
     prisma.roleRequest.update({
       where: { id: requestId },
@@ -345,7 +361,7 @@ async function rejectRoleRequest(requestId, reviewerId, reviewerName, rejectionR
 }
 
 /**
- * Get request statistics (admin only)
+ * Get request statistics across roles
  */
 async function getRoleRequestStats() {
   const [total, pending, approved, rejected, byRole] = await Promise.all([
@@ -376,4 +392,6 @@ module.exports = {
   rejectRoleRequest,
   getRoleRequestStats,
   REQUESTABLE_ROLES,
+  ROLE_HIERARCHY,
 };
+

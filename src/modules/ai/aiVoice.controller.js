@@ -1,4 +1,10 @@
 const aiVoiceService = require('./aiVoice.service');
+const logger = require('../../utils/logger');
+
+// Lazy-load farm service to avoid circular dependency
+function getFarmService() {
+  try { return require('../farms/farms.service'); } catch (_) { return null; }
+}
 
 async function handleVoiceInquiry(req, res, next) {
   try {
@@ -7,11 +13,33 @@ async function handleVoiceInquiry(req, res, next) {
     const audioFile = req.file || null;
     const lang = language || req.query.lang || req.user?.preferredLang || 'am';
 
+    // Fetch farmer context for personalized advisory (non-blocking)
+    let farmContext = null;
+    if (req.user?.id) {
+      try {
+        const farmService = getFarmService();
+        if (farmService && typeof farmService.getFarmsByUser === 'function') {
+          const farms = await farmService.getFarmsByUser(req.user.id, { limit: 3 });
+          if (farms && farms.length > 0) {
+            farmContext = farms.map((f) => ({
+              cropType: f.cropType || f.primaryCrop || 'unknown',
+              areaSqMeters: f.areaSqMeters || null,
+              woredaId: f.woredaId || null,
+            }));
+          }
+        }
+      } catch (farmErr) {
+        logger.debug(`[AIVoice] Farm context fetch failed (non-fatal): ${farmErr.message}`);
+      }
+    }
+
     const result = await aiVoiceService.processVoiceInquiry({
       userQuestion,
       audioTranscript,
       audioFile,
       language: lang,
+      farmContext,
+      userId: req.user?.id || null,
     });
 
     res.status(200).json({
@@ -59,3 +87,4 @@ module.exports = {
   handleTextToSpeech,
   handleStreamTts,
 };
+

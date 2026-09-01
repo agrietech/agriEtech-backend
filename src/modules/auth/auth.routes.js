@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const controller = require('./auth.controller');
 const { authenticate } = require('../../middleware/auth.middleware');
-const { authLimiter, userAuthLimiter } = require('../../middleware/rateLimiter');
+const { authLimiter, userAuthLimiter } = require('../../middleware/rate-limiter.middleware');
 
 // Role request routes
 const roleRequestRoutes = require('../roleRequest/roleRequest.routes');

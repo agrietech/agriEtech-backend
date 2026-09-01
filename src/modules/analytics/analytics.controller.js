@@ -1,8 +1,16 @@
 const analyticsService = require('./analytics.service');
 
-async function getDashboardSummary(_req, res, next) {
+async function getDashboardSummary(req, res, next) {
   try {
-    const data = await analyticsService.getDashboardSummary();
+    // ── RBAC: Pass user jurisdiction context for scoped statistics ──
+    const user = req.user || {};
+    const data = await analyticsService.getDashboardSummary({
+      role: (user.role || '').toUpperCase(),
+      userId: user.id || null,
+      woredaId: user.woredaId || null,
+      zoneId: user.zoneId || null,
+      regionId: user.regionId || null,
+    });
     res.status(200).json({ success: true, data });
   } catch (error) {
     next(error);
@@ -143,6 +151,127 @@ async function getWoredaAnalytics(req, res, next) {
   }
 }
 
+async function getHyperLocalProfile(req, res, next) {
+  try {
+    const { lat, lng, crop } = req.query;
+    if (!lat || !lng) {
+      return res.status(400).json({ success: false, error: 'Query parameters lat and lng are required' });
+    }
+    const data = await analyticsService.getHyperLocalProfile(Number(lat), Number(lng), crop);
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function getSoilProfile(req, res, next) {
+  try {
+    const { lat, lng, crop } = req.query;
+    if (!lat || !lng) {
+      return res.status(400).json({ success: false, error: 'Query parameters lat and lng are required' });
+    }
+    const data = await analyticsService.getSoilProfile(Number(lat), Number(lng), crop);
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function getDownscaledForecast(req, res, next) {
+  try {
+    const { lat, lng } = req.query;
+    if (!lat || !lng) {
+      return res.status(400).json({ success: false, error: 'Query parameters lat and lng are required' });
+    }
+    const data = await analyticsService.getDownscaledForecast(Number(lat), Number(lng));
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function getAgroZone(req, res, next) {
+  try {
+    const { lat, lng } = req.query;
+    if (!lat || !lng) {
+      return res.status(400).json({ success: false, error: 'Query parameters lat and lng are required' });
+    }
+    const data = await analyticsService.getAgroZone(Number(lat), Number(lng));
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function getSeismologyAnalytics(req, res, next) {
+  try {
+    const { lat = 8.55, lng = 39.30, woredaName } = req.query;
+    const data = await analyticsService.getSeismologyAssessment(Number(lat), Number(lng), woredaName);
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function getSoilDegradationAnalytics(req, res, next) {
+  try {
+    const { lat = 9.08, lng = 36.55, woredaName, slopePct, conservationPractice } = req.query;
+    const data = await analyticsService.getSoilDegradationAssessment(
+      Number(lat),
+      Number(lng),
+      woredaName,
+      slopePct ? Number(slopePct) : null,
+      conservationPractice || 'NONE'
+    );
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function getNaturalDisastersPrediction(req, res, next) {
+  try {
+    const { lat = 8.54, lng = 39.27, woredaName } = req.query;
+    const data = await analyticsService.getNaturalDisastersPrediction(Number(lat), Number(lng), woredaName);
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function exportData(req, res, next) {
+  try {
+    const { format = 'json', scope = 'summary' } = req.query;
+    const user = req.user;
+    const summary = await analyticsService.getDashboardSummary({
+      role: (user?.role || '').toUpperCase(),
+      userId: user?.id,
+      woredaId: user?.woredaId,
+      zoneId: user?.zoneId,
+      regionId: user?.regionId,
+    });
+
+    if (format === 'csv') {
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="agrietech_analytics_${Date.now()}.csv"`);
+      return res.status(200).send(`Export Timestamp,User Role,Jurisdiction\n${new Date().toISOString()},${user?.role || 'OFFICER'},${user?.woredaId || user?.zoneId || user?.regionId || 'NATIONAL'}`);
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        exportedAt: new Date().toISOString(),
+        exportedBy: user?.id,
+        role: user?.role,
+        scope,
+        analytics: summary,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   getDashboardSummary,
   getRegionalBreakdown,
@@ -157,4 +286,14 @@ module.exports = {
   getZoneAnalytics,
   getWoredaMap,
   getWoredaAnalytics,
+  getHyperLocalProfile,
+  getSoilProfile,
+  getDownscaledForecast,
+  getAgroZone,
+  getSeismologyAnalytics,
+  getSoilDegradationAnalytics,
+  getNaturalDisastersPrediction,
+  exportData,
 };
+
+

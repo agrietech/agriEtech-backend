@@ -3,6 +3,10 @@ const axios = require('axios');
 const app = require('../../src/app');
 const { FirebaseSensorConnector, normalizeSoilMoisture } = require('../../src/ingestion/connectors/firebaseSensorConnector');
 const sensorsService = require('../../src/modules/sensors/sensors.service');
+const { generateAccessToken } = require('../../src/modules/auth/auth.service');
+
+const adminUser = { id: 'usr_admin_01', phoneNumber: '+251911000000', role: 'ADMIN' };
+const adminToken = generateAccessToken(adminUser);
 
 // Mock axios for deterministic Firebase RTDB testing
 jest.mock('axios');
@@ -105,7 +109,9 @@ describe('Firebase Realtime Database Sensor Integration Suite', () => {
 
   describe('Sensors API - Firebase Endpoints Integration Tests', () => {
     it('GET /api/v1/sensors/firebase/status - should return current configured Firebase RTDB status', async () => {
-      const res = await request(app).get('/api/v1/sensors/firebase/status');
+      const res = await request(app)
+        .get('/api/v1/sensors/firebase/status')
+        .set('Authorization', `Bearer ${adminToken}`);
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.status).toBe('CONFIGURED');
@@ -146,6 +152,7 @@ describe('Firebase Realtime Database Sensor Integration Suite', () => {
 
       const res = await request(app)
         .post('/api/v1/sensors/firebase/sync')
+        .set('Authorization', `Bearer ${adminToken}`)
         .send({
           firebaseUrl: 'https://arduinomoisture-default-rtdb.firebaseio.com',
           apiKey: 'AIzaSyDt0I0HwHRlr1qpBHDh_fLlxmtXx3OqVG0',
@@ -163,7 +170,9 @@ describe('Firebase Realtime Database Sensor Integration Suite', () => {
         data: { test: 'ok' },
       });
 
-      const res = await request(app).get('/api/v1/sensors/firebase/test');
+      const res = await request(app)
+        .get('/api/v1/sensors/firebase/test')
+        .set('Authorization', `Bearer ${adminToken}`);
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.databaseUrl).toContain('arduinomoisture-default-rtdb.firebaseio.com');

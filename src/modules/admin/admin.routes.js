@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 const controller = require('./admin.controller');
 const roleRequestController = require('../roleRequest/roleRequest.controller');
-const { authenticate, authorize } = require('../../middleware/auth.middleware');
 
 // Admin authentication middleware (Supports API Keys, JWT Bearer Tokens, and browser sessions)
 const adminAuth = (req, res, next) => {
@@ -12,10 +11,15 @@ const adminAuth = (req, res, next) => {
   }
 
   // 1. API Key Authentication (x-api-key header or query param)
+  // Validates against ADMIN_API_KEYS env variable (comma-separated whitelist)
   const apiKey = req.headers['x-api-key'] || req.headers['api-key'] || req.query.apiKey || req.query.api_key;
   if (apiKey) {
-    req.user = { id: 'usr_admin_apikey', email: 'admin_apikey@agrietech.et', fullName: 'API Key Administrator', role: 'ADMIN' };
-    return next();
+    const validKeys = (process.env.ADMIN_API_KEYS || process.env.SENSOR_API_KEYS || '').split(',').map(k => k.trim()).filter(Boolean);
+    if (validKeys.length > 0 && validKeys.includes(apiKey)) {
+      req.user = { id: 'usr_admin_apikey', email: 'admin_apikey@agrietech.et', fullName: 'API Key Administrator', role: 'ADMIN' };
+      return next();
+    }
+    // Invalid API key — fall through to JWT auth instead of granting access
   }
 
   // 2. JWT Bearer Token Authentication
@@ -27,16 +31,26 @@ const adminAuth = (req, res, next) => {
       const jwt = require('jsonwebtoken');
       const env = require('../../config/env');
       const decoded = jwt.verify(token, env.JWT_SECRET);
-      if (decoded && (decoded.role === 'ADMIN' || decoded.role === 'WOREDA_OFFICER' || decoded.role === 'DEVELOPMENT_AGENT')) {
+      if (
+        decoded &&
+        (decoded.role === 'ADMIN' ||
+          decoded.role === 'REGIONAL_OFFICER' ||
+          decoded.role === 'ZONAL_OFFICER' ||
+          decoded.role === 'WOREDA_OFFICER' ||
+          decoded.role === 'DEVELOPMENT_AGENT')
+      ) {
         req.user = decoded;
         return next();
       }
-    } catch (_) {}
+    } catch (_) {
+      // Invalid JWT token fallback
+    }
   }
 
-  // 3. Default Administrative Session Context for web console
-  req.user = { id: 'usr_admin_01', email: 'admin@agrietech.et', fullName: 'System Administrator', role: 'ADMIN' };
-  return next();
+  return res.status(401).json({
+    success: false,
+    error: { message: 'Authentication required for administrative access', code: 'UNAUTHORIZED' },
+  });
 };
 
 // Public dashboard console view (serves HTML admin interface)

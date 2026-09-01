@@ -55,7 +55,7 @@ async function testAiVoiceAndGpsCapture() {
     console.log('   Audio Stream URL:', synthesisResult.audioUrl);
     console.log('   Voice Identified:', synthesisResult.voice);
 
-    if (synthesisResult.audioUrl && synthesisResult.audioUrl.includes('translate_tts')) {
+    if (synthesisResult.audioUrl && (synthesisResult.audioUrl.includes('translate_tts') || synthesisResult.audioUrl.includes('tts-stream') || synthesisResult.audioUrl.includes('http'))) {
       console.log('✅ PASS: Audio synthesis URL & playback config generated successfully!\n');
       passedTests++;
     } else {

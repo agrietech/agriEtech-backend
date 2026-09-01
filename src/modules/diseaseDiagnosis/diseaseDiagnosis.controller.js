@@ -2,10 +2,26 @@ const diseaseService = require('./diseaseDiagnosis.service');
 
 async function diagnose(req, res, next) {
   try {
-    const { farmId, cropType, imageUrl, imageBase64, image, language } = req.body;
+    const { farmId, cropType, imageUrl, imageBase64, image, language, async: isAsync } = req.body;
     const lang = language || req.query.lang || req.user?.preferredLang || 'en';
     const imageFile = req.file || null;
     const resolvedBase64 = imageBase64 || image || null;
+
+    // Support async job mode when requested (e.g. ?async=true or body.async=true)
+    const shouldRunAsync = isAsync === true || isAsync === 'true' || req.query.async === 'true';
+
+    if (shouldRunAsync) {
+      const job = await diseaseService.submitAsyncDiagnosis({
+        farmId,
+        cropType,
+        imageUrl,
+        imageFile,
+        imageBase64: resolvedBase64,
+        language: lang,
+      });
+      return res.status(202).json({ success: true, data: job });
+    }
+
     const data = await diseaseService.diagnoseCropImage({
       farmId,
       cropType,
@@ -15,6 +31,22 @@ async function diagnose(req, res, next) {
       language: lang,
     });
     res.status(201).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function getJobStatus(req, res, next) {
+  try {
+    const { jobId } = req.params;
+    const job = await diseaseService.getDiagnosisJobStatus(jobId);
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        error: { message: `Diagnosis job '${jobId}' not found`, code: 'JOB_NOT_FOUND' },
+      });
+    }
+    return res.status(200).json({ success: true, data: job });
   } catch (error) {
     next(error);
   }
@@ -41,6 +73,8 @@ async function getDiagnosesByFarm(req, res, next) {
 
 module.exports = {
   diagnose,
+  getJobStatus,
   getAllDiagnoses,
   getDiagnosesByFarm,
 };
+

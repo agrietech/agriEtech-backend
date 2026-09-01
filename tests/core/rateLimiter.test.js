@@ -1,7 +1,7 @@
 const express = require('express');
 const request = require('supertest');
-const { createRateLimiter } = require('../../src/middleware/rateLimiter');
-const errorHandler = require('../../src/middleware/errorHandler');
+const { createRateLimiter } = require('../../src/middleware/rate-limiter.middleware');
+const errorHandler = require('../../src/middleware/error-handler.middleware');
 
 function createRateLimitApp() {
   const app = express();

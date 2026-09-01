@@ -5,7 +5,6 @@ const redis = require('../../config/redis');
 const { getQueueStats, addJob } = require('../../ingestion/jobs/queue');
 const boundariesService = require('../boundaries/boundaries.service');
 const logger = require('../../utils/logger');
-const { BadRequestError } = require('../../utils/errors');
 const os = require('os');
 
 /**
@@ -34,7 +33,7 @@ async function logAuditAction(entry) {
 }
 
 /**
- * Get comprehensive administrative dashboard overview
+ * Get comprehensive administrative dashboard overview across 1 National Admin + 6 Roles
  */
 async function getOverview() {
   const memUsage = process.memoryUsage();
@@ -42,11 +41,13 @@ async function getOverview() {
 
   let totalUsers = 125;
   let roleDistribution = {
-    FARMER: 100,
-    DEVELOPMENT_AGENT: 15,
-    WOREDA_OFFICER: 5,
-    RESEARCHER: 3,
     ADMIN: 2,
+    REGIONAL_OFFICER: 6,
+    ZONAL_OFFICER: 18,
+    WOREDA_OFFICER: 45,
+    DEVELOPMENT_AGENT: 120,
+    RESEARCHER: 12,
+    FARMER: 950,
   };
   let totalFarms = 85;
   let totalSensors = 42;
@@ -111,11 +112,13 @@ async function getOverview() {
       recentAlerts = dbRecentAlerts;
 
       roleDistribution = {
-        FARMER: 0,
-        DEVELOPMENT_AGENT: 0,
-        WOREDA_OFFICER: 0,
-        RESEARCHER: 0,
         ADMIN: 0,
+        REGIONAL_OFFICER: 0,
+        ZONAL_OFFICER: 0,
+        WOREDA_OFFICER: 0,
+        DEVELOPMENT_AGENT: 0,
+        RESEARCHER: 0,
+        FARMER: 0,
       };
       usersByRole.forEach((r) => {
         roleDistribution[r.role] = r._count.id;
@@ -722,7 +725,7 @@ async function updateUser(userId, data, adminContext = {}) {
 
       // Update in-memory auth store
       if (authService.mockUsers) {
-        for (const [k, u] of authService.mockUsers.entries()) {
+        for (const [, u] of authService.mockUsers.entries()) {
           if (u.id === userId) {
             Object.assign(u, updateData, { updatedAt: new Date().toISOString() });
           }
@@ -738,7 +741,7 @@ async function updateUser(userId, data, adminContext = {}) {
   // Fallback update in-memory
   let target = null;
   if (authService.mockUsers) {
-    for (const [k, u] of authService.mockUsers.entries()) {
+    for (const [, u] of authService.mockUsers.entries()) {
       if (u.id === userId) {
         if (data.fullName) u.fullName = data.fullName;
         if (data.email) u.email = data.email;

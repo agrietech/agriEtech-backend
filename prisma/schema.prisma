@@ -14,6 +14,8 @@ enum Role {
   FARMER
   DEVELOPMENT_AGENT
   WOREDA_OFFICER
+  ZONAL_OFFICER
+  REGIONAL_OFFICER
   RESEARCHER
   ADMIN
 }
@@ -27,7 +29,17 @@ enum RoleRequestStatus {
 enum RequestableRole {
   DEVELOPMENT_AGENT
   WOREDA_OFFICER
+  ZONAL_OFFICER
+  REGIONAL_OFFICER
   RESEARCHER
+}
+
+enum AgroZone {
+  WURCH
+  DEGA
+  WEINA_DEGA
+  KOLLA
+  BEREHA
 }
 
 enum RiskLevel {
@@ -75,8 +87,13 @@ model User {
   resetPasswordToken    String?
   resetPasswordExpires  DateTime?
   verificationToken     String?
+  regionId              String?
+  zoneId                String?
   woredaId              String?
   woreda                Woreda?           @relation(fields: [woredaId], references: [id])
+  kebeleId              String?
+  kebele                Kebele?           @relation(fields: [kebeleId], references: [id])
+  kebeleName            String?
   farms                 Farm[]
   alertLogs             AlertDeliveryLog[]
   roleRequests          RoleRequest[]     @relation("RoleRequestUser")
@@ -86,6 +103,8 @@ model User {
 
   @@index([phoneNumber])
   @@index([email])
+  @@index([regionId])
+  @@index([zoneId])
   @@index([woredaId])
 }
 
@@ -123,6 +142,7 @@ model Woreda {
   geojson          Json?             // Polygon boundary
   centerLat        Float
   centerLng        Float
+  kebeles          Kebele[]
   farms            Farm[]
   users            User[]
   satelliteObs     SatelliteObservation[]
@@ -135,12 +155,40 @@ model Woreda {
   @@index([centerLat, centerLng])
 }
 
+model Kebele {
+  id               String            @id @default(uuid())
+  woredaId         String
+  woreda           Woreda            @relation(fields: [woredaId], references: [id], onDelete: Cascade)
+  nameEn           String
+  nameAm           String?
+  nameOm           String?
+  pcode            String?           @unique
+  elevationMeters  Float?
+  agroZone         AgroZone?         @default(WEINA_DEGA)
+  dominantSoilType String?
+  soilPh           Float?
+  centerLat        Float
+  centerLng        Float
+  geojson          Json?
+  ftcName          String?
+  farms            Farm[]
+  users            User[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@index([woredaId])
+  @@index([centerLat, centerLng])
+  @@index([agroZone])
+}
+
 model Farm {
   id               String            @id @default(uuid())
   userId           String
   user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   woredaId         String
   woreda           Woreda            @relation(fields: [woredaId], references: [id])
+  kebeleId         String?
+  kebele           Kebele?           @relation(fields: [kebeleId], references: [id])
   farmName         String
   areaHectares     Float?
   polygonGeojson   Json?
@@ -155,6 +203,7 @@ model Farm {
 
   @@index([userId])
   @@index([woredaId])
+  @@index([kebeleId])
   @@index([latitude, longitude])
 }
 

@@ -2,7 +2,11 @@ const { prisma, isConnected } = require('../../config/db');
 const { calculateCompositeRisk } = require('../../processing/riskAggregator');
 const { broadcastRiskUpdate } = require('../../delivery/websocket/riskAssessmentChannel');
 const { getWoredaCoordinates } = require('../boundaries/boundaries.service');
+const redis = require('../../config/redis');
 const logger = require('../../utils/logger');
+
+const RISK_CACHE_TTL = 30 * 60; // 30 minutes
+function riskCacheKey(woredaId) { return `risk:latest:${woredaId}`; }
 
 const inMemoryRiskAssessments = new Map();
 
@@ -82,6 +86,13 @@ async function evaluateWoredaRisk(woredaId, hazardScores = {}) {
     inMemoryRiskAssessments.set(record.id, record);
   }
 
+  // Invalidate Redis cache for this woreda after new computation
+  try {
+    if (redis.isConnected && redis.isConnected()) {
+      await redis.del(riskCacheKey(woredaId));
+    }
+  } catch (_cacheErr) { /* non-fatal */ }
+
   // Broadcast via WebSocket
   try {
     broadcastRiskUpdate(woredaId, { ...record, recommendations });
@@ -111,15 +122,35 @@ async function getLatestAssessments(limit = 20) {
   return Array.from(inMemoryRiskAssessments.values()).slice(0, limit);
 }
 
-// Get assessments by woreda
+// Get assessments by woreda (with Redis caching)
 async function getAssessmentsByWoreda(woredaId) {
+  // 1. Check Redis cache first
+  if (woredaId && redis.isConnected && redis.isConnected()) {
+    try {
+      const cached = await redis.get(riskCacheKey(woredaId));
+      if (cached) {
+        logger.debug(`[RiskAssessments] Cache HIT for woreda ${woredaId}`);
+        return JSON.parse(cached);
+      }
+    } catch (_cacheErr) { /* fall through to DB */ }
+  }
+
+  // 2. Query database
   if (isConnected()) {
     try {
       if (!woredaId) return [];
-      return await prisma.riskAssessment.findMany({
+      const rows = await prisma.riskAssessment.findMany({
         where: { woredaId },
         orderBy: { assessedAt: 'desc' },
       });
+
+      // Cache the result
+      if (rows.length > 0 && redis.isConnected && redis.isConnected()) {
+        try {
+          await redis.setex(riskCacheKey(woredaId), RISK_CACHE_TTL, JSON.stringify(rows));
+        } catch (_cacheErr) { /* non-fatal */ }
+      }
+      return rows;
     } catch (_err) {
       // Fallback
     }

@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { body } = require('express-validator');
 const controller = require('./farms.controller');
-const validate = require('../../middleware/validate');
+const validate = require('../../middleware/validate.middleware');
 const { authenticate } = require('../../middleware/auth.middleware');
 
 // POST /api/v1/farms – Register a new farm

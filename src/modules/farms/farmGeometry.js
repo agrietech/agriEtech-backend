@@ -3,7 +3,6 @@ const kinks = require('@turf/kinks').default || require('@turf/kinks');
 const booleanWithin = require('@turf/boolean-within').default || require('@turf/boolean-within');
 const booleanPointInPolygon = require('@turf/boolean-point-in-polygon').default || require('@turf/boolean-point-in-polygon');
 const centroid = require('@turf/centroid').default || require('@turf/centroid');
-const logger = require('../../utils/logger');
 
 // Ethiopian geographic bounding box (approximate)
 const ETHIOPIA_BOUNDS = { minLat: 3.0, maxLat: 15.5, minLng: 32.5, maxLng: 48.5 };
@@ -119,6 +118,34 @@ function asPolygon(geojson, label) {
   return polygonFeature;
 }
 
+// In-memory cache for parsed administrative geometries to avoid repeated parsing overhead
+const parsedGeometryCache = new Map();
+
+/**
+ * Fast 2D Bounding Box calculation for a GeoJSON polygon
+ */
+function getBBox(feature) {
+  const coords = feature.geometry.type === 'MultiPolygon'
+    ? feature.geometry.coordinates.flat(2)
+    : feature.geometry.coordinates[0];
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const [lng, lat] of coords) {
+    if (lng < minX) minX = lng;
+    if (lng > maxX) maxX = lng;
+    if (lat < minY) minY = lat;
+    if (lat > maxY) maxY = lat;
+  }
+  return [minX, minY, maxX, maxY];
+}
+
+/**
+ * Check if two 2D bounding boxes overlap
+ */
+function bboxOverlap(b1, b2) {
+  return b1[0] <= b2[2] && b1[2] >= b2[0] && b1[1] <= b2[3] && b1[3] >= b2[1];
+}
+
 /**
  * Validate the incoming farm polygon GeoJSON.
  */
@@ -128,10 +155,26 @@ function validateFarmPolygon(geojson) {
 
 /**
  * Assert that the farm polygon is contained within the woreda boundary.
- * Supports Polygon and MultiPolygon Woredas, with centroid fallback for GPS points.
+ * Uses high-performance bounding box pre-filtering before spatial polygon execution.
  */
 function assertContainedByWoreda(farmPolygon, woredaGeojson) {
-  const woredaFeature = asPolygon(woredaGeojson, 'Woreda boundary');
+  const cacheKey = typeof woredaGeojson === 'string' ? woredaGeojson : JSON.stringify(woredaGeojson).substring(0, 100);
+  let woredaFeature = parsedGeometryCache.get(cacheKey);
+
+  if (!woredaFeature) {
+    woredaFeature = asPolygon(woredaGeojson, 'Woreda boundary');
+    if (parsedGeometryCache.size > 200) parsedGeometryCache.clear();
+    parsedGeometryCache.set(cacheKey, woredaFeature);
+  }
+
+  // Fast bounding box intersection pre-check
+  const farmBbox = getBBox(farmPolygon);
+  const woredaBbox = getBBox(woredaFeature);
+
+  if (!bboxOverlap(farmBbox, woredaBbox)) {
+    throw createHttpError('Farm boundary coordinates do not intersect the selected woreda region');
+  }
+
   const isWithin = booleanWithin(farmPolygon, woredaFeature);
   if (isWithin) return true;
 
@@ -144,5 +187,12 @@ function assertContainedByWoreda(farmPolygon, woredaGeojson) {
   throw createHttpError('Farm boundary must be entirely within the selected woreda boundary');
 }
 
-module.exports = { assertContainedByWoreda, createHttpError, validateFarmPolygon };
+module.exports = {
+  assertContainedByWoreda,
+  createHttpError,
+  validateFarmPolygon,
+  getBBox,
+  bboxOverlap,
+};
+
 

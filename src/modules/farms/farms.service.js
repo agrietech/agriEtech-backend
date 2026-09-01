@@ -1,4 +1,5 @@
 const { prisma, isConnected } = require('../../config/db');
+const logger = require('../../utils/logger');
 const centroid = require('@turf/centroid').default || require('@turf/centroid');
 const { getCoord } = require('@turf/invariant');
 const boundariesService = require('../boundaries/boundaries.service');
@@ -101,7 +102,7 @@ async function createFarm({ userId, farmName, primaryCrop, areaHectares, woredaI
   }
 
   // Step 3 – retrieve woreda and its boundary
-  const woreda = await boundariesService.getWoredaById(resolvedWoredaId);
+  let woreda = await boundariesService.getWoredaById(resolvedWoredaId);
   if (!woreda) {
     throw createHttpError('Selected woreda was not found', 404);
   }
@@ -172,13 +173,17 @@ async function createFarm({ userId, farmName, primaryCrop, areaHectares, woredaI
 // Get farms for authenticated user
 async function getFarmsByUser(userId) {
   if (isConnected()) {
-    return await prisma.farm.findMany({
-      where: { userId },
-      include: {
-        woreda: { select: { id: true, nameEn: true, nameAm: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    try {
+      return await prisma.farm.findMany({
+        where: { userId },
+        include: {
+          woreda: { select: { id: true, nameEn: true, nameAm: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+    } catch (err) {
+      logger.warn(`[FarmsService] DB farm query fallback to cache: ${err.message}`);
+    }
   }
 
   const userFarms = Array.from(mockFarms.values()).filter(
@@ -190,14 +195,18 @@ async function getFarmsByUser(userId) {
 // Get farm by ID
 async function getFarmById(id) {
   if (isConnected()) {
-    const found = await prisma.farm.findUnique({
-      where: { id },
-      include: {
-        woreda: { select: { id: true, nameEn: true, nameAm: true } },
-        sensors: { select: { id: true, hardwareId: true, sensorType: true, isActive: true } },
-      },
-    });
-    if (found) return found;
+    try {
+      const found = await prisma.farm.findUnique({
+        where: { id },
+        include: {
+          woreda: { select: { id: true, nameEn: true, nameAm: true } },
+          sensors: { select: { id: true, hardwareId: true, sensorType: true, isActive: true } },
+        },
+      });
+      if (found) return found;
+    } catch (err) {
+      logger.warn(`[FarmsService] DB farm detail query fallback to cache: ${err.message}`);
+    }
     return mockFarms.get(id) || null;
   }
 

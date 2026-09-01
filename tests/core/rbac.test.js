@@ -6,7 +6,7 @@ const {
   authorizeWoredaScope,
 } = require('../../src/middleware/auth.middleware');
 const { generateAccessToken } = require('../../src/modules/auth/auth.service');
-const errorHandler = require('../../src/middleware/errorHandler');
+const errorHandler = require('../../src/middleware/error-handler.middleware');
 
 // Create test app with RBAC routes
 function createTestApp() {

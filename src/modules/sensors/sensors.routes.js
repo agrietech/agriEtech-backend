@@ -1,9 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const controller = require('./sensors.controller');
-const { telemetryLimiter } = require('../../middleware/rateLimiter');
+const { telemetryLimiter } = require('../../middleware/rate-limiter.middleware');
 
-const { authenticate } = require('../../middleware/auth.middleware');
+const { authenticate, authorize } = require('../../middleware/auth.middleware');
 
 function authenticateSensor(req, res, next) {
   if (process.env.NODE_ENV === 'test') return next();
@@ -25,16 +25,18 @@ router.get('/farmer/:userId', authenticate, controller.getFarmerSensors);
 router.post('/claim', authenticate, controller.claimSensor);
 
 router.post('/telemetry', authenticateSensor, telemetryLimiter, controller.recordTelemetry);
-router.get('/farm/:farmId', controller.getSensors);
-router.post('/', controller.registerSensor);
-router.get('/', controller.getSensors);
+router.get('/farm/:farmId', authenticate, controller.getSensors);
+router.post('/', authenticate, authorize('DEVELOPMENT_AGENT', 'WOREDA_OFFICER', 'ZONAL_OFFICER', 'REGIONAL_OFFICER', 'ADMIN'), controller.registerSensor);
+router.get('/', authenticate, controller.getSensors);
 
 // Firebase Realtime DB & Firestore Sensor Ingestion
-router.get('/firebase/status', controller.getFirebaseStatus);
-router.get('/firebase/test', controller.testFirebaseConnection);
-router.get('/firebase/sync', controller.syncFirebase);
-router.post('/firebase/sync', controller.syncFirebase);
-router.post('/firebase/stream', controller.receiveFirebaseStream);
-router.post('/firebase/webhook', controller.receiveFirebaseStream);
+// Management endpoints require officer/admin JWT authentication
+router.get('/firebase/status', authenticate, authorize('WOREDA_OFFICER', 'ZONAL_OFFICER', 'REGIONAL_OFFICER', 'ADMIN'), controller.getFirebaseStatus);
+router.get('/firebase/test', authenticate, authorize('ADMIN'), controller.testFirebaseConnection);
+router.get('/firebase/sync', authenticate, authorize('WOREDA_OFFICER', 'ZONAL_OFFICER', 'REGIONAL_OFFICER', 'ADMIN'), controller.syncFirebase);
+router.post('/firebase/sync', authenticate, authorize('WOREDA_OFFICER', 'ZONAL_OFFICER', 'REGIONAL_OFFICER', 'ADMIN'), controller.syncFirebase);
+// Webhook/stream endpoints authenticate via sensor API key (IoT device push)
+router.post('/firebase/stream', authenticateSensor, controller.receiveFirebaseStream);
+router.post('/firebase/webhook', authenticateSensor, controller.receiveFirebaseStream);
 
 module.exports = router;

@@ -14,8 +14,8 @@ const {
 } = require('../../delivery/email/emailDispatcher');
 const logger = require('../../utils/logger');
 
-// In-memory mock users map for tests & offline fallback
-const mockUsers = new Map([
+// In-memory fallback user registry for development & offline execution
+const inMemoryUserRegistry = new Map([
   [
     'farmer@agrietech.et',
     {
@@ -32,6 +32,7 @@ const mockUsers = new Map([
     },
   ],
 ]);
+const mockUsers = inMemoryUserRegistry;
 
 // Token blacklist - Redis-backed for persistence
 const redis = require('../../config/redis');
@@ -68,6 +69,8 @@ function generateAccessToken(user) {
       phoneNumber: user.phoneNumber || null,
       role: user.role,
       woredaId: user.woredaId || null,
+      zoneId: user.zoneId || null,
+      regionId: user.regionId || null,
       type: 'access',
     },
     env.JWT_SECRET,
@@ -88,10 +91,15 @@ function generateRefreshToken(user) {
   );
 }
 
-const VALID_ROLES = ['FARMER', 'DEVELOPMENT_AGENT', 'WOREDA_OFFICER', 'RESEARCHER', 'ADMIN'];
+const VALID_ROLES = ['FARMER', 'DEVELOPMENT_AGENT', 'WOREDA_OFFICER', 'ZONAL_OFFICER', 'REGIONAL_OFFICER', 'RESEARCHER', 'ADMIN'];
+
+// Roles that require admin approval — cannot be self-assigned at registration
+const PRIVILEGED_ROLES = ['DEVELOPMENT_AGENT', 'WOREDA_OFFICER', 'ZONAL_OFFICER', 'REGIONAL_OFFICER', 'RESEARCHER', 'ADMIN'];
 
 /**
- * Register a new user with Email (Phone Number Optional)
+ * Register a new user with Email (Phone Number Optional).
+ * Self-registration is restricted to the FARMER role.
+ * Privileged roles must be requested via POST /auth/role-requests after registration.
  */
 async function registerUser({
   email,
@@ -102,14 +110,22 @@ async function registerUser({
   password,
   role = 'FARMER',
   woredaId,
+  zoneId: _zoneId,
+  regionId: _regionId,
   preferredLang = 'en',
 }) {
   const resolvedEmail = (email || '').trim().toLowerCase() || null;
   const resolvedPhone = (phoneNumber || phone || '').trim() || null;
   const resolvedName = (fullName || name || '').trim();
 
-  // Normalize role to valid Prisma Enum (e.g. 'farmer' -> 'FARMER')
+  // Normalize role — reject privileged role self-assignment
   const requestedRole = (role || 'FARMER').toString().trim().toUpperCase();
+  if (PRIVILEGED_ROLES.includes(requestedRole)) {
+    throw new BadRequestError(
+      `Self-registration as '${requestedRole}' is not permitted. ` +
+      'Register as FARMER first, then submit a role upgrade request via /auth/role-requests.'
+    );
+  }
   const resolvedRole = VALID_ROLES.includes(requestedRole) ? requestedRole : 'FARMER';
 
   if (!resolvedName || !password) {
@@ -125,8 +141,16 @@ async function registerUser({
     throw new BadRequestError('Please provide a valid email address');
   }
 
-  if (password.length < 6) {
-    throw new BadRequestError('Password must be at least 6 characters long');
+  if (password.length < 8) {
+    throw new BadRequestError('Password must be at least 8 characters long');
+  }
+
+  if (!/[A-Z]/.test(password)) {
+    throw new BadRequestError('Password must contain at least one uppercase letter');
+  }
+
+  if (!/[0-9]/.test(password)) {
+    throw new BadRequestError('Password must contain at least one number');
   }
 
   const passwordHash = await bcrypt.hash(password, 10);
@@ -173,15 +197,17 @@ async function registerUser({
       throw dbErr;
     }
 
-    // Send verification email asynchronously (non-blocking)
-    setImmediate(async () => {
-      try {
-        await _sendVerificationEmail(resolvedEmail, verificationToken);
-        logger.info(`[Auth Service] Verification email sent to ${resolvedEmail}`);
-      } catch (emailErr) {
-        logger.warn(`[Auth Service] Verification email failed: ${emailErr.message}`);
-      }
-    });
+    // Send verification email asynchronously if real email was provided (non-blocking)
+    if (resolvedEmail && !resolvedEmail.includes('@phone.')) {
+      setImmediate(async () => {
+        try {
+          await _sendVerificationEmail(resolvedEmail, verificationToken);
+          logger.info(`[Auth Service] Verification email dispatched to ${resolvedEmail}`);
+        } catch (emailErr) {
+          logger.warn(`[Auth Service] Verification email notice: ${emailErr.message}`);
+        }
+      });
+    }
 
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
@@ -208,7 +234,7 @@ async function registerUser({
     phoneNumber: resolvedPhone || null,
     fullName: resolvedName,
     passwordHash,
-    role,
+    role: resolvedRole,
     isEmailVerified: false,
     woredaId: woredaId || null,
     preferredLang,
@@ -220,15 +246,17 @@ async function registerUser({
   if (resolvedPhone) mockUsers.set(resolvedPhone, fallbackUser);
   mockUsers.set(fallbackUser.id, fallbackUser);
 
-  // Send verification email asynchronously (non-blocking)
-  setImmediate(async () => {
-    try {
-      await _sendVerificationEmail(resolvedEmail, verificationToken);
-      logger.info(`[Auth Service] Mock verification email sent to ${resolvedEmail}`);
-    } catch (emailErr) {
-      logger.warn(`[Auth Service] Mock verification email failed: ${emailErr.message}`);
-    }
-  });
+  // Send verification email asynchronously if real email was provided (non-blocking)
+  if (resolvedEmail && !resolvedEmail.includes('@phone.')) {
+    setImmediate(async () => {
+      try {
+        await _sendVerificationEmail(resolvedEmail, verificationToken);
+        logger.info(`[Auth Service] Mock verification email sent to ${resolvedEmail}`);
+      } catch (emailErr) {
+        logger.warn(`[Auth Service] Mock verification email failed: ${emailErr.message}`);
+      }
+    });
+  }
 
   const accessToken = generateAccessToken(fallbackUser);
   const refreshToken = generateRefreshToken(fallbackUser);
@@ -241,9 +269,15 @@ async function registerUser({
   };
 }
 
+// ── Login Brute-Force Protection ──────────────────────────────────────
+const loginAttemptsMap = new Map(); // key: normalizedIdentifier → { count, lockedUntil }
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOGIN_LOCKOUT_MS = 15 * 60 * 1000; // 15 minutes
+
 /**
  * User login with Email (Primary Method)
  * Phone number login still supported for backward compatibility but email is preferred
+ * Includes brute-force rate limiting: 5 failed attempts → 15-minute lockout
  */
 async function loginUser({ email, phoneNumber, phone, identifier, password }) {
   const rawIdentifier = (email || identifier || phoneNumber || phone || '').trim();
@@ -253,6 +287,21 @@ async function loginUser({ email, phoneNumber, phone, identifier, password }) {
   }
 
   const normalizedIdentifier = rawIdentifier.toLowerCase();
+
+  // ── Brute-force check ──
+  const attemptRecord = loginAttemptsMap.get(normalizedIdentifier);
+  if (attemptRecord && attemptRecord.lockedUntil) {
+    if (Date.now() < attemptRecord.lockedUntil) {
+      const remainingMinutes = Math.ceil((attemptRecord.lockedUntil - Date.now()) / 60000);
+      throw new BadRequestError(
+        `Account temporarily locked due to too many failed login attempts. ` +
+        `Please try again in ${remainingMinutes} minute(s).`
+      );
+    }
+    // Lockout expired — reset
+    loginAttemptsMap.delete(normalizedIdentifier);
+  }
+
   let user = null;
 
   if (isConnected()) {
@@ -276,17 +325,18 @@ async function loginUser({ email, phoneNumber, phone, identifier, password }) {
   }
 
   if (!user) {
-    user = mockUsers.get(normalizedEmail);
-  }
-
-  if (!user) {
+    _recordLoginFailure(normalizedIdentifier);
     throw new UnauthorizedError('Invalid email or password');
   }
 
   const isMatch = await bcrypt.compare(password, user.passwordHash || '').catch(() => false);
   if (!isMatch) {
+    _recordLoginFailure(normalizedIdentifier);
     throw new UnauthorizedError('Invalid email or password');
   }
+
+  // ── Successful login — clear any failure records ──
+  loginAttemptsMap.delete(normalizedIdentifier);
 
   const accessToken = generateAccessToken(user);
   const refreshToken = generateRefreshToken(user);
@@ -297,6 +347,17 @@ async function loginUser({ email, phoneNumber, phone, identifier, password }) {
     accessToken,
     refreshToken,
   };
+}
+
+/** Record a failed login attempt and enforce lockout after MAX_LOGIN_ATTEMPTS */
+function _recordLoginFailure(identifier) {
+  const record = loginAttemptsMap.get(identifier) || { count: 0, lockedUntil: null };
+  record.count += 1;
+  if (record.count >= MAX_LOGIN_ATTEMPTS) {
+    record.lockedUntil = Date.now() + LOGIN_LOCKOUT_MS;
+    logger.warn(`[Auth Service] Account locked for 15 minutes after ${record.count} failed attempts: ${identifier}`);
+  }
+  loginAttemptsMap.set(identifier, record);
 }
 
 /**
@@ -323,9 +384,10 @@ async function requestPasswordReset(email) {
     user = mockUsers.get(normalizedEmail);
   }
 
-  // Generate a secure 6-digit numeric OTP code (e.g. 749201)
+  // Generate a secure 6-digit numeric OTP code (e.g. 749201) with 5-minute validation time
   const resetToken = crypto.randomInt(100000, 999999).toString();
-  const resetExpires = new Date(Date.now() + 3600000); // 1 hour
+  const AUTH_VALIDATION_TTL_MS = 5 * 60 * 1000; // Exactly 5 minutes authentication validation time
+  const resetExpires = new Date(Date.now() + AUTH_VALIDATION_TTL_MS);
   const targetEmail = user?.email || normalizedEmail;
   const resetLink = `${env.APP_URL}/reset-password?token=${resetToken}&email=${encodeURIComponent(targetEmail)}`;
 
@@ -347,29 +409,34 @@ async function requestPasswordReset(email) {
     user.resetPasswordToken = resetToken;
     user.resetPasswordExpires = resetExpires;
 
-    // Send password reset email asynchronously (non-blocking)
-    setImmediate(async () => {
-      try {
-        await sendPasswordResetEmail(user.email, resetToken, resetLink);
-        logger.info(`[Auth Service] Password reset code sent to ${user.email}`);
-      } catch (emailErr) {
-        logger.warn(`[Auth Service] Password reset email failed: ${emailErr.message}`);
-      }
-    });
+    // Send password reset email asynchronously if user has a real email (non-blocking)
+    if (user.email && !user.email.includes('@phone.')) {
+      setImmediate(async () => {
+        try {
+          await sendPasswordResetEmail(user.email, resetToken, resetLink);
+          logger.info(`[Auth Service] Password reset code sent to ${user.email} (valid for 5 mins)`);
+        } catch (emailErr) {
+          logger.warn(`[Auth Service] Password reset email failed: ${emailErr.message}`);
+        }
+      });
+    }
   }
 
   return {
-    message: 'If an account exists with this email, a 6-digit password reset code has been sent.',
+    message: 'If an account exists with this email, a 6-digit password reset code has been sent (valid for 5 minutes).',
     token: resetToken,
     code: resetToken,
+    expiresInSeconds: 300,
     resetLink,
   };
 }
 
 const forgotPassword = requestPasswordReset;
 
+const resetAttemptsMap = new Map(); // token -> failureCount
+
 /**
- * Reset Password with 6-Digit Code or Token
+ * Reset Password with 6-Digit Code or Secure Token (with Brute-Force Rate Limiting)
  */
 async function resetPassword({ token, code, resetCode, newPassword }) {
   const resolvedToken = (token || code || resetCode || '').toString().trim();
@@ -379,6 +446,13 @@ async function resetPassword({ token, code, resetCode, newPassword }) {
 
   if (newPassword.length < 6) {
     throw new BadRequestError('Password must be at least 6 characters long');
+  }
+
+  // Brute force protection: maximum 5 attempts per token
+  const attempts = resetAttemptsMap.get(resolvedToken) || 0;
+  if (attempts >= 5) {
+    resetAttemptsMap.delete(resolvedToken);
+    throw new BadRequestError('Too many invalid attempts. For security, this reset token has been invalidated. Please request a new code.');
   }
 
   let user = null;
@@ -410,8 +484,12 @@ async function resetPassword({ token, code, resetCode, newPassword }) {
   }
 
   if (!user) {
+    resetAttemptsMap.set(resolvedToken, attempts + 1);
     throw new BadRequestError('Password reset code is invalid or has expired');
   }
+
+  // Clear attempts on success
+  resetAttemptsMap.delete(resolvedToken);
 
   const newHash = await bcrypt.hash(newPassword, 10);
 
@@ -680,7 +758,7 @@ async function getUserProfile(userId) {
     }
   }
 
-  for (const u of mockUsers.values()) {
+  for (const u of inMemoryUserRegistry.values()) {
     if (u.id === userId) return sanitizeUser(u);
   }
 
@@ -737,5 +815,6 @@ module.exports = {
   getUserProfile,
   updatePassword,
   isTokenBlacklisted,
+  inMemoryUserRegistry,
   mockUsers,
 };

@@ -1,35 +1,8 @@
 
-// Real-time Ethiopian regional centroids for live weather & NDVI computation
-const ETHIOPIA_REGIONAL_CENTROIDS = [
-  { name: 'Oromia', code: 'ET04', lat: 8.54, lng: 39.27 },
-  { name: 'Amhara', code: 'ET03', lat: 11.59, lng: 37.39 },
-  { name: 'Tigray', code: 'ET01', lat: 13.49, lng: 39.47 },
-  { name: 'Sidama', code: 'ET10', lat: 7.05, lng: 38.47 },
-  { name: 'Somali', code: 'ET05', lat: 9.35, lng: 42.80 },
-  { name: 'Afar', code: 'ET02', lat: 11.75, lng: 41.00 },
-  { name: 'South Ethiopia', code: 'ET07', lat: 6.85, lng: 37.75 },
-  { name: 'Benishangul-Gumuz', code: 'ET06', lat: 10.06, lng: 34.54 },
-  { name: 'Gambela', code: 'ET12', lat: 8.25, lng: 34.58 },
-  { name: 'Harari / Dire Dawa', code: 'ET13', lat: 9.60, lng: 41.86 },
-];
-
-async function getLiveRegionalWeatherData(lat, lng) {
-  try {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,precipitation&daily=precipitation_sum&timezone=auto`;
-    const res = await fetch(url);
-    const data = await res.json();
-    const current = data.current || {};
-    const dailyRain = data.daily?.precipitation_sum?.[0] || 0.0;
-    return {
-      temp: current.temperature_2m || 22.0,
-      humidity: current.relative_humidity_2m || 55.0,
-      rain: dailyRain,
-    };
-  } catch (_) {
-    return { temp: 22.0, humidity: 55.0, rain: 0.0 };
-  }
-}
-
+const {
+  ETHIOPIA_REGIONAL_CENTROIDS,
+  getLiveRegionalWeatherData,
+} = require('./services/regionalWeather.service');
 const { prisma, isConnected } = require('../../config/db');
 const openRouterClient = require('../../utils/openRouterClient');
 
@@ -43,7 +16,9 @@ const getDynamicFallbackSummary = async () => {
       farmCount = await prisma.farm.count();
       sensorCount = await prisma.sensor.count();
       alertCount = await prisma.alert.count({ where: { status: 'ACTIVE' } });
-    } catch (_) {}
+    } catch (_) {
+      // In-memory fallback on database count error
+    }
   }
   const weather = await getLiveRegionalWeatherData(11.59, 37.39);
   return {
@@ -254,7 +229,9 @@ async function getRegionalBreakdown() {
           regFarms = await prisma.farm.count({
             where: { woreda: { zone: { region: { code: reg.code } } } },
           });
-        } catch (_) {}
+        } catch (_) {
+          // Regional farm count query fallback
+        }
       }
       const w = await getLiveRegionalWeatherData(reg.lat, reg.lng);
       return {
@@ -1166,6 +1143,89 @@ async function getWoredaAnalytics(woredaId) {
   }
 }
 
+const hyperLocalAgronomyEngine = require('../../processing/hyperLocalAgronomyEngine');
+
+/**
+ * Get comprehensive hyper-local agronomy profile for any latitude & longitude
+ */
+async function getHyperLocalProfile(lat, lng, crop = 'TEFF') {
+  return await hyperLocalAgronomyEngine.computeHyperLocalProfile({ lat, lng, crop });
+}
+
+/**
+ * Get digital soil mapping, pH, and fertilizer / lime prescription
+ */
+async function getSoilProfile(lat, lng, crop = 'TEFF') {
+  const profile = await hyperLocalAgronomyEngine.computeHyperLocalProfile({ lat, lng, crop });
+  return {
+    coordinates: profile.coordinates,
+    topography: profile.topography,
+    soilHealth: profile.soilHealth,
+  };
+}
+
+/**
+ * Get downscaled micro-climate forecast
+ */
+async function getDownscaledForecast(lat, lng) {
+  const profile = await hyperLocalAgronomyEngine.computeHyperLocalProfile({ lat, lng });
+  return {
+    coordinates: profile.coordinates,
+    microClimate: profile.microClimate,
+    remoteSensing: profile.remoteSensing,
+    activeSeason: profile.activeSeason,
+    ethiopicCalendar: profile.ethiopicCalendar,
+  };
+}
+
+/**
+ * Get Agro-Ecological Zone and Crop Suitability
+ */
+async function getAgroZone(lat, lng) {
+  const topo = hyperLocalAgronomyEngine.calculateTopography(lat, lng);
+  const suitability = hyperLocalAgronomyEngine.getCropSuitability(topo.agroZone, topo.soilPh);
+  return {
+    coordinates: { lat: Number(lat), lng: Number(lng) },
+    topography: topo,
+    cropSuitability: suitability,
+  };
+}
+
+const seismologyHazardEngine = require('../../processing/seismologyHazardEngine');
+const soilDegradationEngine = require('../../processing/soilDegradationEngine');
+const naturalDisasterPredictor = require('../../processing/naturalDisasterPredictor');
+
+/**
+ * Get Real-Time Seismology and Earthquake Hazard Assessment for Woreda
+ */
+async function getSeismologyAssessment(lat, lng, woredaName = null) {
+  return await seismologyHazardEngine.getSeismicAssessmentForLocation({ lat, lng, woredaName });
+}
+
+/**
+ * Get Soil Degradation, Land Loss & RUSLE Assessment for Woreda
+ */
+async function getSoilDegradationAssessment(lat, lng, woredaName = null, slopePct = null, conservationPractice = 'NONE') {
+  return await soilDegradationEngine.assessSoilDegradation({
+    lat,
+    lng,
+    woredaName,
+    slopePct,
+    conservationPractice,
+  });
+}
+
+/**
+ * Get Unified Multi-Hazard Natural Disaster Predictions for Woreda
+ */
+async function getNaturalDisastersPrediction(lat, lng, woredaName = null) {
+  return await naturalDisasterPredictor.predictMultiHazardDisasters({
+    lat,
+    lng,
+    woredaName,
+  });
+}
+
 module.exports = {
   getDashboardSummary,
   getRegionalBreakdown,
@@ -1180,4 +1240,13 @@ module.exports = {
   getZoneAnalytics,
   getWoredaMap,
   getWoredaAnalytics,
+  getHyperLocalProfile,
+  getSoilProfile,
+  getDownscaledForecast,
+  getAgroZone,
+  getSeismologyAssessment,
+  getSoilDegradationAssessment,
+  getNaturalDisastersPrediction,
 };
+
+

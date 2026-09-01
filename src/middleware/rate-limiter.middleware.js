@@ -156,6 +156,14 @@ const userAuthLimiter = createRateLimiter({
   message: 'Too many login attempts for this account. Please try again in 15 minutes.',
 });
 
+// AI & disease diagnosis limiter — prevents external API cost abuse (20 req/min)
+const aiLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 20,
+  prefix: 'rl:ai',
+  message: 'AI request limit reached (20/min). Please wait before sending more requests.',
+});
+
 module.exports = {
   createRateLimiter,
   globalLimiter,
@@ -163,4 +171,5 @@ module.exports = {
   ussdLimiter,
   telemetryLimiter,
   userAuthLimiter,
+  aiLimiter,
 };
