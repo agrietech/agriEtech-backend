@@ -32,7 +32,7 @@ async function getObservationsByWoreda(woredaId, source) {
     const daily = response.data?.daily;
 
     if (daily && Array.isArray(daily.time)) {
-      const liveObservations = daily.time.map((dateStr, idx) => {
+        const liveObservations = daily.time.map((dateStr, idx) => {
         const rain = daily.precipitation_sum?.[idx] ?? 0;
         const tempMax = daily.temperature_2m_max?.[idx] ?? 24.0;
         const tempMin = daily.temperature_2m_min?.[idx] ?? 14.0;
@@ -55,35 +55,54 @@ async function getObservationsByWoreda(woredaId, source) {
         };
       });
 
+      if (isConnected() && (woredaId || coords.id)) {
+        const targetWoredaId = woredaId || coords.id;
+        setImmediate(async () => {
+          try {
+            for (const obs of liveObservations) {
+              await prisma.satelliteObservation.upsert({
+                where: {
+                  woredaId_observationDate_source: {
+                    woredaId: targetWoredaId,
+                    observationDate: new Date(obs.observationDate),
+                    source: obs.source,
+                  },
+                },
+                update: {
+                  chirpsRainfallMm: obs.chirpsRainfallMm,
+                  modisNdvi: obs.modisNdvi,
+                  nasaPowerTempMax: obs.nasaPowerTempMax,
+                  nasaPowerTempMin: obs.nasaPowerTempMin,
+                  soilMoistureSat: obs.soilMoistureSat,
+                  ingestionStatus: 'SUCCESS',
+                },
+                create: {
+                  woredaId: targetWoredaId,
+                  observationDate: new Date(obs.observationDate),
+                  source: obs.source,
+                  chirpsRainfallMm: obs.chirpsRainfallMm,
+                  modisNdvi: obs.modisNdvi,
+                  nasaPowerTempMax: obs.nasaPowerTempMax,
+                  nasaPowerTempMin: obs.nasaPowerTempMin,
+                  soilMoistureSat: obs.soilMoistureSat,
+                  ingestionStatus: 'SUCCESS',
+                },
+              });
+            }
+            logger.info(`[SatelliteObservations] Persisted ${liveObservations.length} observations to DB for woreda ${targetWoredaId}`);
+          } catch (cacheErr) {
+            logger.warn(`[SatelliteObservations] DB persist notice: ${cacheErr.message}`);
+          }
+        });
+      }
+
       return liveObservations.reverse();
     }
   } catch (apiErr) {
     logger.warn(`[SatelliteObservations] Live weather fetch for ${coords.nameEn} notice: ${apiErr.message}`);
   }
 
-  // Fallback calculated series based on geographic latitude
-  const observations = [];
-  const now = new Date();
-  for (let i = 0; i < 21; i++) {
-    const d = new Date(now.getTime() - i * 86400000);
-    const baseTemp = 22.0 + (coords.lat > 10 ? 2.0 : -1.0);
-    observations.push({
-      id: `sat_obs_${coords.id || woredaId}_${i}`,
-      woredaId: woredaId || coords.id || 'ET040101',
-      woredaName: coords.nameEn,
-      woredaNameAm: coords.nameAm,
-      source: source || 'CHIRPS',
-      observationDate: d.toISOString(),
-      chirpsRainfallMm: Math.round((i % 4 === 0 ? 8.5 : 0.0) * 10) / 10,
-      modisNdvi: 0.55,
-      nasaPowerTempMax: Math.round((baseTemp + 4.0) * 10) / 10,
-      nasaPowerTempMin: Math.round((baseTemp - 6.0) * 10) / 10,
-      soilMoistureSat: 38.0,
-      createdAt: d.toISOString(),
-    });
-  }
-
-  return observations;
+  return [];
 }
 
 module.exports = {
