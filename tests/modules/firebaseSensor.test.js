@@ -2,7 +2,6 @@ const request = require('supertest');
 const axios = require('axios');
 const app = require('../../src/app');
 const { FirebaseSensorConnector, normalizeSoilMoisture } = require('../../src/ingestion/connectors/firebaseSensorConnector');
-const sensorsService = require('../../src/modules/sensors/sensors.service');
 const { generateAccessToken } = require('../../src/modules/auth/auth.service');
 
 const adminUser = { id: 'usr_admin_01', phoneNumber: '+251911000000', role: 'ADMIN' };
