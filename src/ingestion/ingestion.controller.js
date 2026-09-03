@@ -25,15 +25,79 @@ async function triggerPull(req, res, next) {
 // Ingest telemetry payload from IoT gateway/sensors
 async function ingestTelemetry(req, res, next) {
   try {
-    const { sensorId, soilMoisture, soilTemp, airTemp, humidity } = req.body;
+    const {
+      sensorId,
+      soilMoisture,
+      soilTemp,
+      airTemp,
+      ambientTemp,
+      humidity,
+      rainfallMm,
+      batteryLevel,
+      recordedAt,
+    } = req.body;
+
     if (!sensorId) {
       return res.status(400).json({ success: false, error: 'sensorId is required' });
     }
+
+    const readingData = {
+      sensorId,
+      soilMoisture: soilMoisture != null ? parseFloat(soilMoisture) : null,
+      soilTemp: soilTemp != null ? parseFloat(soilTemp) : null,
+      ambientTemp: (ambientTemp ?? airTemp) != null ? parseFloat(ambientTemp ?? airTemp) : null,
+      humidity: humidity != null ? parseFloat(humidity) : null,
+      rainfallMm: rainfallMm != null ? parseFloat(rainfallMm) : null,
+      batteryLevel: batteryLevel != null ? parseFloat(batteryLevel) : null,
+      recordedAt: recordedAt ? new Date(recordedAt) : new Date(),
+    };
+
+    const { prisma, isConnected } = require('../config/db');
+    let reading = null;
+
+    if (isConnected()) {
+      try {
+        const sensor = await prisma.sensor.findFirst({
+          where: { OR: [{ id: sensorId }, { hardwareId: sensorId }] },
+        });
+
+        if (sensor) {
+          reading = await prisma.sensorReading.create({
+            data: {
+              ...readingData,
+              sensorId: sensor.id,
+            },
+          });
+        }
+      } catch (dbErr) {
+        // DB fallback
+      }
+    }
+
     res.status(201).json({
       success: true,
       message: 'Telemetry recorded',
-      data: { sensorId, soilMoisture, soilTemp, airTemp, humidity },
+      data: reading || readingData,
     });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Get recent ingestion sync logs
+async function getSyncLogs(req, res, next) {
+  try {
+    const { limit = 20, source } = req.query;
+    const { prisma, isConnected } = require('../config/db');
+    let logs = [];
+    if (isConnected()) {
+      logs = await prisma.dataSourceSyncLog.findMany({
+        where: source ? { source } : undefined,
+        orderBy: { syncedAt: 'desc' },
+        take: parseInt(limit, 10) || 20,
+      });
+    }
+    res.status(200).json({ success: true, data: logs });
   } catch (error) {
     next(error);
   }
@@ -102,4 +166,5 @@ module.exports = {
   ingestTelemetry,
   getConnectorsList,
   testConnectorHealth,
+  getSyncLogs,
 };
