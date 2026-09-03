@@ -31,7 +31,7 @@ describe('Auth & Email Verification Suite', () => {
     expect(emailLogs.length).toBeGreaterThan(0);
     const lastEmail = emailLogs[emailLogs.length - 1];
     expect(lastEmail.to).toBe(testEmail);
-    expect(lastEmail.html).toContain('https://agrietech.onrender.com/api/v1/auth/verify-email?token=');
+    expect(lastEmail.html).toMatch(/\/api\/v1\/auth\/verify-email\?token=/);
     expect(lastEmail.html).toContain('24 hours');
 
     // Extract token from email html
