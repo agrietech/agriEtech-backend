@@ -88,12 +88,19 @@ model User {
   resetPasswordExpires  DateTime?
   verificationToken     String?
   regionId              String?
+  region                Region?           @relation(fields: [regionId], references: [id], onDelete: SetNull)
   zoneId                String?
+  zone                  Zone?             @relation(fields: [zoneId], references: [id], onDelete: SetNull)
   woredaId              String?
-  woreda                Woreda?           @relation(fields: [woredaId], references: [id])
+  woreda                Woreda?           @relation(fields: [woredaId], references: [id], onDelete: SetNull)
   kebeleId              String?
-  kebele                Kebele?           @relation(fields: [kebeleId], references: [id])
+  kebele                Kebele?           @relation(fields: [kebeleId], references: [id], onDelete: SetNull)
   kebeleName            String?
+  deviceToken           String?
+  fcmToken              String?
+  notifications         Notification[]
+  alertSubscriptions    AlertSubscription[]
+  aiInsights            AIInsight[]
   farms                 Farm[]
   alertLogs             AlertDeliveryLog[]
   roleRequests          RoleRequest[]     @relation("RoleRequestUser")
@@ -115,6 +122,7 @@ model Region {
   nameAm           String?
   geojson          Json?             // Polygon boundary
   zones            Zone[]
+  users            User[]
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 }
@@ -127,6 +135,7 @@ model Zone {
   nameAm           String?
   geojson          Json?             // Polygon boundary
   woredas          Woreda[]
+  users            User[]
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
@@ -148,6 +157,8 @@ model Woreda {
   satelliteObs     SatelliteObservation[]
   riskAssessments  RiskAssessment[]
   alerts           Alert[]
+  advisories       Advisory[]
+  alertSubscriptions AlertSubscription[]
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
@@ -186,18 +197,22 @@ model Farm {
   userId           String
   user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   woredaId         String
-  woreda           Woreda            @relation(fields: [woredaId], references: [id])
+  woreda           Woreda            @relation(fields: [woredaId], references: [id], onDelete: Restrict)
   kebeleId         String?
-  kebele           Kebele?           @relation(fields: [kebeleId], references: [id])
+  kebele           Kebele?           @relation(fields: [kebeleId], references: [id], onDelete: SetNull)
   farmName         String
   areaHectares     Float?
   polygonGeojson   Json?
-  spatialBoundary  Unsupported("geometry")?
   latitude         Float
   longitude        Float
   primaryCrop      String?
+  cropId           String?
+  crop             Crop?             @relation(fields: [cropId], references: [id], onDelete: SetNull)
+  soilType         String?
+  irrigationType   String?
   sensors          Sensor[]
   diseaseDiagnoses DiseaseDiagnosis[]
+  aiInsights       AIInsight[]
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
@@ -253,6 +268,11 @@ model SatelliteObservation {
   sentinel2Ndvi    Float?
   glofasDischarge  Float?
   soilMoistureSat  Float?
+  soilClayPercent  Float?
+  soilSandPercent  Float?
+  soilSiltPercent  Float?
+  soilOrganicCarbon Float?
+  soilPh           Float?
   locustPresence   Boolean           @default(false)
   locustDensity    Float?
   ingestionStatus  String?           @default("SUCCESS") // SUCCESS, PARTIAL, FAILED
@@ -296,7 +316,7 @@ model RiskAssessment {
 model Alert {
   id               String            @id @default(uuid())
   woredaId         String
-  woreda           Woreda            @relation(fields: [woredaId], references: [id])
+  woreda           Woreda            @relation(fields: [woredaId], references: [id], onDelete: Cascade)
   hazardType       HazardType
   severity         RiskLevel
   headline         String?           // Short summary headline
@@ -309,11 +329,18 @@ model Alert {
   messageAm        String            @default("")
   messageOm        String?           // Afaan Oromoo message
   sentAt           DateTime?
+  priority         Int               @default(1)
+  actionItems      Json?
+  expiresAt        DateTime?
+  targetPhones     String[]          @default([])
+  affectedAreaKm2  Float?
+  advisories       Advisory[]
   deliveryLogs     AlertDeliveryLog[]
   createdAt        DateTime          @default(now())
 
   @@index([woredaId, severity])
   @@index([status])
+  @@index([createdAt])
 }
 
 model AlertDeliveryLog {
@@ -403,3 +430,151 @@ model RoleRequest {
   @@index([requestedRole])
   @@index([createdAt])
 }
+
+enum CropCategory {
+  CEREAL
+  PULSE
+  OILSEED
+  CASH_CROP
+  VEGETABLE
+  FRUIT
+}
+
+model Crop {
+  id                    String       @id @default(uuid())
+  code                  String       @unique // e.g., 'TEFF', 'WHEAT', 'MAIZE', 'COFFEE'
+  nameEn                String
+  nameAm                String
+  nameOm                String?
+  category              CropCategory @default(CEREAL)
+  growingPeriodDays     Int?
+  waterRequirementMm    Float?
+  optimalSoilPhMin      Float?
+  optimalSoilPhMax      Float?
+  optimalTempMin        Float?
+  optimalTempMax        Float?
+  optimalElevationMin   Float?
+  optimalElevationMax   Float?
+  farms                 Farm[]
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+
+  @@index([category])
+  @@index([code])
+}
+
+model DataSourceSyncLog {
+  id              String   @id @default(uuid())
+  source          String   // 'CHIRPS', 'OPEN_METEO', 'NASA_POWER', 'GLOFAS', 'FAO_LOCUST', 'SOILGRIDS', 'MODIS_NDVI'
+  status          String   // 'SUCCESS', 'PARTIAL', 'FAILED'
+  recordsIngested Int      @default(0)
+  recordsFailed   Int      @default(0)
+  durationMs      Int      @default(0)
+  errorMessage    String?
+  metadata        Json?
+  syncedAt        DateTime @default(now())
+
+  @@index([source, syncedAt])
+  @@index([status])
+}
+
+model Advisory {
+  id          String      @id @default(uuid())
+  alertId     String?
+  alert       Alert?      @relation(fields: [alertId], references: [id], onDelete: SetNull)
+  woredaId    String
+  woreda      Woreda      @relation(fields: [woredaId], references: [id], onDelete: Cascade)
+  cropType    String?
+  hazardType  HazardType
+  severity    RiskLevel
+  titleEn     String
+  titleAm     String
+  titleOm     String?
+  adviceEn    String
+  adviceAm    String
+  adviceOm    String?
+  actionItems Json?
+  issuedAt    DateTime    @default(now())
+  validUntil  DateTime?
+  status      String      @default("ACTIVE") // ACTIVE, EXPIRED, ARCHIVED
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([woredaId, hazardType])
+  @@index([issuedAt])
+  @@index([status])
+}
+
+model AIInsight {
+  id              String    @id @default(uuid())
+  prompt          String
+  model           String    @default("google/gemini-2.5-flash")
+  feature         String    // 'DISEASE_DIAGNOSIS', 'ADVISORY', 'VOICE_ASSISTANT', 'RISK_PREDICTION'
+  rawResponse     Json
+  confidenceScore Float?
+  latencyMs       Int?
+  userId          String?
+  user            User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  farmId          String?
+  farm            Farm?     @relation(fields: [farmId], references: [id], onDelete: SetNull)
+  createdAt       DateTime  @default(now())
+
+  @@index([feature])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model Notification {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  titleEn   String
+  titleAm   String    @default("")
+  bodyEn    String
+  bodyAm    String    @default("")
+  type      String    @default("ALERT") // 'ALERT', 'ADVISORY', 'SYSTEM', 'SENSOR_BREACH'
+  isRead    Boolean   @default(false)
+  readAt    DateTime?
+  metadata  Json?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+}
+
+model UssdSession {
+  id          String   @id @default(uuid())
+  sessionId   String   @unique
+  phoneNumber String
+  serviceCode String?  @default("*212#")
+  text        String?
+  currentStep String   @default("HOME")
+  sessionData Json?
+  isActive    Boolean  @default(true)
+  language    String   @default("am")
+  startedAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([phoneNumber])
+  @@index([sessionId])
+  @@index([updatedAt])
+}
+
+model AlertSubscription {
+  id            String          @id @default(uuid())
+  userId        String?
+  user          User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  phoneNumber   String
+  woredaId      String
+  woreda        Woreda          @relation(fields: [woredaId], references: [id], onDelete: Cascade)
+  hazardTypes   HazardType[]
+  channel       DeliveryChannel @default(SMS)
+  preferredLang String          @default("am")
+  isActive      Boolean         @default(true)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([woredaId, isActive])
+  @@index([phoneNumber])
+}
+
