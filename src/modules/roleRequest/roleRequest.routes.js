@@ -14,25 +14,25 @@ const { authenticate, authorize } = require('../../middleware/auth.middleware');
 router.post('/', authenticate, controller.submitRoleRequest);
 router.get('/my-requests', authenticate, controller.getMyRoleRequests);
 
-// Admin routes (require WOREDA_OFFICER or ADMIN role)
+// Reviewer routes (Woreda, Zonal, Regional officers and Admin)
 router.get(
   '/pending',
   authenticate,
-  authorize('WOREDA_OFFICER', 'ADMIN'),
+  authorize('WOREDA_OFFICER', 'ZONAL_OFFICER', 'REGIONAL_OFFICER', 'ADMIN'),
   controller.getPendingRequests
 );
 
 router.post(
   '/:id/approve',
   authenticate,
-  authorize('WOREDA_OFFICER', 'ADMIN'),
+  authorize('WOREDA_OFFICER', 'ZONAL_OFFICER', 'REGIONAL_OFFICER', 'ADMIN'),
   controller.approveRoleRequest
 );
 
 router.post(
   '/:id/reject',
   authenticate,
-  authorize('WOREDA_OFFICER', 'ADMIN'),
+  authorize('WOREDA_OFFICER', 'ZONAL_OFFICER', 'REGIONAL_OFFICER', 'ADMIN'),
   controller.rejectRoleRequest
 );
 
