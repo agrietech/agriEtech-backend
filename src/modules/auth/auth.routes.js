@@ -22,6 +22,8 @@ router.post('/resend-verification', authLimiter, controller.resendVerification);
 // Protected routes (require valid JWT bearer token)
 router.post('/logout', authenticate, controller.logout);
 router.get('/me', authenticate, controller.getProfile);
+router.put('/me', authenticate, controller.updateProfile);
+router.patch('/me', authenticate, controller.updateProfile);
 router.patch('/update-password', authenticate, controller.updatePassword);
 
 // Role upgrade application routes
