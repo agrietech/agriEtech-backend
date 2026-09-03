@@ -130,121 +130,108 @@ async function getDashboardSummary() {
 
 // Regional risk and weather indicators
 async function getRegionalBreakdown() {
-  if (isConnected()) {
-    try {
-      const regions = await prisma.region.findMany({
+  const regions = await prisma.region.findMany({
+    select: {
+      id: true,
+      nameEn: true,
+      code: true,
+      zones: {
         select: {
-          id: true,
-          nameEn: true,
-          code: true,
-          zones: {
+          woredas: {
             select: {
-              woredas: {
-                select: {
-                  id: true,
-                  _count: { select: { farms: true } },
-                },
-              },
+              id: true,
+              _count: { select: { farms: true } },
             },
           },
         },
-        orderBy: { nameEn: 'asc' },
-      });
+      },
+    },
+    orderBy: { nameEn: 'asc' },
+  });
 
-      const results = await Promise.all(
-        regions.map(async (region) => {
-          const woredaIds = [];
-          let farmCount = 0;
-          for (const zone of region.zones) {
-            for (const woreda of zone.woredas) {
-              woredaIds.push(woreda.id);
-              farmCount += woreda._count.farms;
-            }
-          }
-
-          if (woredaIds.length === 0) {
-            return {
-              region: region.nameEn,
-              regionCode: region.code,
-              monitoredFarms: 0,
-              monitoredWoredas: 0,
-              avgRainfallMm: 0.0,
-              avgNdvi: 0.50,
-              alertStatus: 'NORMAL',
-            };
-          }
-
-          const [rainfallAgg, ndviAgg, latestRisk] = await Promise.all([
-            prisma.satelliteObservation.aggregate({
-              _avg: { chirpsRainfallMm: true },
-              where: {
-                woredaId: { in: woredaIds },
-                source: 'CHIRPS',
-                observationDate: { gte: new Date(Date.now() - 30 * 86400000) },
-              },
-            }),
-            prisma.satelliteObservation.aggregate({
-              _avg: { modisNdvi: true },
-              where: {
-                woredaId: { in: woredaIds },
-                source: { in: ['MODIS', 'MODIS_NDVI'] },
-                observationDate: { gte: new Date(Date.now() - 30 * 86400000) },
-              },
-            }),
-            prisma.riskAssessment.findFirst({
-              where: { woredaId: { in: woredaIds } },
-              orderBy: { createdAt: 'desc' },
-              select: { alertLevel: true },
-            }),
-          ]);
-
-          return {
-            region: region.nameEn,
-            regionCode: region.code,
-            monitoredFarms: farmCount,
-            monitoredWoredas: woredaIds.length,
-            avgRainfallMm: rainfallAgg._avg.chirpsRainfallMm
-              ? Math.round(rainfallAgg._avg.chirpsRainfallMm * 10) / 10
-              : 35.0,
-            avgNdvi: ndviAgg._avg.modisNdvi
-              ? Math.round(ndviAgg._avg.modisNdvi * 1000) / 1000
-              : 0.55,
-            alertStatus: latestRisk?.alertLevel || 'LOW',
-          };
-        })
-      );
-
-      const filtered = results.filter((r) => r !== null && r !== undefined);
-      if (filtered.length > 0) return filtered;
-    } catch (_err) {
-      // Fallback
+  const regionWoredaMap = new Map();
+  for (const reg of regions) {
+    const wIds = [];
+    let farmTotal = 0;
+    for (const z of reg.zones) {
+      for (const w of z.woredas) {
+        wIds.push(w.id);
+        farmTotal += w._count.farms;
+      }
     }
+    regionWoredaMap.set(reg.id, { wIds, farmTotal });
   }
 
-  return await Promise.all(
-    ETHIOPIA_REGIONAL_CENTROIDS.map(async (reg) => {
-      let regFarms = 0;
-      if (isConnected()) {
-        try {
-          regFarms = await prisma.farm.count({
-            where: { woreda: { zone: { region: { code: reg.code } } } },
-          });
-        } catch (_) {
-          // Regional farm count query fallback
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000);
+  const observations = await prisma.satelliteObservation.findMany({
+    where: {
+      observationDate: { gte: thirtyDaysAgo },
+    },
+    select: {
+      woredaId: true,
+      chirpsRainfallMm: true,
+      modisNdvi: true,
+    },
+  });
+
+  const obsByWoreda = new Map();
+  for (const obs of observations) {
+    if (!obsByWoreda.has(obs.woredaId)) {
+      obsByWoreda.set(obs.woredaId, []);
+    }
+    obsByWoreda.get(obs.woredaId).push(obs);
+  }
+
+  const activeAlerts = await prisma.alert.findMany({
+    where: { status: 'ACTIVE' },
+    select: { woredaId: true, severity: true },
+  });
+  const alertsByWoreda = new Map();
+  for (const a of activeAlerts) {
+    alertsByWoreda.set(a.woredaId, a.severity);
+  }
+
+  return regions.map((region) => {
+    const { wIds, farmTotal } = regionWoredaMap.get(region.id) || { wIds: [], farmTotal: 0 };
+    
+    let totalRain = 0;
+    let rainCount = 0;
+    let totalNdvi = 0;
+    let ndviCount = 0;
+    let highestSeverity = 'NORMAL';
+
+    for (const wId of wIds) {
+      const wObs = obsByWoreda.get(wId);
+      if (wObs) {
+        for (const o of wObs) {
+          if (o.chirpsRainfallMm !== null && o.chirpsRainfallMm !== undefined) {
+            totalRain += o.chirpsRainfallMm;
+            rainCount++;
+          }
+          if (o.modisNdvi !== null && o.modisNdvi !== undefined) {
+            totalNdvi += o.modisNdvi;
+            ndviCount++;
+          }
         }
       }
-      const w = await getLiveRegionalWeatherData(reg.lat, reg.lng);
-      return {
-        region: reg.name,
-        regionCode: reg.code,
-        monitoredFarms: regFarms,
-        monitoredWoredas: 24,
-        avgRainfallMm: w.rain,
-        avgNdvi: 0.55,
-        alertStatus: w.rain < 1.0 ? 'WATCH' : 'NORMAL',
-      };
-    })
-  );
+      const sev = alertsByWoreda.get(wId);
+      if (sev === 'CRITICAL' || sev === 'HIGH') highestSeverity = 'HIGH';
+      else if (sev === 'WARNING' && highestSeverity !== 'HIGH') highestSeverity = 'WARNING';
+    }
+
+    const avgRain = rainCount > 0 ? Math.round((totalRain / rainCount) * 10) / 10 : 0.0;
+    const avgNdvi = ndviCount > 0 ? Math.round((totalNdvi / ndviCount) * 1000) / 1000 : 0.50;
+
+    return {
+      region: region.nameEn,
+      regionCode: region.code,
+      monitoredFarms: farmTotal,
+      monitoredWoredas: wIds.length,
+      avgRainfallMm: avgRain,
+      avgNdvi: avgNdvi,
+      alertStatus: highestSeverity,
+    };
+  });
 }
 
 // Multi-horizon temporal trends with live location-specific weather
@@ -284,25 +271,24 @@ async function getTemporalTrends({ timeframe = 'DAILY', woredaId, includeAi = fa
         });
       }
     } catch (_err) {
-      // Fallback calculated series based on geographic latitude
       const today = new Date();
       for (let i = 13; i >= 0; i--) {
         const d = new Date(today.getTime() - i * 86400000);
         const baseTemp = 22.0 + (coords.lat > 10 ? 2.0 : -1.0);
         metrics.push({
           date: d.toISOString().split('T')[0],
-          rainfallMm: Math.round((i % 4 === 0 ? 8.5 : 0.0) * 10) / 10,
+          rainfallMm: 0.0,
           tempMaxC: Math.round((baseTemp + 4.0) * 10) / 10,
           tempMinC: Math.round((baseTemp - 6.0) * 10) / 10,
-          ndvi: 0.55,
-          soilMoisturePercent: 38.0,
+          ndvi: 0.50,
+          soilMoisturePercent: 30.0,
         });
       }
     }
 
     const totalRain = metrics.reduce((acc, m) => acc + (m.rainfallMm || 0), 0);
-    const avgNdvi = metrics.length > 0 ? metrics.reduce((acc, m) => acc + (m.ndvi || 0), 0) / metrics.length : 0.55;
-    const avgSoil = metrics.length > 0 ? metrics.reduce((acc, m) => acc + (m.soilMoisturePercent || 0), 0) / metrics.length : 38.0;
+    const avgNdvi = metrics.length > 0 ? metrics.reduce((acc, m) => acc + (m.ndvi || 0), 0) / metrics.length : 0.50;
+    const avgSoil = metrics.length > 0 ? metrics.reduce((acc, m) => acc + (m.soilMoisturePercent || 0), 0) / metrics.length : 30.0;
 
     summary = {
       woredaName: coords.nameEn,
@@ -313,37 +299,91 @@ async function getTemporalTrends({ timeframe = 'DAILY', woredaId, includeAi = fa
       dataPoints: metrics.length,
     };
   } else if (normTimeframe === 'MONTHLY') {
-    const months = ['2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08'];
-    metrics = months.map((m, idx) => ({
-      month: m,
-      rainfallMm: 35.0 + (coords.lat > 10 ? 10 : 0) + ((idx * 7) % 50),
-      ndvi: 0.48 + (idx * 0.015) % 0.25,
-      spiValue: 0.25,
-      spiStatus: 'NEAR_NORMAL',
-    }));
+    try {
+      const endYear = new Date().getFullYear();
+      const startYear = endYear - 1;
+      const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${coords.lat}&longitude=${coords.lng}&start_date=${startYear}-01-01&end_date=${endYear}-12-31&daily=precipitation_sum,temperature_2m_mean&timezone=Africa%2FAddis_Ababa`;
+      const response = await axios.get(url, { timeout: 10000 });
+      const daily = response.data?.daily;
+
+      if (daily && Array.isArray(daily.time)) {
+        const monthlyBuckets = new Map();
+        for (let i = 0; i < daily.time.length; i++) {
+          const ym = daily.time[i].substring(0, 7);
+          if (!monthlyBuckets.has(ym)) {
+            monthlyBuckets.set(ym, { rain: 0, tempSum: 0, count: 0 });
+          }
+          const b = monthlyBuckets.get(ym);
+          b.rain += daily.precipitation_sum?.[i] ?? 0;
+          b.tempSum += daily.temperature_2m_mean?.[i] ?? 20;
+          b.count++;
+        }
+
+        const recent12 = Array.from(monthlyBuckets.entries()).slice(-12);
+        metrics = recent12.map(([month, data]) => {
+          const meanTemp = data.count > 0 ? data.tempSum / data.count : 20;
+          return {
+            month,
+            rainfallMm: Math.round(data.rain * 10) / 10,
+            meanTempC: Math.round(meanTemp * 10) / 10,
+            ndvi: Math.min(0.85, Math.max(0.3, 0.45 + (data.rain > 50 ? 0.2 : 0.0))),
+            spiValue: data.rain > 80 ? 0.6 : data.rain < 20 ? -0.8 : 0.1,
+            spiStatus: data.rain > 80 ? 'MODERATELY_WET' : data.rain < 20 ? 'MODERATELY_DRY' : 'NEAR_NORMAL',
+          };
+        });
+      }
+    } catch (_e) {
+      metrics = [];
+    }
 
     summary = {
       woredaName: coords.nameEn,
       woredaNameAm: coords.nameAm,
       periodCovered: '12 months',
-      currentSpiStatus: 'NEAR_NORMAL',
-      spi3Month: 0.25,
+      currentSpiStatus: metrics.length > 0 ? metrics[metrics.length - 1].spiStatus : 'NEAR_NORMAL',
+      spi3Month: 0.15,
       dataPoints: metrics.length,
     };
   } else {
-    // YEARLY / OVER_YEARS
-    metrics = [
-      { year: 2021, annualRainfallMm: 850, meanTempC: 21.2, avgNdvi: 0.56 },
-      { year: 2022, annualRainfallMm: 790, meanTempC: 21.8, avgNdvi: 0.52 },
-      { year: 2023, annualRainfallMm: 920, meanTempC: 21.5, avgNdvi: 0.59 },
-      { year: 2024, annualRainfallMm: 740, meanTempC: 22.1, avgNdvi: 0.49 },
-      { year: 2025, annualRainfallMm: 810, meanTempC: 21.9, avgNdvi: 0.54 },
-    ];
+    // YEARLY
+    try {
+      const endYear = new Date().getFullYear();
+      const startYear = endYear - 5;
+      const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${coords.lat}&longitude=${coords.lng}&start_date=${startYear}-01-01&end_date=${endYear}-12-31&daily=precipitation_sum,temperature_2m_mean&timezone=Africa%2FAddis_Ababa`;
+      const response = await axios.get(url, { timeout: 12000 });
+      const daily = response.data?.daily;
+
+      if (daily && Array.isArray(daily.time)) {
+        const yearlyBuckets = new Map();
+        for (let i = 0; i < daily.time.length; i++) {
+          const yr = parseInt(daily.time[i].substring(0, 4), 10);
+          if (!yearlyBuckets.has(yr)) {
+            yearlyBuckets.set(yr, { rain: 0, tempSum: 0, count: 0 });
+          }
+          const b = yearlyBuckets.get(yr);
+          b.rain += daily.precipitation_sum?.[i] ?? 0;
+          b.tempSum += daily.temperature_2m_mean?.[i] ?? 20;
+          b.count++;
+        }
+
+        metrics = Array.from(yearlyBuckets.entries()).map(([year, data]) => {
+          const meanTemp = data.count > 0 ? data.tempSum / data.count : 20;
+          return {
+            year,
+            annualRainfallMm: Math.round(data.rain),
+            meanTempC: Math.round(meanTemp * 10) / 10,
+            avgNdvi: 0.54,
+          };
+        });
+      }
+    } catch (_e) {
+      metrics = [];
+    }
 
     summary = {
       woredaName: coords.nameEn,
       woredaNameAm: coords.nameAm,
-      yearsCovered: 5,
+      yearsCovered: metrics.length,
       dataPoints: metrics.length,
     };
 
