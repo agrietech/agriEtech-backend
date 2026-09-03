@@ -12,6 +12,8 @@ async function createFarm(req, res, next) {
     const polygonGeojson = body.polygonGeojson || body.geoJsonBoundary || body.boundary;
     const latitude = body.latitude !== undefined ? Number(body.latitude) : (body.lat !== undefined ? Number(body.lat) : undefined);
     const longitude = body.longitude !== undefined ? Number(body.longitude) : (body.lng !== undefined ? Number(body.lng) : (body.lon !== undefined ? Number(body.lon) : undefined));
+    const soilType = body.soilType || body.soil_type;
+    const irrigationType = body.irrigationType || body.irrigation_type;
 
     const userId = req.user?.id || req.user?.userId || 'usr_farmer_01';
 
@@ -24,6 +26,8 @@ async function createFarm(req, res, next) {
       polygonGeojson,
       latitude,
       longitude,
+      soilType,
+      irrigationType,
     });
     res.status(201).json({ success: true, data: farm });
   } catch (error) {
@@ -33,7 +37,7 @@ async function createFarm(req, res, next) {
 
 async function getFarms(req, res, next) {
   try {
-    const data = await farmsService.getFarmsByUser(req.user?.id);
+    const data = await farmsService.getFarmsByScope(req.user);
     res.status(200).json({ success: true, data });
   } catch (error) {
     next(error);
@@ -60,13 +64,15 @@ async function getFarmDetails(req, res, next) {
         return res.status(403).json({ success: false, error: { message: 'Access denied: this farm is outside your woreda jurisdiction', code: 'FORBIDDEN' } });
       }
     } else if (userRole === 'ZONAL_OFFICER') {
-      // Zonal Officers can view farms within their zone (checked via woreda's parent zone)
-      if (user.zoneId && data.zoneId && data.zoneId !== user.zoneId) {
+      // Zonal Officers can view farms within their zone (checked directly or via woreda relation)
+      const farmZoneId = data.zoneId || data.woreda?.zoneId;
+      if (user.zoneId && farmZoneId && farmZoneId !== user.zoneId) {
         return res.status(403).json({ success: false, error: { message: 'Access denied: this farm is outside your zone jurisdiction', code: 'FORBIDDEN' } });
       }
     } else if (userRole === 'REGIONAL_OFFICER') {
-      // Regional Officers can view farms within their region
-      if (user.regionId && data.regionId && data.regionId !== user.regionId) {
+      // Regional Officers can view farms within their region (checked directly or via woreda zone relation)
+      const farmRegionId = data.regionId || data.woreda?.zone?.regionId;
+      if (user.regionId && farmRegionId && farmRegionId !== user.regionId) {
         return res.status(403).json({ success: false, error: { message: 'Access denied: this farm is outside your region jurisdiction', code: 'FORBIDDEN' } });
       }
     }
