@@ -1,4 +1,5 @@
 const { prisma, isConnected } = require('../../config/db');
+const { ServiceUnavailableError } = require('../../utils/errors');
 const logger = require('../../utils/logger');
 const centroid = require('@turf/centroid').default || require('@turf/centroid');
 const { getCoord } = require('@turf/invariant');
@@ -8,42 +9,21 @@ const { assertContainedByWoreda, createHttpError, validateFarmPolygon } = requir
 // Ethiopian geographic bounding box (approximate)
 const ETHIOPIA_BOUNDS = { minLat: 3.0, maxLat: 15.5, minLng: 32.5, maxLng: 48.5 };
 
-// In-memory store for offline/test mode
-const mockFarms = new Map([
-  [
-    'farm_demo_01',
-    {
-      id: 'farm_demo_01',
-      userId: 'usr_farmer_01',
-      farmName: 'Bishoftu Wheat Plot Alpha',
-      primaryCrop: 'Wheat',
-      areaHectares: 3.5,
-      latitude: 8.7523,
-      longitude: 38.9785,
-      woredaId: 'woreda_bishoftu_02',
-      polygonGeojson: {
-        type: 'Polygon',
-        coordinates: [
-          [
-            [38.978, 8.752],
-            [38.98, 8.752],
-            [38.98, 8.755],
-            [38.978, 8.755],
-            [38.978, 8.752],
-          ],
-        ],
-      },
-      createdAt: new Date().toISOString(),
-      woreda: { id: 'woreda_bishoftu_02', nameEn: 'Bishoftu', nameAm: 'ቢሾፍቱ' },
-      sensors: [],
-    },
-  ],
-]);
-
 /**
  * Register a new farm plot.
  */
-async function createFarm({ userId, farmName, primaryCrop, areaHectares, woredaId, polygonGeojson, latitude: inputLat, longitude: inputLng }) {
+async function createFarm({
+  userId,
+  farmName,
+  primaryCrop,
+  areaHectares,
+  woredaId,
+  polygonGeojson,
+  latitude: inputLat,
+  longitude: inputLng,
+  soilType,
+  irrigationType,
+}) {
   let resolvedWoredaId = woredaId;
 
   // Validate coordinates if provided directly
@@ -123,100 +103,119 @@ async function createFarm({ userId, farmName, primaryCrop, areaHectares, woredaI
 
   if (isConnected()) {
     return await prisma.$transaction(async (tx) => {
+      let cropId = null;
+      if (primaryCrop) {
+        try {
+          const cropRecord = await tx.crop.findFirst({
+            where: {
+              OR: [
+                { nameEn: { equals: primaryCrop, mode: 'insensitive' } },
+                { nameAm: { equals: primaryCrop } },
+                { nameOm: { equals: primaryCrop, mode: 'insensitive' } },
+              ],
+            },
+          });
+          if (cropRecord) cropId = cropRecord.id;
+        } catch (_err) {
+          // Crop lookup fallback
+        }
+      }
+
       const farm = await tx.farm.create({
         data: {
           userId,
           farmName,
           primaryCrop: primaryCrop || null,
+          cropId,
           areaHectares: areaHectares ?? null,
           latitude,
           longitude,
           woredaId: resolvedWoredaId,
           polygonGeojson: farmPolygon.geometry,
+          soilType: soilType || null,
+          irrigationType: irrigationType || null,
         },
       });
-
-      try {
-        await tx.$executeRaw`
-          UPDATE "Farm"
-          SET "spatialBoundary" = ST_SetSRID(ST_GeomFromGeoJSON(${JSON.stringify(farmPolygon.geometry)}), 4326)
-          WHERE id = ${farm.id}
-        `;
-      } catch (_geoErr) {
-        // PostGIS extension might not be enabled on basic postgres
-      }
 
       return farm;
     });
   }
 
-  // Fallback in-memory persistence when DB is offline
-  const fallbackFarm = {
-    id: `farm_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-    userId,
-    farmName,
-    primaryCrop: primaryCrop || 'Mixed Crops',
-    areaHectares: areaHectares ? Number(areaHectares) : 1.0,
-    latitude,
-    longitude,
-    woredaId: resolvedWoredaId,
-    polygonGeojson: farmPolygon.geometry,
-    createdAt: new Date().toISOString(),
-    woreda: { id: resolvedWoredaId, nameEn: woreda.nameEn, nameAm: woreda.nameAm },
-    sensors: [],
-  };
+  throw new ServiceUnavailableError('Database service unavailable for farm creation');
+}
 
-  mockFarms.set(fallbackFarm.id, fallbackFarm);
-  return fallbackFarm;
+// Get farms by user role & jurisdictional scope
+async function getFarmsByScope(user = {}) {
+  const role = (user.role || 'FARMER').toUpperCase();
+  const userId = user.id;
+
+  const where = {};
+  if (role === 'FARMER') {
+    where.userId = userId;
+  } else if (role === 'DEVELOPMENT_AGENT' || role === 'WOREDA_OFFICER') {
+    if (user.woredaId) {
+      where.woredaId = user.woredaId;
+    } else if (userId) {
+      where.userId = userId;
+    }
+  } else if (role === 'ZONAL_OFFICER') {
+    if (user.zoneId) {
+      where.woreda = { zoneId: user.zoneId };
+    }
+  } else if (role === 'REGIONAL_OFFICER') {
+    if (user.regionId) {
+      where.woreda = { zone: { regionId: user.regionId } };
+    }
+  }
+
+  return await prisma.farm.findMany({
+    where,
+    include: {
+      woreda: {
+        select: {
+          id: true,
+          nameEn: true,
+          nameAm: true,
+          zoneId: true,
+          zone: { select: { id: true, nameEn: true, regionId: true } },
+        },
+      },
+      crop: true,
+      sensors: true,
+    },
+    orderBy: { createdAt: 'desc' },
+  });
 }
 
 // Get farms for authenticated user
 async function getFarmsByUser(userId) {
-  if (isConnected()) {
-    try {
-      return await prisma.farm.findMany({
-        where: { userId },
-        include: {
-          woreda: { select: { id: true, nameEn: true, nameAm: true } },
-        },
-        orderBy: { createdAt: 'desc' },
-      });
-    } catch (err) {
-      logger.warn(`[FarmsService] DB farm query fallback to cache: ${err.message}`);
-    }
-  }
-
-  const userFarms = Array.from(mockFarms.values()).filter(
-    (f) => !userId || f.userId === userId
-  );
-  return userFarms;
+  return getFarmsByScope({ id: userId, role: 'FARMER' });
 }
 
 // Get farm by ID
 async function getFarmById(id) {
-  if (isConnected()) {
-    try {
-      const found = await prisma.farm.findUnique({
-        where: { id },
-        include: {
-          woreda: { select: { id: true, nameEn: true, nameAm: true } },
-          sensors: { select: { id: true, hardwareId: true, sensorType: true, isActive: true } },
+  return await prisma.farm.findUnique({
+    where: { id },
+    include: {
+      woreda: {
+        select: {
+          id: true,
+          nameEn: true,
+          nameAm: true,
+          zoneId: true,
+          zone: { select: { id: true, nameEn: true, regionId: true } },
         },
-      });
-      if (found) return found;
-    } catch (err) {
-      logger.warn(`[FarmsService] DB farm detail query fallback to cache: ${err.message}`);
-    }
-    return mockFarms.get(id) || null;
-  }
-
-  return mockFarms.get(id) || mockFarms.get('farm_demo_01') || null;
+      },
+      crop: true,
+      sensors: { select: { id: true, hardwareId: true, sensorType: true, isActive: true } },
+    },
+  });
 }
 
 module.exports = {
   createFarm,
   registerFarm: createFarm,
+  getFarmsByScope,
   getFarmsByUser,
   getFarmById,
-  mockFarms,
 };
