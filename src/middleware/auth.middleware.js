@@ -98,28 +98,156 @@ function authorize(...allowedRoles) {
 
 // Scope authorization to woreda
 function authorizeWoredaScope(paramName = 'woredaId') {
-  return (req, res, next) => {
+  return async (req, res, next) => {
     if (!req.user) {
-      return res
-        .status(401)
-        .json({
-          success: false,
-          error: { message: 'Authentication required', code: 'UNAUTHORIZED' },
-        });
+      return res.status(401).json({
+        success: false,
+        error: { message: 'Authentication required', code: 'UNAUTHORIZED' },
+      });
     }
-    if (['ADMIN', 'RESEARCHER', 'REGIONAL_OFFICER', 'ZONAL_OFFICER'].includes(req.user.role)) {
+
+    const { role, woredaId, zoneId, regionId } = req.user;
+    if (role === 'ADMIN' || role === 'RESEARCHER') {
       return next();
     }
+
     const requestedWoreda =
       req.params?.[paramName] || req.query?.[paramName] || req.body?.[paramName];
-    if (req.user.woredaId && requestedWoreda && req.user.woredaId !== requestedWoreda) {
-      return res
-        .status(403)
-        .json({
+
+    // Farmer, DA, Woreda Officer: strictly bounded to their assigned woreda
+    if (role === 'FARMER' || role === 'DEVELOPMENT_AGENT' || role === 'WOREDA_OFFICER') {
+      if (!woredaId) {
+        return res.status(403).json({
           success: false,
-          error: { message: 'Woreda scope violation', code: 'OUT_OF_SCOPE' },
+          error: { message: 'No administrative woreda assigned to your account', code: 'OUT_OF_SCOPE' },
         });
+      }
+      if (requestedWoreda && requestedWoreda !== woredaId) {
+        return res.status(403).json({
+          success: false,
+          error: { message: `Access restricted: woreda '${requestedWoreda}' is outside your assigned jurisdiction`, code: 'OUT_OF_SCOPE' },
+        });
+      }
+      if (req.query) req.query[paramName] = woredaId;
+      return next();
     }
+
+    // Zonal Officer: bounded to woredas within their assigned zone
+    if (role === 'ZONAL_OFFICER') {
+      if (!zoneId) {
+        return res.status(403).json({
+          success: false,
+          error: { message: 'No administrative zone assigned to your account', code: 'OUT_OF_SCOPE' },
+        });
+      }
+      if (requestedWoreda) {
+        try {
+          const { prisma } = require('../config/db');
+          const w = await prisma.woreda.findUnique({ where: { id: requestedWoreda }, select: { zoneId: true } });
+          if (!w || w.zoneId !== zoneId) {
+            return res.status(403).json({
+              success: false,
+              error: { message: `Woreda '${requestedWoreda}' is outside your assigned zone jurisdiction`, code: 'OUT_OF_SCOPE' },
+            });
+          }
+        } catch (dbErr) {
+          return res.status(500).json({ success: false, error: { message: dbErr.message } });
+        }
+      }
+      return next();
+    }
+
+    // Regional Officer: bounded to woredas within their assigned region
+    if (role === 'REGIONAL_OFFICER') {
+      if (!regionId) {
+        return res.status(403).json({
+          success: false,
+          error: { message: 'No administrative region assigned to your account', code: 'OUT_OF_SCOPE' },
+        });
+      }
+      if (requestedWoreda) {
+        try {
+          const { prisma } = require('../config/db');
+          const w = await prisma.woreda.findUnique({
+            where: { id: requestedWoreda },
+            select: { zone: { select: { regionId: true } } },
+          });
+          if (!w || w.zone?.regionId !== regionId) {
+            return res.status(403).json({
+              success: false,
+              error: { message: `Woreda '${requestedWoreda}' is outside your assigned regional jurisdiction`, code: 'OUT_OF_SCOPE' },
+            });
+          }
+        } catch (dbErr) {
+          return res.status(500).json({ success: false, error: { message: dbErr.message } });
+        }
+      }
+      return next();
+    }
+
+    next();
+  };
+}
+
+// Scope authorization to zone
+function authorizeZoneScope(paramName = 'zoneId') {
+  return async (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        error: { message: 'Authentication required', code: 'UNAUTHORIZED' },
+      });
+    }
+
+    const { role, zoneId, regionId } = req.user;
+    if (role === 'ADMIN' || role === 'RESEARCHER') {
+      return next();
+    }
+
+    const requestedZone =
+      req.params?.[paramName] || req.query?.[paramName] || req.body?.[paramName];
+
+    if (role === 'FARMER' || role === 'DEVELOPMENT_AGENT' || role === 'WOREDA_OFFICER' || role === 'ZONAL_OFFICER') {
+      if (!zoneId) {
+        return res.status(403).json({
+          success: false,
+          error: { message: 'No administrative zone assigned to your account', code: 'OUT_OF_SCOPE' },
+        });
+      }
+      if (requestedZone && requestedZone !== zoneId) {
+        return res.status(403).json({
+          success: false,
+          error: { message: `Access restricted: zone '${requestedZone}' is outside your assigned jurisdiction`, code: 'OUT_OF_SCOPE' },
+        });
+      }
+      if (req.query) req.query[paramName] = zoneId;
+      return next();
+    }
+
+    if (role === 'REGIONAL_OFFICER') {
+      if (!regionId) {
+        return res.status(403).json({
+          success: false,
+          error: { message: 'No administrative region assigned to your account', code: 'OUT_OF_SCOPE' },
+        });
+      }
+      if (requestedZone) {
+        try {
+          const { prisma } = require('../config/db');
+          const z = await prisma.zone.findUnique({ where: { id: requestedZone }, select: { regionId: true } });
+          if (!z || z.regionId !== regionId) {
+            return res.status(403).json({
+              success: false,
+              error: { message: `Zone '${requestedZone}' is outside your assigned regional jurisdiction`, code: 'OUT_OF_SCOPE' },
+            });
+          }
+        } catch (dbErr) {
+          return res.status(500).json({ success: false, error: { message: dbErr.message } });
+        }
+      }
+      return next();
+    }
+
     next();
   };
 }
@@ -128,26 +256,35 @@ function authorizeWoredaScope(paramName = 'woredaId') {
 function authorizeRegionScope(paramName = 'regionId') {
   return (req, res, next) => {
     if (!req.user) {
-      return res
-        .status(401)
-        .json({
-          success: false,
-          error: { message: 'Authentication required', code: 'UNAUTHORIZED' },
-        });
+      return res.status(401).json({
+        success: false,
+        error: { message: 'Authentication required', code: 'UNAUTHORIZED' },
+      });
     }
-    if (req.user.role === 'ADMIN' || req.user.role === 'RESEARCHER') {
+
+    const { role, regionId } = req.user;
+    if (role === 'ADMIN' || role === 'RESEARCHER') {
       return next();
     }
+
     const requestedRegion =
       req.params?.[paramName] || req.query?.[paramName] || req.body?.[paramName];
-    if (req.user.regionId && requestedRegion && req.user.regionId !== requestedRegion) {
-      return res
-        .status(403)
-        .json({
-          success: false,
-          error: { message: 'Regional scope violation', code: 'OUT_OF_SCOPE' },
-        });
+
+    if (!regionId) {
+      return res.status(403).json({
+        success: false,
+        error: { message: 'No administrative region assigned to your account', code: 'OUT_OF_SCOPE' },
+      });
     }
+
+    if (requestedRegion && requestedRegion !== regionId) {
+      return res.status(403).json({
+        success: false,
+        error: { message: `Access restricted: region '${requestedRegion}' is outside your assigned jurisdiction`, code: 'OUT_OF_SCOPE' },
+      });
+    }
+
+    if (req.query) req.query[paramName] = regionId;
     next();
   };
 }
@@ -174,6 +311,7 @@ module.exports = {
   optionalAuthenticate,
   authorize,
   authorizeWoredaScope,
+  authorizeZoneScope,
   authorizeRegionScope,
 };
 
