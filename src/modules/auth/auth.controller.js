@@ -54,6 +54,16 @@ async function getProfile(req, res, next) {
   }
 }
 
+// Update profile (authenticated)
+async function updateProfile(req, res, next) {
+  try {
+    const updated = await authService.updateUserProfile(req.user?.id, req.body);
+    res.status(200).json({ success: true, data: updated });
+  } catch (error) {
+    next(error);
+  }
+}
+
 // Update password (authenticated)
 async function updatePassword(req, res, next) {
   try {
@@ -65,11 +75,11 @@ async function updatePassword(req, res, next) {
   }
 }
 
-// Forgot password - Send reset link to email
+// Forgot password - Send reset link to email or phone SMS
 async function forgotPassword(req, res, next) {
   try {
-    const { email, identifier } = req.body;
-    const result = await authService.forgotPassword(email || identifier);
+    const { email, identifier, phoneNumber, phone } = req.body;
+    const result = await authService.forgotPassword(email || identifier || phoneNumber || phone || req.body);
     res.status(200).json({ success: true, data: result });
   } catch (error) {
     next(error);
@@ -769,6 +779,7 @@ module.exports = {
   refreshToken,
   logout,
   getProfile,
+  updateProfile,
   updatePassword,
   forgotPassword,
   resetPassword,
