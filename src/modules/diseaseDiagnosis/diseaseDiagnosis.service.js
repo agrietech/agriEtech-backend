@@ -5,7 +5,6 @@ const openRouterClient = require('../../utils/openRouterClient');
 const plantIdClient = require('../../ingestion/plantIdClient');
 const logger = require('../../utils/logger');
 
-const inMemoryDiagnoses = new Map();
 
 /**
  * Perform Dual-AI Crop Disease Diagnosis:
@@ -205,6 +204,22 @@ async function diagnoseCropImage({ farmId, cropType, imageUrl, imageFile, imageB
         },
       });
 
+      // Also persist raw Gemini reasoning into AIInsight table
+      try {
+        await prisma.aIInsight.create({
+          data: {
+            prompt: `Dual AI crop diagnosis for crop=${cropType || resolvedCropEn}`,
+            model: 'Plant.id + Google Gemini 2.5 Flash',
+            feature: 'DISEASE_DIAGNOSIS',
+            rawResponse: rawResponse || {},
+            confidenceScore: Math.round(resolvedConfidence * 100) / 100,
+            farmId: farmId || null,
+          },
+        });
+      } catch (aiLogErr) {
+        logger.warn(`[DiseaseDiagnosis] AIInsight logging notice: ${aiLogErr.message}`);
+      }
+
       return {
         id: saved.id,
         farmId: saved.farmId,
@@ -233,40 +248,12 @@ async function diagnoseCropImage({ farmId, cropType, imageUrl, imageFile, imageB
         createdAt: saved.createdAt,
       };
     } catch (saveErr) {
-      logger.warn(`[DiseaseDiagnosis] DB save notice: ${saveErr.message}`);
+      logger.error(`[DiseaseDiagnosis] DB save error: ${saveErr.message}`);
+      throw saveErr;
     }
   }
 
-  const liveRecord = {
-    id: `diag_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-    farmId: farmId || null,
-    cropType: cropType || resolvedCropEn,
-    cropIdentified: resolvedCropEn,
-    cropIdentifiedAm: resolvedCropAm,
-    cropIdentifiedOm: resolvedCropOm,
-    imageUrl: uploadPath || '/uploads/diagnoses/crop_sample.jpg',
-    diseaseName: resolvedDiseaseEn,
-    diseaseNameAm: resolvedDiseaseAm,
-    diseaseNameOm: resolvedDiseaseOm,
-    pathogen: resolvedPathogen,
-    severity: resolvedSeverity,
-    confidenceScore: Math.round(resolvedConfidence * 100) / 100,
-    needsExpertReview,
-    triageStatus,
-    symptomsEn,
-    symptomsAm,
-    treatmentEn,
-    treatmentAm,
-    treatmentOm,
-    preventionEn,
-    preventionAm,
-    aiModel: 'Plant.id Botanical + Google Gemini 2.5 Flash + EthioAgriTaxonomy',
-    rawResponse,
-    createdAt: new Date().toISOString(),
-  };
-
-  inMemoryDiagnoses.set(liveRecord.id, liveRecord);
-  return liveRecord;
+  throw new Error('Database is required for disease diagnosis persistence');
 }
 
 
@@ -274,33 +261,22 @@ async function diagnoseCropImage({ farmId, cropType, imageUrl, imageFile, imageB
  * Retrieve all past diagnoses with optional filters
  */
 async function getAllDiagnoses({ farmId, cropType } = {}) {
-  if (isConnected()) {
-    try {
-      const where = {};
-      if (farmId) where.farmId = farmId;
-      if (cropType) where.cropType = cropType;
-      return await prisma.diseaseDiagnosis.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        include: {
-          farm: {
-            select: {
-              id: true,
-              farmName: true,
-              woreda: { select: { nameEn: true, nameAm: true } },
-            },
-          },
+  const where = {};
+  if (farmId) where.farmId = farmId;
+  if (cropType) where.cropType = cropType;
+  return await prisma.diseaseDiagnosis.findMany({
+    where,
+    orderBy: { createdAt: 'desc' },
+    include: {
+      farm: {
+        select: {
+          id: true,
+          farmName: true,
+          woreda: { select: { nameEn: true, nameAm: true } },
         },
-      });
-    } catch (_err) {
-      // Fallback
-    }
-  }
-
-  let list = Array.from(inMemoryDiagnoses.values());
-  if (farmId) list = list.filter((d) => d.farmId === farmId);
-  if (cropType) list = list.filter((d) => d.cropType === cropType);
-  return list;
+      },
+    },
+  });
 }
 
 // Asynchronous diagnosis jobs map (jobId -> { status: 'PENDING'|'PROCESSING'|'COMPLETED'|'FAILED', result, error, progress, createdAt, updatedAt })
@@ -393,7 +369,6 @@ module.exports = {
   getDiagnosisJobStatus,
   getAllDiagnoses,
   getDiagnosesByFarm,
-  inMemoryDiagnoses,
   diagnosisJobs,
 };
 
