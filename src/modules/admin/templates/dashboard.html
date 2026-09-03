@@ -512,10 +512,15 @@
     <div class="header-actions">
       <div class="header-pill">
         <div class="status-dot"></div>
-        <span>Production Cluster: Operational</span>
+        <span>Cluster: Operational</span>
+      </div>
+      <div id="adminUserBadge" class="header-pill" style="display: none;">
+        <span id="adminUserName">Admin</span>
+        <span id="adminUserRole" class="badge badge-success">ADMIN</span>
       </div>
       <button class="btn btn-secondary btn-sm" onclick="refreshCurrentTab()">🔄 Refresh</button>
-      <a href="/api/v1/admin/overview" target="_blank" class="btn btn-secondary btn-sm">📄 Raw JSON</a>
+      <button id="authBtn" class="btn btn-primary btn-sm" onclick="openAuthModal()">🔐 Sign In</button>
+      <button id="signOutBtn" class="btn btn-secondary btn-sm" onclick="signOutAdmin()" style="display: none;">🚪 Sign Out</button>
     </div>
   </header>
 
@@ -528,6 +533,9 @@
       </div>
       <div class="nav-item" onclick="showTab('map', this)">
         <span>🗺️</span> Spatial Map & Layers
+      </div>
+      <div class="nav-item" onclick="showTab('boundaries', this)">
+        <span>🏛️</span> Boundaries Explorer
       </div>
 
       <div class="nav-group-title">Entity Management (CRUD)</div>
@@ -959,6 +967,73 @@
                 </tbody>
               </table>
             </div>
+      <!-- Boundaries Explorer Tab -->
+      <div id="boundaries" class="tab">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title">UN OCHA HDX Ethiopian Administrative Hierarchy</h3>
+              <p class="card-subtitle">Official subnational geographic boundary datasets covering 4 administrative tiers</p>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="loadBoundariesSummary()">🔄 Reload Metrics</button>
+          </div>
+          <div class="stats" style="margin-bottom: 1.5rem;">
+            <div class="stat-card">
+              <div class="stat-label">Admin 1 Regions</div>
+              <div class="stat-value" id="boundaryRegions">15</div>
+              <div class="stat-subtext">Chartered Cities & Regional States</div>
+            </div>
+            <div class="stat-card blue">
+              <div class="stat-label">Admin 2 Zones</div>
+              <div class="stat-value" id="boundaryZones">107</div>
+              <div class="stat-subtext">Zonal Administrations</div>
+            </div>
+            <div class="stat-card amber">
+              <div class="stat-label">Admin 3 Woredas</div>
+              <div class="stat-value" id="boundaryWoredas">1,148</div>
+              <div class="stat-subtext">Districts / Jurisdictions</div>
+            </div>
+            <div class="stat-card purple">
+              <div class="stat-label">Admin 4 Kebeles</div>
+              <div class="stat-value" id="boundaryKebeles">60</div>
+              <div class="stat-subtext">Local Communities</div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header">
+              <div class="panel-title">Interactive Administrative Drill-Down</div>
+            </div>
+            <div class="panel-body">
+              <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
+                <div class="form-group">
+                  <label class="form-label">1. Select Region</label>
+                  <select class="form-select" id="exploreRegion" onchange="onExploreRegionChange()">
+                    <option value="">-- Choose Region --</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">2. Select Zone</label>
+                  <select class="form-select" id="exploreZone" onchange="onExploreZoneChange()" disabled>
+                    <option value="">-- Choose Zone --</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">3. Select Woreda</label>
+                  <select class="form-select" id="exploreWoreda" onchange="onExploreWoredaChange()" disabled>
+                    <option value="">-- Choose Woreda --</option>
+                  </select>
+                </div>
+              </div>
+              <div id="woredaDetailCard" style="display: none; background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem;">
+                <h4 id="detailWoredaName" style="color: var(--primary-dark); font-size: 1.15rem; margin-bottom: 0.75rem;"></h4>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; font-size: 0.85rem;">
+                  <div><strong style="color: var(--text-muted);">P-Code:</strong> <code id="detailWoredaCode" style="font-weight: 700;"></code></div>
+                  <div><strong style="color: var(--text-muted);">Amharic Name:</strong> <span id="detailWoredaAm" style="font-weight: 600;"></span></div>
+                  <div><strong style="color: var(--text-muted);">Center Lat:</strong> <span id="detailWoredaLat"></span></div>
+                  <div><strong style="color: var(--text-muted);">Center Lng:</strong> <span id="detailWoredaLng"></span></div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1190,6 +1265,50 @@
     </div>
   </div>
 
+  <!-- Admin Authentication Modal -->
+  <div id="authModal" class="modal">
+    <div class="modal-content" style="max-width: 440px;">
+      <div class="modal-header" style="background: linear-gradient(135deg, #059669, #10b981); color: white;">
+        <div>
+          <h3 class="modal-title" style="color: white; display: flex; align-items: center; gap: 0.5rem;">
+            <span>🛡️</span> AgriEtech Command Console
+          </h3>
+          <p style="font-size: 0.775rem; color: #d1fae5; margin-top: 0.2rem;">Sign in with your administrative credentials</p>
+        </div>
+        <button class="modal-close" style="color: white;" onclick="closeModal('authModal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="authAlert" style="display: none; padding: 0.75rem; border-radius: 6px; font-size: 0.85rem; margin-bottom: 1rem;"></div>
+        
+        <form id="adminLoginForm" onsubmit="event.preventDefault(); submitAdminLogin();">
+          <div class="form-group">
+            <label class="form-label">Admin Email *</label>
+            <input type="email" class="form-input" id="adminLoginEmail" placeholder="admin@agrietech.et" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Password *</label>
+            <input type="password" class="form-input" id="adminLoginPassword" placeholder="••••••••" required>
+          </div>
+          <button type="submit" id="adminLoginBtn" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 0.75rem; font-weight: 700;">
+            🔐 Sign In to Console
+          </button>
+        </form>
+
+        <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border); text-align: center;">
+          <a href="#" onclick="event.preventDefault(); toggleTokenDirectInput();" style="font-size: 0.8rem; color: var(--text-muted); text-decoration: none;">
+            🔑 Or paste Bearer Token / API Key
+          </a>
+          <div id="directTokenBox" style="display: none; margin-top: 0.75rem;">
+            <input type="text" id="directTokenInput" class="form-input" placeholder="Paste JWT token or API Key" style="font-size: 0.8rem; margin-bottom: 0.5rem;">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="applyDirectToken()" style="width: 100%; justify-content: center;">
+              Apply Token
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast -->
   <div id="toast" class="toast"></div>
 
@@ -1201,15 +1320,159 @@
 
     function getAuthHeaders() {
       const urlParams = new URLSearchParams(window.location.search);
-      const token = urlParams.get('token') || localStorage.getItem('accessToken') || '';
+      const token = urlParams.get('token') || urlParams.get('apiKey') || localStorage.getItem('accessToken') || '';
       const headers = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = 'Bearer ' + token;
+      if (token) {
+        if (token.startsWith('ey') || token.split('.').length === 3) {
+          headers['Authorization'] = 'Bearer ' + token;
+        } else {
+          headers['x-api-key'] = token;
+        }
+      }
       return headers;
     }
 
+    function openAuthModal(msg) {
+      const alert = document.getElementById('authAlert');
+      if (msg) {
+        alert.textContent = msg;
+        alert.style.display = 'block';
+        alert.style.background = '#fef2f2';
+        alert.style.color = '#991b1b';
+        alert.style.border = '1px solid #fca5a5';
+      } else {
+        alert.style.display = 'none';
+      }
+      openModal('authModal');
+    }
+
+    function toggleTokenDirectInput() {
+      const box = document.getElementById('directTokenBox');
+      box.style.display = box.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function applyDirectToken() {
+      const token = document.getElementById('directTokenInput').value.trim();
+      if (!token) return showToast('Please paste a token or API key', 'error');
+      localStorage.setItem('accessToken', token);
+      closeModal('authModal');
+      showToast('Authentication token applied!');
+      verifyAndLoadAdmin();
+    }
+
+    async function submitAdminLogin() {
+      const email = document.getElementById('adminLoginEmail').value.trim();
+      const password = document.getElementById('adminLoginPassword').value;
+      const btn = document.getElementById('adminLoginBtn');
+      const alert = document.getElementById('authAlert');
+
+      btn.disabled = true;
+      btn.textContent = 'Verifying credentials...';
+
+      try {
+        const res = await fetch('/api/v1/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+
+        const json = await res.json();
+        if (res.ok && json.success && json.data?.token) {
+          const user = json.data.user;
+          const allowedRoles = ['ADMIN', 'REGIONAL_OFFICER', 'ZONAL_OFFICER', 'WOREDA_OFFICER', 'DEVELOPMENT_AGENT'];
+          if (!allowedRoles.includes(user?.role)) {
+            alert.textContent = `Access denied: Role "${user?.role}" does not have administrative privileges.`;
+            alert.style.display = 'block';
+            alert.style.background = '#fef2f2';
+            alert.style.color = '#991b1b';
+            alert.style.border = '1px solid #fca5a5';
+            btn.disabled = false;
+            btn.textContent = '🔐 Sign In to Console';
+            return;
+          }
+
+          localStorage.setItem('accessToken', json.data.token);
+          localStorage.setItem('adminUser', JSON.stringify(user));
+          closeModal('authModal');
+          showToast(`Welcome, ${user.fullName || user.email}!`);
+          updateUserBadge(user);
+          loadOverview();
+          initMap();
+        } else {
+          alert.textContent = json.error?.message || json.message || 'Invalid administrative credentials';
+          alert.style.display = 'block';
+          alert.style.background = '#fef2f2';
+          alert.style.color = '#991b1b';
+          alert.style.border = '1px solid #fca5a5';
+        }
+      } catch (e) {
+        alert.textContent = 'Network or server error during sign in';
+        alert.style.display = 'block';
+        alert.style.background = '#fef2f2';
+        alert.style.color = '#991b1b';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '🔐 Sign In to Console';
+      }
+    }
+
+    function updateUserBadge(user) {
+      if (!user) return;
+      const badge = document.getElementById('adminUserBadge');
+      const name = document.getElementById('adminUserName');
+      const role = document.getElementById('adminUserRole');
+      const authBtn = document.getElementById('authBtn');
+      const signOutBtn = document.getElementById('signOutBtn');
+
+      name.textContent = user.fullName || user.email.split('@')[0];
+      role.textContent = user.role;
+      badge.style.display = 'flex';
+      authBtn.style.display = 'none';
+      signOutBtn.style.display = 'inline-flex';
+    }
+
+    function signOutAdmin() {
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('adminUser');
+      document.getElementById('adminUserBadge').style.display = 'none';
+      document.getElementById('authBtn').style.display = 'inline-flex';
+      document.getElementById('signOutBtn').style.display = 'none';
+      showToast('Signed out of administrative console');
+      openAuthModal('Signed out. Please sign in to resume.');
+    }
+
+    async function verifyAndLoadAdmin() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlToken = urlParams.get('token') || urlParams.get('apiKey');
+      if (urlToken) localStorage.setItem('accessToken', urlToken);
+
+      const token = localStorage.getItem('accessToken');
+      if (!token) {
+        openAuthModal();
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/v1/auth/me', { headers: getAuthHeaders() });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && json.data) {
+            updateUserBadge(json.data);
+            loadOverview();
+            initMap();
+            return;
+          }
+        }
+        localStorage.removeItem('accessToken');
+        openAuthModal('Your session has expired. Please sign in again.');
+      } catch (_e) {
+        loadOverview();
+        initMap();
+      }
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
-      loadOverview();
-      initMap();
+      verifyAndLoadAdmin();
     });
 
     function showTab(tabName, element) {
@@ -1228,6 +1491,7 @@
           plotFarmsOnMap();
         }, 150);
       }
+      else if (tabName === 'boundaries') loadBoundariesSummary();
       else if (tabName === 'users') loadUsers();
       else if (tabName === 'roleRequests') loadRoleRequests();
       else if (tabName === 'farms') loadFarms();
@@ -2156,6 +2420,118 @@ Active real records preserved: ${json.data.current.users} users, ${json.data.cur
         }
       } catch (e) {
         showToast('Error deleting diagnosis', 'error');
+      }
+    }
+
+    // Boundaries Explorer Logic
+    let boundariesData = { summary: null, regions: [], zones: [], woredas: [] };
+
+    async function loadBoundariesSummary() {
+      try {
+        const res = await fetch('/api/v1/boundaries/summary');
+        const json = await res.json();
+        if (json.success && json.data) {
+          const levels = json.data.levels || {};
+          document.getElementById('boundaryRegions').textContent = levels.admin1_regions || 15;
+          document.getElementById('boundaryZones').textContent = levels.admin2_zones || 107;
+          document.getElementById('boundaryWoredas').textContent = (levels.admin3_woredas || 1148).toLocaleString();
+          document.getElementById('boundaryKebeles').textContent = levels.admin4_kebeles || 60;
+        }
+      } catch (e) {
+        console.error('Failed to load boundary summary', e);
+      }
+
+      loadBoundaryRegions();
+    }
+
+    async function loadBoundaryRegions() {
+      try {
+        const res = await fetch('/api/v1/boundaries/regions');
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          boundariesData.regions = json.data;
+          const select = document.getElementById('exploreRegion');
+          select.innerHTML = '<option value="">-- Choose Region --</option>' +
+            json.data.map(r => `<option value="${r.id}">${r.nameEn} (${r.nameAm || r.nameEn})</option>`).join('');
+        }
+      } catch (e) {
+        console.error('Failed to load regions', e);
+      }
+    }
+
+    async function onExploreRegionChange() {
+      const regionId = document.getElementById('exploreRegion').value;
+      const zoneSelect = document.getElementById('exploreZone');
+      const woredaSelect = document.getElementById('exploreWoreda');
+      const detailCard = document.getElementById('woredaDetailCard');
+
+      zoneSelect.innerHTML = '<option value="">-- Choose Zone --</option>';
+      woredaSelect.innerHTML = '<option value="">-- Choose Woreda --</option>';
+      woredaSelect.disabled = true;
+      detailCard.style.display = 'none';
+
+      if (!regionId) {
+        zoneSelect.disabled = true;
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/v1/boundaries/zones?regionId=${regionId}`);
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          boundariesData.zones = json.data;
+          zoneSelect.innerHTML = '<option value="">-- Choose Zone --</option>' +
+            json.data.map(z => `<option value="${z.id}">${z.nameEn} (${z.nameAm || z.nameEn})</option>`).join('');
+          zoneSelect.disabled = false;
+        }
+      } catch (e) {
+        showToast('Failed to load zones for region', 'error');
+      }
+    }
+
+    async function onExploreZoneChange() {
+      const zoneId = document.getElementById('exploreZone').value;
+      const woredaSelect = document.getElementById('exploreWoreda');
+      const detailCard = document.getElementById('woredaDetailCard');
+
+      woredaSelect.innerHTML = '<option value="">-- Choose Woreda --</option>';
+      detailCard.style.display = 'none';
+
+      if (!zoneId) {
+        woredaSelect.disabled = true;
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/v1/boundaries/woredas?zoneId=${zoneId}`);
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          boundariesData.woredas = json.data;
+          woredaSelect.innerHTML = '<option value="">-- Choose Woreda --</option>' +
+            json.data.map(w => `<option value="${w.id}">${w.nameEn} (${w.nameAm || w.nameEn})</option>`).join('');
+          woredaSelect.disabled = false;
+        }
+      } catch (e) {
+        showToast('Failed to load woredas for zone', 'error');
+      }
+    }
+
+    function onExploreWoredaChange() {
+      const woredaId = document.getElementById('exploreWoreda').value;
+      const detailCard = document.getElementById('woredaDetailCard');
+      if (!woredaId) {
+        detailCard.style.display = 'none';
+        return;
+      }
+
+      const woreda = boundariesData.woredas.find(w => w.id === woredaId);
+      if (woreda) {
+        document.getElementById('detailWoredaName').textContent = `${woreda.nameEn} Woreda (${woreda.nameAm || woreda.nameEn})`;
+        document.getElementById('detailWoredaCode').textContent = woreda.code || woreda.id;
+        document.getElementById('detailWoredaAm').textContent = woreda.nameAm || woreda.nameEn;
+        document.getElementById('detailWoredaLat').textContent = woreda.centerLat ? Number(woreda.centerLat).toFixed(4) : 'N/A';
+        document.getElementById('detailWoredaLng').textContent = woreda.centerLng ? Number(woreda.centerLng).toFixed(4) : 'N/A';
+        detailCard.style.display = 'block';
       }
     }
 
