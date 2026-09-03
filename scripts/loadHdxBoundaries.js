@@ -235,9 +235,10 @@ async function main() {
   const admin2File = path.join(DATA_DIR, 'eth_admin2.geojson');
   const admin3File = path.join(DATA_DIR, 'eth_admin3.geojson');
 
+  const isLocal = !process.env.DATABASE_URL || process.env.DATABASE_URL.includes('localhost') || process.env.DATABASE_URL.includes('127.0.0.1');
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false },
+    ssl: isLocal ? false : { rejectUnauthorized: false },
     max: 2,
     connectionTimeoutMillis: 15000,
   });
