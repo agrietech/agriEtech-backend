@@ -25,6 +25,20 @@ async function getUssdSession(sessionKey) {
       // Redis session fetch fallback
     }
   }
+
+  if (isConnected()) {
+    try {
+      const row = await prisma.ussdSession.findUnique({
+        where: { sessionId: sessionKey },
+      });
+      if (row && row.isActive && row.sessionData) {
+        return row.sessionData;
+      }
+    } catch (_dbErr) {
+      // DB fallback
+    }
+  }
+
   return ussdSessions.get(sessionKey) || null;
 }
 
@@ -38,6 +52,32 @@ async function saveUssdSession(sessionKey, session, ttlSeconds = 300) {
     }
   }
   ussdSessions.set(sessionKey, session);
+
+  if (isConnected()) {
+    try {
+      await prisma.ussdSession.upsert({
+        where: { sessionId: sessionKey },
+        update: {
+          currentStep: session.step || 'HOME',
+          language: session.lang || 'am',
+          sessionData: session,
+          phoneNumber: session.phoneNumber || session.phone || 'UNKNOWN',
+          isActive: true,
+          updatedAt: new Date(),
+        },
+        create: {
+          sessionId: sessionKey,
+          phoneNumber: session.phoneNumber || session.phone || 'UNKNOWN',
+          currentStep: session.step || 'HOME',
+          language: session.lang || 'am',
+          sessionData: session,
+          isActive: true,
+        },
+      });
+    } catch (_dbErr) {
+      // DB fallback
+    }
+  }
 }
 
 const TRANSLATIONS = {
