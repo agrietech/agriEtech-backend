@@ -1,10 +1,9 @@
-const { prisma, isConnected } = require('../../config/db');
+const { prisma } = require('../../config/db');
 const { dispatchHazardAlertSms } = require('../../delivery/sms/smsDispatcher');
 const { broadcastEmergencyAlert } = require('../../delivery/websocket/riskAssessmentChannel');
 const { sendPushNotification } = require('../../delivery/push/fcmDispatcher');
 const logger = require('../../utils/logger');
-
-const inMemoryAlerts = new Map();
+const { NotFoundError, BadRequestError } = require('../../utils/errors');
 
 // Ethiopian crop season calendar evaluator
 function evaluateCropSeasonContext(hazardType, date = new Date()) {
@@ -24,8 +23,6 @@ function evaluateCropSeasonContext(hazardType, date = new Date()) {
   }
 
   const isDroughtHazard = String(hazardType).toUpperCase().includes('DROUGHT');
-
-  // In dry season (Bega), rain absence is normal — advise on livestock/irrigation rather than rainfed crop loss
   const isOffSeasonDrought = isDroughtHazard && season === 'DRY';
 
   return {
@@ -52,52 +49,36 @@ async function createAlert({
   messageEn,
   messageAm,
   messageOm,
+  actionItems = [],
+  priority = 1,
+  expiresAt = null,
   targetPhones = [],
 }) {
   const resolvedTitleEn = titleEn || headline || '';
   const resolvedMessageEn = messageEn || '';
 
   if (!woredaId || !hazardType || !resolvedTitleEn) {
-    throw Object.assign(new Error('woredaId, hazardType, and a title are required'), { statusCode: 400 });
+    throw new BadRequestError('woredaId, hazardType, and title are required');
+  }
+
+  // Verify woreda exists
+  const woreda = await prisma.woreda.findUnique({ where: { id: woredaId } });
+  if (!woreda) {
+    throw new NotFoundError(`Woreda '${woredaId}' does not exist`);
   }
 
   // Evaluate crop calendar context
   const cropCalendar = evaluateCropSeasonContext(hazardType);
   const effectiveSeverity = (cropCalendar.isOffSeasonAlert && severity === 'CRITICAL')
-    ? 'MODERATE' // Downgrade off-season false-alarm panics
+    ? 'MODERATE'
     : (severity || 'HIGH');
 
   const finalMessageEn = cropCalendar.contextNotice
     ? `${resolvedMessageEn} ${cropCalendar.contextNotice}`.trim()
     : resolvedMessageEn;
 
-  let alert = null;
-
-  if (isConnected()) {
-    try {
-      alert = await prisma.alert.create({
-        data: {
-          woredaId,
-          hazardType,
-          severity: effectiveSeverity,
-          headline: headline || resolvedTitleEn,
-          status: 'ACTIVE',
-          titleEn: resolvedTitleEn,
-          titleAm: titleAm || '',
-          titleOm: titleOm || null,
-          messageEn: finalMessageEn,
-          messageAm: messageAm || '',
-          messageOm: messageOm || null,
-        },
-      });
-    } catch (_err) {
-      // Fallback
-    }
-  }
-
-  if (!alert) {
-    alert = {
-      id: `alert_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+  const alert = await prisma.alert.create({
+    data: {
       woredaId,
       hazardType,
       severity: effectiveSeverity,
@@ -109,13 +90,63 @@ async function createAlert({
       messageEn: finalMessageEn,
       messageAm: messageAm || '',
       messageOm: messageOm || null,
-      cropCalendarContext: cropCalendar,
-      createdAt: new Date().toISOString(),
-      woreda: { id: woredaId, nameEn: woredaName || 'Adama Zuria', nameAm: 'አዳማ ዙሪያ' },
-    };
-    inMemoryAlerts.set(alert.id, alert);
+      priority: typeof priority === 'number' ? priority : 1,
+      actionItems: actionItems || [],
+      expiresAt: expiresAt ? new Date(expiresAt) : null,
+      targetPhones: Array.isArray(targetPhones) ? targetPhones : [],
+    },
+    include: {
+      woreda: { select: { id: true, nameEn: true, nameAm: true } },
+    },
+  });
+
+  // Automatically create a linked Advisory record
+  try {
+    await prisma.advisory.create({
+      data: {
+        alertId: alert.id,
+        woredaId,
+        hazardType,
+        severity: effectiveSeverity,
+        titleEn: alert.titleEn,
+        titleAm: alert.titleAm || alert.titleEn,
+        titleOm: alert.titleOm || null,
+        adviceEn: alert.messageEn,
+        adviceAm: alert.messageAm || alert.messageEn,
+        adviceOm: alert.messageOm || null,
+        actionItems: alert.actionItems,
+        validUntil: alert.expiresAt,
+        status: 'ACTIVE',
+      },
+    });
+  } catch (advErr) {
+    logger.warn(`[Alerts] Auto-advisory creation notice: ${advErr.message}`);
   }
 
+  // Dispatch notifications to registered users in this woreda
+  try {
+    const usersInWoreda = await prisma.user.findMany({
+      where: { woredaId },
+      select: { id: true },
+    });
+
+    if (usersInWoreda.length > 0) {
+      await prisma.notification.createMany({
+        data: usersInWoreda.map((u) => ({
+          userId: u.id,
+          titleEn: `🚨 ${alert.titleEn}`,
+          titleAm: `🚨 ${alert.titleAm || alert.titleEn}`,
+          bodyEn: alert.messageEn,
+          bodyAm: alert.messageAm || alert.messageEn,
+          type: 'ALERT',
+          metadata: { alertId: alert.id, hazardType: alert.hazardType, severity: alert.severity },
+        })),
+      });
+      logger.info(`[Alerts] Dispatched notifications to ${usersInWoreda.length} users in woreda ${woredaId}`);
+    }
+  } catch (notifErr) {
+    logger.warn(`[Alerts] Notification dispatch notice: ${notifErr.message}`);
+  }
 
   // 1. Dispatch Push Notifications via Firebase Cloud Messaging
   try {
@@ -142,7 +173,7 @@ async function createAlert({
       await dispatchHazardAlertSms({
         phoneNumbers: targetPhones,
         hazardType: hazardType || 'DROUGHT',
-        woredaName: woredaName || 'Unknown',
+        woredaName: woredaName || alert.woreda?.nameEn || 'Unknown',
         severity: severity || 'HIGH',
       });
     } catch (smsErr) {
@@ -162,124 +193,83 @@ async function createAlert({
 
 // Get active alerts with optional filters
 async function getActiveAlerts({ severity, woredaId, hazardType, status } = {}) {
-  if (isConnected()) {
-    try {
-      const where = {};
-      if (status) {
-        where.status = status;
-      } else {
-        where.status = 'ACTIVE';
-      }
-      if (severity) where.severity = severity;
-      if (woredaId) where.woredaId = woredaId;
-      if (hazardType) where.hazardType = hazardType;
-
-      return await prisma.alert.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        include: {
-          woreda: { select: { id: true, nameEn: true, nameAm: true } },
-        },
-      });
-    } catch (_err) {
-      // Fallback
-    }
+  const where = {};
+  if (status) {
+    where.status = status;
+  } else {
+    where.status = 'ACTIVE';
   }
+  if (severity) where.severity = severity;
+  if (woredaId) where.woredaId = woredaId;
+  if (hazardType) where.hazardType = hazardType;
 
-  const list = Array.from(inMemoryAlerts.values());
-  return list;
+  return await prisma.alert.findMany({
+    where,
+    orderBy: { createdAt: 'desc' },
+    include: {
+      woreda: { select: { id: true, nameEn: true, nameAm: true } },
+    },
+  });
 }
 
+// Get alert by ID
 async function getAlertById(id) {
-  if (isConnected()) {
-    try {
-      const alert = await prisma.alert.findUnique({
-        where: { id },
-        include: {
-          woreda: { select: { id: true, nameEn: true, nameAm: true } },
-        },
-      });
-      if (alert) return alert;
-    } catch (_err) {
-      // Fallback
-    }
+  const alert = await prisma.alert.findUnique({
+    where: { id },
+    include: {
+      woreda: { select: { id: true, nameEn: true, nameAm: true } },
+      advisories: true,
+    },
+  });
+
+  if (!alert) {
+    throw new NotFoundError(`Alert '${id}' not found`);
   }
 
-  return inMemoryAlerts.get(id) || null;
+  return alert;
 }
-
 
 async function markAlertAsRead(id) {
-  if (isConnected()) {
-    try {
-      const updated = await prisma.alert.update({
-        where: { id },
-        data: {
-          isRead: true,
-        },
-        include: {
-          woreda: { select: { id: true, nameEn: true, nameAm: true } },
-        },
-      });
-      return updated;
-    } catch (_err) {
-      // Fallback
-    }
+  const existing = await prisma.alert.findUnique({ where: { id } });
+  if (!existing) {
+    throw new NotFoundError(`Alert '${id}' not found`);
   }
 
-  const alert = inMemoryAlerts.get(id);
-  if (alert) {
-    alert.isRead = true;
-    inMemoryAlerts.set(id, alert);
-    return alert;
-  }
-
-  return { id, isRead: true };
+  return await prisma.alert.update({
+    where: { id },
+    data: { isRead: true },
+    include: {
+      woreda: { select: { id: true, nameEn: true, nameAm: true } },
+    },
+  });
 }
-
-// In-memory fallback for feedback storage during development / DB-offline mode
-const inMemoryFeedback = new Map();
 
 /**
  * Record farmer ground-truth feedback about an alert's accuracy.
- * { alertId, userId, accurate: boolean, notes: string }
  */
 async function submitAlertFeedback({ alertId, userId, accurate, notes }) {
-  const feedbackEntry = {
-    id: `fb_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+  const alert = await prisma.alert.findUnique({ where: { id: alertId } });
+  if (!alert) {
+    throw new NotFoundError(`Alert '${alertId}' not found`);
+  }
+
+  // Log ground-truth feedback into AuditLog
+  await prisma.auditLog.create({
+    data: {
+      action: 'ALERT_FEEDBACK_SUBMITTED',
+      adminId: userId || null,
+      details: JSON.stringify({ alertId, accurate, notes: notes || '' }),
+    },
+  });
+
+  return {
     alertId,
     userId: userId || 'anonymous',
     accurate,
     notes: notes || '',
     submittedAt: new Date().toISOString(),
   };
-
-  logger.info(`[AlertFeedback] userId=${feedbackEntry.userId} rated alert ${alertId} as ${accurate ? 'ACCURATE' : 'INACCURATE'}`);
-
-  if (isConnected()) {
-    try {
-      // Uses AlertFeedback model if defined in Prisma schema; silently skips if not
-      if (prisma.alertFeedback) {
-        const saved = await prisma.alertFeedback.create({
-          data: {
-            alertId,
-            userId: userId || null,
-            accurate,
-            notes: notes || '',
-          },
-        });
-        return saved;
-      }
-    } catch (_err) {
-      logger.warn(`[AlertFeedback] DB persist failed (non-fatal): ${_err.message}`);
-    }
-  }
-
-  // Fallback: in-memory storage
-  inMemoryFeedback.set(feedbackEntry.id, feedbackEntry);
-  return feedbackEntry;
 }
-
 
 module.exports = {
   createAlert,
@@ -287,5 +277,4 @@ module.exports = {
   getAlertById,
   markAlertAsRead,
   submitAlertFeedback,
-  inMemoryAlerts,
 };
