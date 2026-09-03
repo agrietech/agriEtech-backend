@@ -77,8 +77,8 @@ const requireAdmin = (req, res, next) => {
 };
 
 // Public dashboard console view (serves HTML admin interface)
-router.get('/', adminAuth, (_req, res) => res.redirect('/api/v1/admin/dashboard'));
-router.get('/dashboard', adminAuth, controller.renderDashboard);
+router.get('/', (_req, res) => res.redirect('/admin/dashboard'));
+router.get('/dashboard', controller.renderDashboard);
 
 // Admin Operations & Diagnostics Endpoints
 router.get('/overview', adminAuth, controller.getOverview);
