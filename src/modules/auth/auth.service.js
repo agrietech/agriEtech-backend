@@ -7,34 +7,14 @@ const {
   BadRequestError,
   UnauthorizedError,
   ConflictError,
+  NotFoundError,
+  ServiceUnavailableError,
 } = require('../../utils/errors');
 const {
   sendPasswordResetEmail,
   sendVerificationEmail: _sendVerificationEmail,
 } = require('../../delivery/email/emailDispatcher');
 const logger = require('../../utils/logger');
-
-// In-memory fallback user registry for development & offline execution
-const inMemoryUserRegistry = new Map([
-  [
-    'farmer@agrietech.et',
-    {
-      id: 'usr_test_farmer_01',
-      email: 'farmer@agrietech.et',
-      phoneNumber: '+251911223344',
-      fullName: 'Abebe Bikila',
-      passwordHash: bcrypt.hashSync('Password123!', 10),
-      role: 'ADMIN',
-      isEmailVerified: true,
-      woredaId: 'woreda_adama_01',
-      preferredLang: 'am',
-      createdAt: new Date().toISOString(),
-    },
-  ],
-]);
-const mockUsers = inMemoryUserRegistry;
-
-// Token blacklist - Redis-backed for persistence
 const redis = require('../../config/redis');
 
 // Helper to validate email format
@@ -58,6 +38,16 @@ function sanitizeUser(user) {
     email: sanitized.email || null,
     phoneNumber: sanitized.phoneNumber || null,
     fullName: sanitized.fullName,
+    role: sanitized.role,
+    regionId: sanitized.regionId || null,
+    zoneId: sanitized.zoneId || null,
+    woredaId: sanitized.woredaId || null,
+    kebeleId: sanitized.kebeleId || null,
+    kebeleName: sanitized.kebeleName || null,
+    preferredLang: sanitized.preferredLang || 'en',
+    isEmailVerified: Boolean(sanitized.isEmailVerified),
+    createdAt: sanitized.createdAt,
+    updatedAt: sanitized.updatedAt,
   };
 }
 
@@ -67,39 +57,60 @@ function generateAccessToken(user) {
       id: user.id,
       email: user.email || null,
       phoneNumber: user.phoneNumber || null,
+      fullName: user.fullName,
       role: user.role,
-      woredaId: user.woredaId || null,
-      zoneId: user.zoneId || null,
       regionId: user.regionId || null,
-      type: 'access',
+      zoneId: user.zoneId || null,
+      woredaId: user.woredaId || null,
     },
     env.JWT_SECRET,
-    { expiresIn: env.JWT_EXPIRES_IN || '24h' }
+    { expiresIn: env.JWT_EXPIRES_IN || '7d' }
   );
 }
 
 function generateRefreshToken(user) {
   return jwt.sign(
-    {
-      id: user.id,
-      email: user.email || null,
-      phoneNumber: user.phoneNumber || null,
-      type: 'refresh',
-    },
+    { id: user.id, type: 'refresh' },
     env.JWT_SECRET,
-    { expiresIn: env.JWT_REFRESH_EXPIRES_IN || '30d' }
+    { expiresIn: '30d' }
   );
 }
 
-const VALID_ROLES = ['FARMER', 'DEVELOPMENT_AGENT', 'WOREDA_OFFICER', 'ZONAL_OFFICER', 'REGIONAL_OFFICER', 'RESEARCHER', 'ADMIN'];
+// In-memory rate limiting for login attempts
+const loginAttemptsMap = new Map();
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOGIN_LOCKOUT_MS = 15 * 60 * 1000; // 15 minutes
 
-// Roles that require admin approval — cannot be self-assigned at registration
-const PRIVILEGED_ROLES = ['DEVELOPMENT_AGENT', 'WOREDA_OFFICER', 'ZONAL_OFFICER', 'REGIONAL_OFFICER', 'RESEARCHER', 'ADMIN'];
+function _checkLoginLockout(identifier) {
+  const record = loginAttemptsMap.get(identifier);
+  if (!record) return;
+  if (record.lockedUntil && Date.now() < record.lockedUntil) {
+    const remainingMin = Math.ceil((record.lockedUntil - Date.now()) / 60000);
+    throw new UnauthorizedError(
+      `Account temporarily locked due to too many failed attempts. Try again in ${remainingMin} minute(s).`
+    );
+  }
+  if (record.lockedUntil && Date.now() >= record.lockedUntil) {
+    loginAttemptsMap.delete(identifier);
+  }
+}
+
+function _recordLoginFailure(identifier) {
+  const record = loginAttemptsMap.get(identifier) || { count: 0, lockedUntil: null };
+  record.count += 1;
+  if (record.count >= MAX_LOGIN_ATTEMPTS) {
+    record.lockedUntil = Date.now() + LOGIN_LOCKOUT_MS;
+    logger.warn(`[Auth Service] Account locked for 15 minutes after ${record.count} failed attempts: ${identifier}`);
+  }
+  loginAttemptsMap.set(identifier, record);
+}
+
+// In-memory rate limiting for OTP reset attempts
+const resetAttemptsMap = new Map();
+const MAX_RESET_ATTEMPTS = 5;
 
 /**
- * Register a new user with Email (Phone Number Optional).
- * Self-registration is restricted to the FARMER role.
- * Privileged roles must be requested via POST /auth/role-requests after registration.
+ * Register a new user
  */
 async function registerUser({
   email,
@@ -109,219 +120,162 @@ async function registerUser({
   name,
   password,
   role = 'FARMER',
+  regionId,
+  zoneId,
   woredaId,
-  zoneId: _zoneId,
-  regionId: _regionId,
+  kebeleId,
+  kebeleName,
   preferredLang = 'en',
+  deviceToken,
+  fcmToken,
+  staffIdNumber,
+  organizationName,
+  officialRole,
 }) {
-  const resolvedEmail = (email || '').trim().toLowerCase() || null;
-  const resolvedPhone = (phoneNumber || phone || '').trim() || null;
-  const resolvedName = (fullName || name || '').trim();
+  const resolvedEmail = email && typeof email === 'string' && email.trim() ? email.trim().toLowerCase() : null;
+  const resolvedPhone = (phoneNumber || phone || '').toString().trim() || null;
+  const resolvedName = (fullName || name || '').toString().trim();
+  const resolvedRole = (role || 'FARMER').toString().trim().toUpperCase();
 
-  // Normalize role — reject privileged role self-assignment
-  const requestedRole = (role || 'FARMER').toString().trim().toUpperCase();
-  if (PRIVILEGED_ROLES.includes(requestedRole)) {
-    throw new BadRequestError(
-      `Self-registration as '${requestedRole}' is not permitted. ` +
-      'Register as FARMER first, then submit a role upgrade request via /auth/role-requests.'
-    );
-  }
-  const resolvedRole = VALID_ROLES.includes(requestedRole) ? requestedRole : 'FARMER';
-
-  if (!resolvedName || !password) {
-    throw new BadRequestError('Full name and password are required');
-  }
-
-  // Support registration by Email, Phone Number, or Both
   if (!resolvedEmail && !resolvedPhone) {
-    throw new BadRequestError('Either email address or phone number is required');
+    throw new BadRequestError('Either an email address or phone number is required');
   }
-
   if (resolvedEmail && !isValidEmail(resolvedEmail)) {
-    throw new BadRequestError('Please provide a valid email address');
+    throw new BadRequestError('Invalid email format');
+  }
+  if (!resolvedName) {
+    throw new BadRequestError('Full name is required');
+  }
+  if (!password || password.length < 6) {
+    throw new BadRequestError('Password must be at least 6 characters long');
   }
 
-  if (password.length < 8) {
-    throw new BadRequestError('Password must be at least 8 characters long');
+  // Enforce staff credentials for professional roles
+  const requiresStaffCredentials = [
+    'DEVELOPMENT_AGENT',
+    'WOREDA_OFFICER',
+    'ZONAL_OFFICER',
+    'REGIONAL_OFFICER',
+    'RESEARCHER',
+    'ADMIN',
+  ].includes(resolvedRole);
+
+  if (requiresStaffCredentials) {
+    const staffId = staffIdNumber || officialRole;
+    const org = organizationName;
+    if (!staffId || !org) {
+      throw new BadRequestError(
+        `Official Staff ID / Badge Number and Organization are required for '${resolvedRole}' registration.`
+      );
+    }
   }
 
-  if (!/[A-Z]/.test(password)) {
-    throw new BadRequestError('Password must contain at least one uppercase letter');
+  // Check if email already exists
+  if (resolvedEmail) {
+    const existingEmail = await prisma.user.findFirst({
+      where: { email: { equals: resolvedEmail, mode: 'insensitive' } },
+    });
+    if (existingEmail) {
+      throw new ConflictError('User with this email already exists');
+    }
   }
 
-  if (!/[0-9]/.test(password)) {
-    throw new BadRequestError('Password must contain at least one number');
+  // Check if phone already exists
+  if (resolvedPhone) {
+    const existingPhone = await prisma.user.findFirst({
+      where: { phoneNumber: resolvedPhone },
+    });
+    if (existingPhone) {
+      throw new ConflictError('User with this phone number already exists');
+    }
   }
 
   const passwordHash = await bcrypt.hash(password, 10);
   const verificationToken = `${crypto.randomBytes(24).toString('hex')}_${Date.now()}`;
 
-  if (isConnected()) {
-    // Check if email already exists
-    const existingEmail = await prisma.user.findFirst({
-      where: { email: resolvedEmail },
+  let user;
+  try {
+    user = await prisma.user.create({
+      data: {
+        email: resolvedEmail || (resolvedPhone ? `user_${resolvedPhone.replace(/[^0-9]/g, '')}@phone.agrietech.et` : null),
+        phoneNumber: resolvedPhone || null,
+        fullName: resolvedName,
+        passwordHash,
+        role: resolvedRole,
+        regionId: (regionId && String(regionId).trim()) || null,
+        zoneId: (zoneId && String(zoneId).trim()) || null,
+        woredaId: (woredaId && String(woredaId).trim()) || null,
+        kebeleId: (kebeleId && String(kebeleId).trim()) || null,
+        kebeleName: (kebeleName && String(kebeleName).trim()) || null,
+        preferredLang: (preferredLang && String(preferredLang).trim()) || 'en',
+        deviceToken: (deviceToken && String(deviceToken).trim()) || null,
+        fcmToken: (fcmToken && String(fcmToken).trim()) || null,
+        verificationToken,
+      },
     });
-    if (existingEmail) {
-      throw new ConflictError('User with this email already exists');
+  } catch (dbErr) {
+    if (dbErr.code === 'P2002') {
+      const targetField = Array.isArray(dbErr.meta?.target) ? dbErr.meta.target.join(', ') : 'email or phone';
+      throw new ConflictError(`User with this ${targetField} already exists`);
     }
-
-    // Check if phone already exists (if provided)
-    if (resolvedPhone) {
-      const existingPhone = await prisma.user.findFirst({
-        where: { phoneNumber: resolvedPhone },
-      });
-      if (existingPhone) {
-        throw new ConflictError('User with this phone number already exists');
-      }
-    }
-
-    let user;
-    try {
-      user = await prisma.user.create({
-        data: {
-          email: resolvedEmail || (resolvedPhone ? `user_${resolvedPhone.replace(/[^0-9]/g, '')}@phone.agrietech.et` : null),
-          phoneNumber: resolvedPhone || null,
-          fullName: resolvedName,
-          passwordHash,
-          role: resolvedRole,
-          woredaId: (woredaId && String(woredaId).trim()) || null,
-          preferredLang: (preferredLang && String(preferredLang).trim()) || 'en',
-          verificationToken,
-        },
-      });
-    } catch (dbErr) {
-      if (dbErr.code === 'P2002') {
-        const targetField = Array.isArray(dbErr.meta?.target) ? dbErr.meta.target.join(', ') : 'email or phone';
-        throw new ConflictError(`User with this ${targetField} already exists`);
-      }
-      throw dbErr;
-    }
-
-    // Send verification email asynchronously if real email was provided (non-blocking)
-    if (resolvedEmail && !resolvedEmail.includes('@phone.')) {
-      setImmediate(async () => {
-        try {
-          await _sendVerificationEmail(resolvedEmail, verificationToken);
-          logger.info(`[Auth Service] Verification email dispatched to ${resolvedEmail}`);
-        } catch (emailErr) {
-          logger.warn(`[Auth Service] Verification email notice: ${emailErr.message}`);
-        }
-      });
-    }
-
-    const accessToken = generateAccessToken(user);
-    const refreshToken = generateRefreshToken(user);
-
-    return {
-      user: sanitizeUser(user),
-      token: accessToken,
-      accessToken,
-      refreshToken,
-    };
+    throw dbErr;
   }
-
-  // Fallback in-memory registration
-  if (mockUsers.has(resolvedEmail)) {
-    throw new ConflictError('User with this email already exists');
-  }
-  if (resolvedPhone && mockUsers.has(resolvedPhone)) {
-    throw new ConflictError('User with this phone number already exists');
-  }
-
-  const fallbackUser = {
-    id: `usr_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-    email: resolvedEmail || (resolvedPhone ? `user_${resolvedPhone.replace(/[^0-9]/g, '')}@phone.agrietech.et` : null),
-    phoneNumber: resolvedPhone || null,
-    fullName: resolvedName,
-    passwordHash,
-    role: resolvedRole,
-    isEmailVerified: false,
-    woredaId: woredaId || null,
-    preferredLang,
-    verificationToken,
-    createdAt: new Date().toISOString(),
-  };
-
-  mockUsers.set(resolvedEmail, fallbackUser);
-  if (resolvedPhone) mockUsers.set(resolvedPhone, fallbackUser);
-  mockUsers.set(fallbackUser.id, fallbackUser);
 
   // Send verification email asynchronously if real email was provided (non-blocking)
   if (resolvedEmail && !resolvedEmail.includes('@phone.')) {
     setImmediate(async () => {
       try {
         await _sendVerificationEmail(resolvedEmail, verificationToken);
-        logger.info(`[Auth Service] Mock verification email sent to ${resolvedEmail}`);
+        logger.info(`[Auth Service] Verification email dispatched to ${resolvedEmail}`);
       } catch (emailErr) {
-        logger.warn(`[Auth Service] Mock verification email failed: ${emailErr.message}`);
+        logger.warn(`[Auth Service] Verification email notice: ${emailErr.message}`);
       }
     });
   }
 
-  const accessToken = generateAccessToken(fallbackUser);
-  const refreshToken = generateRefreshToken(fallbackUser);
+  const accessToken = generateAccessToken(user);
+  const refreshToken = generateRefreshToken(user);
 
   return {
-    user: sanitizeUser(fallbackUser),
+    user: sanitizeUser(user),
     token: accessToken,
     accessToken,
     refreshToken,
   };
 }
 
-// ── Login Brute-Force Protection ──────────────────────────────────────
-const loginAttemptsMap = new Map(); // key: normalizedIdentifier → { count, lockedUntil }
-const MAX_LOGIN_ATTEMPTS = 5;
-const LOGIN_LOCKOUT_MS = 15 * 60 * 1000; // 15 minutes
-
 /**
- * User login with Email (Primary Method)
- * Phone number login still supported for backward compatibility but email is preferred
- * Includes brute-force rate limiting: 5 failed attempts → 15-minute lockout
+ * Log in an existing user
  */
-async function loginUser({ email, phoneNumber, phone, identifier, password }) {
-  const rawIdentifier = (email || identifier || phoneNumber || phone || '').trim();
-
-  if (!rawIdentifier || !password) {
-    throw new BadRequestError('Email and password are required');
+async function loginUser({ email, phoneNumber, identifier, password }) {
+  const rawIdentifier = (identifier || email || phoneNumber || '').toString().trim();
+  if (!rawIdentifier) {
+    throw new BadRequestError('Email address or phone number is required');
+  }
+  if (!password) {
+    throw new BadRequestError('Password is required');
   }
 
-  const normalizedIdentifier = rawIdentifier.toLowerCase();
+  const isEmail = rawIdentifier.includes('@');
+  const normalizedIdentifier = isEmail ? rawIdentifier.toLowerCase() : rawIdentifier;
 
-  // ── Brute-force check ──
-  const attemptRecord = loginAttemptsMap.get(normalizedIdentifier);
-  if (attemptRecord && attemptRecord.lockedUntil) {
-    if (Date.now() < attemptRecord.lockedUntil) {
-      const remainingMinutes = Math.ceil((attemptRecord.lockedUntil - Date.now()) / 60000);
-      throw new BadRequestError(
-        `Account temporarily locked due to too many failed login attempts. ` +
-        `Please try again in ${remainingMinutes} minute(s).`
-      );
-    }
-    // Lockout expired — reset
-    loginAttemptsMap.delete(normalizedIdentifier);
-  }
+  _checkLoginLockout(normalizedIdentifier);
 
   let user = null;
-
-  if (isConnected()) {
-    try {
-      if (rawIdentifier.includes('@')) {
-        user = await prisma.user.findFirst({
-          where: { email: { equals: normalizedIdentifier, mode: 'insensitive' } },
-        });
-      } else {
-        user = await prisma.user.findFirst({
-          where: { phoneNumber: rawIdentifier },
-        });
-      }
-    } catch (_err) {
-      // Fallback to mock
-    }
-  }
-
-  if (!user) {
-    user = mockUsers.get(normalizedIdentifier) || mockUsers.get(rawIdentifier);
+  if (isEmail) {
+    user = await prisma.user.findFirst({
+      where: { email: { equals: normalizedIdentifier, mode: 'insensitive' } },
+    });
+  } else {
+    user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { phoneNumber: rawIdentifier },
+          { phoneNumber: rawIdentifier.startsWith('+251') ? '0' + rawIdentifier.slice(4) : rawIdentifier },
+          { phoneNumber: rawIdentifier.startsWith('0') ? '+251' + rawIdentifier.slice(1) : rawIdentifier },
+        ],
+      },
+    });
   }
 
   if (!user) {
@@ -335,7 +289,7 @@ async function loginUser({ email, phoneNumber, phone, identifier, password }) {
     throw new UnauthorizedError('Invalid email or password');
   }
 
-  // ── Successful login — clear any failure records ──
+  // Clear failed login attempts on success
   loginAttemptsMap.delete(normalizedIdentifier);
 
   const accessToken = generateAccessToken(user);
@@ -349,168 +303,142 @@ async function loginUser({ email, phoneNumber, phone, identifier, password }) {
   };
 }
 
-/** Record a failed login attempt and enforce lockout after MAX_LOGIN_ATTEMPTS */
-function _recordLoginFailure(identifier) {
-  const record = loginAttemptsMap.get(identifier) || { count: 0, lockedUntil: null };
-  record.count += 1;
-  if (record.count >= MAX_LOGIN_ATTEMPTS) {
-    record.lockedUntil = Date.now() + LOGIN_LOCKOUT_MS;
-    logger.warn(`[Auth Service] Account locked for 15 minutes after ${record.count} failed attempts: ${identifier}`);
-  }
-  loginAttemptsMap.set(identifier, record);
-}
-
 /**
- * Request Password Reset (sends email link)
+ * Request Password Reset OTP
  */
-async function requestPasswordReset(email) {
-  const normalizedEmail = (email || '').trim().toLowerCase();
-  if (!normalizedEmail || !isValidEmail(normalizedEmail)) {
-    throw new BadRequestError('A valid email address is required');
+async function requestPasswordReset(identifierOrPayload) {
+  let rawIdentifier = '';
+  if (typeof identifierOrPayload === 'string') {
+    rawIdentifier = identifierOrPayload.trim();
+  } else if (identifierOrPayload && typeof identifierOrPayload === 'object') {
+    rawIdentifier = (
+      identifierOrPayload.email ||
+      identifierOrPayload.identifier ||
+      identifierOrPayload.phoneNumber ||
+      identifierOrPayload.phone ||
+      ''
+    ).toString().trim();
   }
+
+  if (!rawIdentifier) {
+    throw new BadRequestError('Email address or phone number is required');
+  }
+
+  const isEmail = rawIdentifier.includes('@');
+  const normalizedEmail = isEmail ? rawIdentifier.toLowerCase() : null;
+  const normalizedPhone = !isEmail ? rawIdentifier : null;
 
   let user = null;
-  if (isConnected()) {
-    try {
-      user = await prisma.user.findFirst({
-        where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
-      });
-    } catch (_err) {
-      // Fallback
-    }
+  if (isEmail) {
+    user = await prisma.user.findFirst({
+      where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
+    });
+  } else if (normalizedPhone) {
+    user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { phoneNumber: normalizedPhone },
+          { phoneNumber: normalizedPhone.startsWith('+251') ? '0' + normalizedPhone.slice(4) : normalizedPhone },
+          { phoneNumber: normalizedPhone.startsWith('0') ? '+251' + normalizedPhone.slice(1) : normalizedPhone },
+        ],
+      },
+    });
   }
 
-  if (!user) {
-    user = mockUsers.get(normalizedEmail);
-  }
-
-  // Generate a secure 6-digit numeric OTP code (e.g. 749201) with 5-minute validation time
+  // Generate a secure 6-digit numeric OTP code with 5-minute validation
   const resetToken = crypto.randomInt(100000, 999999).toString();
-  const AUTH_VALIDATION_TTL_MS = 5 * 60 * 1000; // Exactly 5 minutes authentication validation time
+  const AUTH_VALIDATION_TTL_MS = 5 * 60 * 1000;
   const resetExpires = new Date(Date.now() + AUTH_VALIDATION_TTL_MS);
-  const targetEmail = user?.email || normalizedEmail;
-  const resetLink = `${env.APP_URL}/reset-password?token=${resetToken}&email=${encodeURIComponent(targetEmail)}`;
 
   if (user) {
-    if (isConnected()) {
-      try {
-        await prisma.user.update({
-          where: { id: user.id },
-          data: {
-            resetPasswordToken: resetToken,
-            resetPasswordExpires: resetExpires,
-          },
-        });
-      } catch (_err) {
-        // Fallback
-      }
-    }
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        resetPasswordToken: resetToken,
+        resetPasswordExpires: resetExpires,
+      },
+    });
 
-    user.resetPasswordToken = resetToken;
-    user.resetPasswordExpires = resetExpires;
+    logger.info(`[Auth Service] Password reset OTP generated for ${user.email || user.phoneNumber}: [${resetToken}] (valid 5 min)`);
 
-    // Send password reset email asynchronously if user has a real email (non-blocking)
+    // Dispatch via Email if real email exists
     if (user.email && !user.email.includes('@phone.')) {
       setImmediate(async () => {
         try {
+          const resetLink = `${env.APP_URL}/reset-password?token=${resetToken}&email=${encodeURIComponent(user.email)}`;
           await sendPasswordResetEmail(user.email, resetToken, resetLink);
-          logger.info(`[Auth Service] Password reset code sent to ${user.email} (valid for 5 mins)`);
+          logger.info(`[Auth Service] Password reset email dispatched to ${user.email}`);
         } catch (emailErr) {
-          logger.warn(`[Auth Service] Password reset email failed: ${emailErr.message}`);
+          logger.warn(`[Auth Service] Password reset email notice: ${emailErr.message}`);
+        }
+      });
+    }
+
+    // Dispatch via SMS if phone number exists
+    if (user.phoneNumber) {
+      setImmediate(async () => {
+        try {
+          const { sendSms } = require('../../delivery/sms/africasTalkingClient');
+          const smsText = `AgriEtech: Your 6-digit password reset OTP is ${resetToken}. Valid for 5 minutes. Do not share this code with anyone.`;
+          await sendSms([user.phoneNumber], smsText);
+          logger.info(`[Auth Service] Password reset SMS dispatched to ${user.phoneNumber}`);
+        } catch (smsErr) {
+          logger.warn(`[Auth Service] Password reset SMS notice: ${smsErr.message}`);
         }
       });
     }
   }
 
   return {
-    message: 'If an account exists with this email, a 6-digit password reset code has been sent (valid for 5 minutes).',
-    token: resetToken,
-    code: resetToken,
+    message: 'If an account matches that identifier, a password reset code has been sent.',
     expiresInSeconds: 300,
-    resetLink,
   };
 }
 
 const forgotPassword = requestPasswordReset;
 
-const resetAttemptsMap = new Map(); // token -> failureCount
-
 /**
- * Reset Password with 6-Digit Code or Secure Token (with Brute-Force Rate Limiting)
+ * Reset password with OTP code
  */
-async function resetPassword({ token, code, resetCode, newPassword }) {
-  const resolvedToken = (token || code || resetCode || '').toString().trim();
-  if (!resolvedToken || !newPassword) {
-    throw new BadRequestError('Reset code and new password are required');
+async function resetPassword({ token, resetToken, code, resetCode, newPassword, password } = {}) {
+  const resolvedToken = (token || resetToken || code || resetCode || '').toString().trim();
+  const resolvedPassword = (newPassword || password || '').toString();
+
+  if (!resolvedToken) {
+    throw new BadRequestError('Password reset code is required');
+  }
+  if (!resolvedPassword || resolvedPassword.length < 6) {
+    throw new BadRequestError('New password must be at least 6 characters long');
   }
 
-  if (newPassword.length < 6) {
-    throw new BadRequestError('Password must be at least 6 characters long');
-  }
-
-  // Brute force protection: maximum 5 attempts per token
   const attempts = resetAttemptsMap.get(resolvedToken) || 0;
-  if (attempts >= 5) {
-    resetAttemptsMap.delete(resolvedToken);
-    throw new BadRequestError('Too many invalid attempts. For security, this reset token has been invalidated. Please request a new code.');
+  if (attempts >= MAX_RESET_ATTEMPTS) {
+    throw new BadRequestError('Too many failed reset attempts. Please request a new code.');
   }
 
-  let user = null;
-
-  if (isConnected()) {
-    try {
-      user = await prisma.user.findFirst({
-        where: {
-          resetPasswordToken: resolvedToken,
-          resetPasswordExpires: { gt: new Date() },
-        },
-      });
-    } catch (_err) {
-      // Fallback
-    }
-  }
-
-  if (!user) {
-    for (const u of mockUsers.values()) {
-      if (
-        u.resetPasswordToken === resolvedToken &&
-        u.resetPasswordExpires &&
-        new Date(u.resetPasswordExpires) > new Date()
-      ) {
-        user = u;
-        break;
-      }
-    }
-  }
+  const user = await prisma.user.findFirst({
+    where: {
+      resetPasswordToken: resolvedToken,
+      resetPasswordExpires: { gt: new Date() },
+    },
+  });
 
   if (!user) {
     resetAttemptsMap.set(resolvedToken, attempts + 1);
     throw new BadRequestError('Password reset code is invalid or has expired');
   }
 
-  // Clear attempts on success
   resetAttemptsMap.delete(resolvedToken);
 
-  const newHash = await bcrypt.hash(newPassword, 10);
-
-  if (isConnected()) {
-    try {
-      await prisma.user.update({
-        where: { id: user.id },
-        data: {
-          passwordHash: newHash,
-          resetPasswordToken: null,
-          resetPasswordExpires: null,
-        },
-      });
-    } catch (_err) {
-      // Fallback
-    }
-  }
-
-  user.passwordHash = newHash;
-  user.resetPasswordToken = null;
-  user.resetPasswordExpires = null;
+  const newHash = await bcrypt.hash(resolvedPassword, 10);
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      passwordHash: newHash,
+      resetPasswordToken: null,
+      resetPasswordExpires: null,
+    },
+  });
 
   return {
     message: 'Password has been reset successfully. You can now log in with your new password.',
@@ -518,33 +446,16 @@ async function resetPassword({ token, code, resetCode, newPassword }) {
 }
 
 /**
- * Verify Email with Verification Token (checks 24-hour expiration)
+ * Verify Email with Verification Token
  */
 async function verifyEmail(token) {
   if (!token) {
     throw new BadRequestError('Verification token is required');
   }
 
-  let user = null;
-
-  if (isConnected()) {
-    try {
-      user = await prisma.user.findFirst({
-        where: { verificationToken: token },
-      });
-    } catch (_err) {
-      // Fallback
-    }
-  }
-
-  if (!user) {
-    for (const u of mockUsers.values()) {
-      if (u.verificationToken === token) {
-        user = u;
-        break;
-      }
-    }
-  }
+  const user = await prisma.user.findFirst({
+    where: { verificationToken: token },
+  });
 
   if (!user) {
     throw new BadRequestError('Invalid or expired verification token');
@@ -559,22 +470,13 @@ async function verifyEmail(token) {
     }
   }
 
-  if (isConnected()) {
-    try {
-      await prisma.user.update({
-        where: { id: user.id },
-        data: {
-          isEmailVerified: true,
-          verificationToken: null,
-        },
-      });
-    } catch (_err) {
-      // Fallback
-    }
-  }
-
-  user.isEmailVerified = true;
-  user.verificationToken = null;
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      isEmailVerified: true,
+      verificationToken: null,
+    },
+  });
 
   return {
     message: 'Email address verified successfully',
@@ -590,26 +492,9 @@ async function resendVerificationEmail(email) {
     throw new BadRequestError('A valid email address is required');
   }
 
-  let user = null;
-
-  if (isConnected()) {
-    try {
-      user = await prisma.user.findFirst({
-        where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
-      });
-    } catch (_err) {
-      // Fallback
-    }
-  }
-
-  if (!user) {
-    for (const u of mockUsers.values()) {
-      if (u.email && u.email.toLowerCase() === normalizedEmail) {
-        user = u;
-        break;
-      }
-    }
-  }
+  const user = await prisma.user.findFirst({
+    where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
+  });
 
   if (!user) {
     return { message: 'If an account with this email exists, a verification link has been sent.' };
@@ -620,21 +505,11 @@ async function resendVerificationEmail(email) {
   }
 
   const newToken = `${crypto.randomBytes(24).toString('hex')}_${Date.now()}`;
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { verificationToken: newToken },
+  });
 
-  if (isConnected()) {
-    try {
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { verificationToken: newToken },
-      });
-    } catch (_err) {
-      // Fallback
-    }
-  }
-
-  user.verificationToken = newToken;
-
-  // Send verification email asynchronously (non-blocking)
   setImmediate(async () => {
     try {
       await _sendVerificationEmail(user.email, newToken);
@@ -649,6 +524,9 @@ async function resendVerificationEmail(email) {
   };
 }
 
+/**
+ * Refresh access token
+ */
 async function refreshAccessToken(refreshToken) {
   if (!refreshToken) {
     throw new BadRequestError('Refresh token is required');
@@ -662,31 +540,9 @@ async function refreshAccessToken(refreshToken) {
     throw new UnauthorizedError('Invalid or expired refresh token');
   }
 
-  let user = null;
-  if (isConnected()) {
-    try {
-      user = await prisma.user.findUnique({ where: { id: decoded.id } });
-    } catch (_err) {
-      // Fallback
-    }
-  }
-
+  const user = await prisma.user.findUnique({ where: { id: decoded.id } });
   if (!user) {
-    for (const u of mockUsers.values()) {
-      if (u.id === decoded.id) {
-        user = u;
-        break;
-      }
-    }
-    if (!user) {
-      user = {
-        id: decoded.id,
-        email: decoded.email || 'farmer@agrietech.et',
-        phoneNumber: decoded.phoneNumber || '+251911223344',
-        fullName: 'Test User',
-        role: 'FARMER',
-      };
-    }
+    throw new UnauthorizedError('User account not found');
   }
 
   const newAccessToken = generateAccessToken(user);
@@ -715,14 +571,8 @@ async function logout(token) {
 
 async function logoutUser(accessToken, refreshToken) {
   const promises = [];
-  
-  if (accessToken) {
-    promises.push(logout(accessToken));
-  }
-  if (refreshToken) {
-    promises.push(logout(refreshToken));
-  }
-  
+  if (accessToken) promises.push(logout(accessToken));
+  if (refreshToken) promises.push(logout(refreshToken));
   await Promise.all(promises);
   return { message: 'Logged out successfully' };
 }
@@ -730,7 +580,6 @@ async function logoutUser(accessToken, refreshToken) {
 async function isTokenBlacklisted(token) {
   if (token && localBlacklist.has(token)) return true;
   if (!token) return false;
-  
   try {
     if (redis && typeof redis.get === 'function') {
       const result = await redis.get(`blacklist:${token}`);
@@ -739,37 +588,27 @@ async function isTokenBlacklisted(token) {
   } catch (_err) {
     logger.warn('[Auth Service] Redis blacklist check failed, allowing token');
   }
-  
   return false;
 }
 
 async function getUserProfile(userId) {
   if (!userId) throw new BadRequestError('User ID required');
 
-  if (isConnected()) {
-    try {
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        include: { woreda: true },
-      });
-      if (user) return sanitizeUser(user);
-    } catch (_err) {
-      // Fallback
-    }
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: {
+      region: true,
+      zone: true,
+      woreda: true,
+      kebele: true,
+    },
+  });
+
+  if (!user) {
+    throw new NotFoundError(`User '${userId}' not found`);
   }
 
-  for (const u of inMemoryUserRegistry.values()) {
-    if (u.id === userId) return sanitizeUser(u);
-  }
-
-  return {
-    id: userId,
-    email: 'farmer@agrietech.et',
-    phoneNumber: '+251911223344',
-    fullName: 'Demo Farmer',
-    role: 'FARMER',
-    woredaId: 'woreda_adama_01',
-  };
+  return sanitizeUser(user);
 }
 
 async function updatePassword(userId, currentPassword, newPassword) {
@@ -780,23 +619,63 @@ async function updatePassword(userId, currentPassword, newPassword) {
     throw new BadRequestError('Password must be at least 6 characters long');
   }
 
-  if (isConnected()) {
-    try {
-      const user = await prisma.user.findUnique({ where: { id: userId } });
-      if (user) {
-        const valid = await bcrypt.compare(currentPassword, user.passwordHash);
-        if (!valid) throw new UnauthorizedError('Current password incorrect');
-        const newHash = await bcrypt.hash(newPassword, 10);
-        await prisma.user.update({ where: { id: userId }, data: { passwordHash: newHash } });
-        return true;
-      }
-    } catch (err) {
-      if (err instanceof UnauthorizedError) throw err;
-      // Fallback
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    throw new NotFoundError(`User '${userId}' not found`);
+  }
+
+  const valid = await bcrypt.compare(currentPassword, user.passwordHash || '');
+  if (!valid) {
+    throw new UnauthorizedError('Current password incorrect');
+  }
+
+  const newHash = await bcrypt.hash(newPassword, 10);
+  await prisma.user.update({
+    where: { id: userId },
+    data: { passwordHash: newHash },
+  });
+
+  return true;
+}
+
+async function updateUserProfile(userId, data = {}) {
+  if (!userId) throw new BadRequestError('User ID required');
+
+  const allowedFields = [
+    'fullName',
+    'preferredLang',
+    'role',
+    'deviceToken',
+    'fcmToken',
+    'regionId',
+    'zoneId',
+    'woredaId',
+    'kebeleId',
+    'kebeleName',
+  ];
+
+  const updateData = {};
+  for (const field of allowedFields) {
+    if (data[field] !== undefined) {
+      updateData[field] = data[field];
     }
   }
 
-  return true;
+  if (data.token && !updateData.deviceToken) {
+    updateData.deviceToken = data.token;
+  }
+
+  const user = await prisma.user.update({
+    where: { id: userId },
+    data: updateData,
+    include: {
+      region: true,
+      zone: true,
+      woreda: true,
+    },
+  });
+
+  return sanitizeUser(user);
 }
 
 module.exports = {
@@ -813,8 +692,7 @@ module.exports = {
   generateAccessToken,
   generateRefreshToken,
   getUserProfile,
+  updateUserProfile,
   updatePassword,
   isTokenBlacklisted,
-  inMemoryUserRegistry,
-  mockUsers,
 };
