@@ -4,6 +4,8 @@ const {
   authenticate,
   authorize,
   authorizeWoredaScope,
+  authorizeZoneScope,
+  authorizeRegionScope,
 } = require('../../src/middleware/auth.middleware');
 const { generateAccessToken } = require('../../src/modules/auth/auth.service');
 const errorHandler = require('../../src/middleware/error-handler.middleware');
@@ -18,6 +20,26 @@ function createTestApp() {
     res.json({ success: true, message: 'Admin access granted' });
   });
 
+  // Regional officer & admin route
+  app.get(
+    '/regional-only',
+    authenticate,
+    authorize('REGIONAL_OFFICER', 'ADMIN'),
+    (req, res) => {
+      res.json({ success: true, message: 'Regional officer access granted' });
+    }
+  );
+
+  // Zonal officer, regional officer & admin route
+  app.get(
+    '/zonal-only',
+    authenticate,
+    authorize('ZONAL_OFFICER', 'REGIONAL_OFFICER', 'ADMIN'),
+    (req, res) => {
+      res.json({ success: true, message: 'Zonal officer access granted' });
+    }
+  );
+
   // Woreda officer & DA route
   app.get(
     '/officers-only',
@@ -25,6 +47,26 @@ function createTestApp() {
     authorize('WOREDA_OFFICER', 'DEVELOPMENT_AGENT'),
     (req, res) => {
       res.json({ success: true, message: 'Officer access granted' });
+    }
+  );
+
+  // Regional-scoped action route
+  app.post(
+    '/regions/:regionId/report',
+    authenticate,
+    authorizeRegionScope('regionId'),
+    (req, res) => {
+      res.json({ success: true, message: 'Regional action authorized' });
+    }
+  );
+
+  // Zonal-scoped action route
+  app.post(
+    '/zones/:zoneId/advisory',
+    authenticate,
+    authorizeZoneScope('zoneId'),
+    (req, res) => {
+      res.json({ success: true, message: 'Zonal action authorized' });
     }
   );
 
@@ -59,8 +101,27 @@ describe('Core Backend - RBAC & Boundary Authorization', () => {
   };
   const adminUser = { id: 'u3', phoneNumber: '+251911000003', role: 'ADMIN', woredaId: null };
 
+  const zonalUser = {
+    id: 'u4',
+    phoneNumber: '+251911000004',
+    role: 'ZONAL_OFFICER',
+    regionId: 'reg_oromia_01',
+    zoneId: 'zone-oromia-01',
+    woredaId: null,
+  };
+  const regionalUser = {
+    id: 'u5',
+    phoneNumber: '+251911000005',
+    role: 'REGIONAL_OFFICER',
+    regionId: 'reg_oromia_01',
+    zoneId: null,
+    woredaId: null,
+  };
+
   const farmerToken = generateAccessToken(farmerUser);
   const officerToken = generateAccessToken(officerUser);
+  const zonalToken = generateAccessToken(zonalUser);
+  const regionalToken = generateAccessToken(regionalUser);
   const adminToken = generateAccessToken(adminUser);
 
   describe('Role-Based Access Control (authorize)', () => {
@@ -71,6 +132,35 @@ describe('Core Backend - RBAC & Boundary Authorization', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
+    });
+
+    it('should allow REGIONAL_OFFICER to access regional route', async () => {
+      const res = await request(app)
+        .get('/regional-only')
+        .set('Authorization', `Bearer ${regionalToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+    });
+
+    it('should reject ZONAL_OFFICER on regional-only route', async () => {
+      const res = await request(app)
+        .get('/regional-only')
+        .set('Authorization', `Bearer ${zonalToken}`);
+
+      expect(res.status).toBe(403);
+    });
+
+    it('should allow ZONAL_OFFICER and REGIONAL_OFFICER to access zonal route', async () => {
+      const resZonal = await request(app)
+        .get('/zonal-only')
+        .set('Authorization', `Bearer ${zonalToken}`);
+      expect(resZonal.status).toBe(200);
+
+      const resRegional = await request(app)
+        .get('/zonal-only')
+        .set('Authorization', `Bearer ${regionalToken}`);
+      expect(resRegional.status).toBe(200);
     });
 
     it('should allow WOREDA_OFFICER to access officer route', async () => {
@@ -93,6 +183,38 @@ describe('Core Backend - RBAC & Boundary Authorization', () => {
     });
   });
 
+  describe('Zonal Administrative Scoping (authorizeZoneScope)', () => {
+    it('should allow zonal officer to perform action within assigned zone', async () => {
+      const res = await request(app)
+        .post('/zones/zone-oromia-01/advisory')
+        .set('Authorization', `Bearer ${zonalToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+    });
+
+    it('should reject zonal officer attempting action in a different zone', async () => {
+      const res = await request(app)
+        .post('/zones/zone-amhara-99/advisory')
+        .set('Authorization', `Bearer ${zonalToken}`);
+
+      expect(res.status).toBe(403);
+      expect(res.body.error.code).toBe('OUT_OF_SCOPE');
+    });
+
+    it('should allow regional officer and admin unrestricted access to zones', async () => {
+      const resReg = await request(app)
+        .post('/zones/zone-amhara-99/advisory')
+        .set('Authorization', `Bearer ${regionalToken}`);
+      expect(resReg.status).toBe(200);
+
+      const resAdmin = await request(app)
+        .post('/zones/zone-amhara-99/advisory')
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(resAdmin.status).toBe(200);
+    });
+  });
+
   describe('Woreda Administrative Scoping (authorizeWoredaScope)', () => {
     it('should allow officer to perform action within their assigned woreda', async () => {
       const res = await request(app)
@@ -112,9 +234,46 @@ describe('Core Backend - RBAC & Boundary Authorization', () => {
       expect(res.body.error.code).toBe('OUT_OF_SCOPE');
     });
 
-    it('should allow ADMIN unrestricted access across any woreda', async () => {
-      const res = await request(app)
+    it('should allow ZONAL_OFFICER, REGIONAL_OFFICER, and ADMIN unrestricted access across woredas', async () => {
+      const resZonal = await request(app)
         .post('/woredas/woreda-amhara-99/risk-override')
+        .set('Authorization', `Bearer ${zonalToken}`);
+      expect(resZonal.status).toBe(200);
+
+      const resRegional = await request(app)
+        .post('/woredas/woreda-amhara-99/risk-override')
+        .set('Authorization', `Bearer ${regionalToken}`);
+      expect(resRegional.status).toBe(200);
+
+      const resAdmin = await request(app)
+        .post('/woredas/woreda-amhara-99/risk-override')
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(resAdmin.status).toBe(200);
+    });
+  });
+
+  describe('Regional Administrative Scoping (authorizeRegionScope)', () => {
+    it('should allow regional officer to perform action within assigned region', async () => {
+      const res = await request(app)
+        .post('/regions/reg_oromia_01/report')
+        .set('Authorization', `Bearer ${regionalToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+    });
+
+    it('should reject regional officer attempting action in a different region', async () => {
+      const res = await request(app)
+        .post('/regions/reg_amhara_99/report')
+        .set('Authorization', `Bearer ${regionalToken}`);
+
+      expect(res.status).toBe(403);
+      expect(res.body.error.code).toBe('OUT_OF_SCOPE');
+    });
+
+    it('should allow admin unrestricted access across regions', async () => {
+      const res = await request(app)
+        .post('/regions/reg_amhara_99/report')
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.status).toBe(200);
