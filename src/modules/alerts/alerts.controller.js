@@ -1,4 +1,6 @@
 const alertsService = require('./alerts.service');
+const { ForbiddenError } = require('../../utils/errors');
+const { prisma } = require('../../config/db');
 
 async function createAlert(req, res, next) {
   try {
@@ -15,6 +17,9 @@ async function createAlert(req, res, next) {
       messageEn,
       messageAm,
       messageOm,
+      actionItems,
+      priority,
+      expiresAt,
       targetPhones,
     } = req.body;
 
@@ -41,6 +46,9 @@ async function createAlert(req, res, next) {
       messageEn,
       messageAm,
       messageOm,
+      actionItems: actionItems || [],
+      priority: priority != null ? parseInt(priority, 10) : 1,
+      expiresAt,
       targetPhones: targetPhones || [],
     });
 
@@ -62,14 +70,42 @@ async function getAlerts(req, res, next) {
     let scopedRegionId = null;
 
     if (userRole === 'FARMER' || userRole === 'DEVELOPMENT_AGENT' || userRole === 'WOREDA_OFFICER') {
-      // These roles only see alerts within their assigned woreda
-      scopedWoredaId = scopedWoredaId || user?.woredaId || null;
+      if (!user?.woredaId) {
+        throw new ForbiddenError('No administrative woreda assigned to your account');
+      }
+      if (woredaId && woredaId !== user.woredaId) {
+        throw new ForbiddenError(`Access restricted: you cannot view alerts for woreda '${woredaId}' outside your assigned jurisdiction`);
+      }
+      scopedWoredaId = user.woredaId;
     } else if (userRole === 'ZONAL_OFFICER') {
-      // Zonal Officers see all alerts within their zone
-      scopedZoneId = user?.zoneId || null;
+      if (!user?.zoneId) {
+        throw new ForbiddenError('No administrative zone assigned to your account');
+      }
+      if (woredaId) {
+        const w = await prisma.woreda.findUnique({ where: { id: woredaId }, select: { zoneId: true } });
+        if (!w || w.zoneId !== user.zoneId) {
+          throw new ForbiddenError(`Access restricted: woreda '${woredaId}' is outside your assigned zone`);
+        }
+        scopedWoredaId = woredaId;
+      } else {
+        scopedZoneId = user.zoneId;
+      }
     } else if (userRole === 'REGIONAL_OFFICER') {
-      // Regional Officers see all alerts within their region
-      scopedRegionId = user?.regionId || null;
+      if (!user?.regionId) {
+        throw new ForbiddenError('No administrative region assigned to your account');
+      }
+      if (woredaId) {
+        const w = await prisma.woreda.findUnique({
+          where: { id: woredaId },
+          select: { zone: { select: { regionId: true } } },
+        });
+        if (!w || w.zone?.regionId !== user.regionId) {
+          throw new ForbiddenError(`Access restricted: woreda '${woredaId}' is outside your assigned region`);
+        }
+        scopedWoredaId = woredaId;
+      } else {
+        scopedRegionId = user.regionId;
+      }
     }
     // ADMIN and RESEARCHER see all alerts (no scope filter)
 
