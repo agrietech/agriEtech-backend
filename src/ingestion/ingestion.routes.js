@@ -7,5 +7,6 @@ router.get('/health', controller.testConnectorHealth);
 router.post('/pull', controller.triggerPull);
 router.post('/trigger', controller.triggerPull);
 router.post('/telemetry', controller.ingestTelemetry);
+router.get('/sync-logs', controller.getSyncLogs);
 
 module.exports = router;
