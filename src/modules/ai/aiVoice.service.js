@@ -59,6 +59,22 @@ async function processVoiceInquiry({ userQuestion, audioTranscript, audioFile, l
 
 
   const data = aiResult.data || {};
+
+  // Persist raw AI inquiry and response to AIInsight table
+  try {
+    const { prisma } = require('../../config/db');
+    await prisma.aIInsight.create({
+      data: {
+        prompt: query || 'Voice inquiry',
+        model: isAiOffline ? 'agrietech-offline-synthesizer' : (data.aiModel || 'google/gemini-2.5-flash'),
+        feature: 'VOICE_ASSISTANT',
+        rawResponse: data,
+        userId: userId || null,
+      },
+    });
+  } catch (logErr) {
+    logger.warn(`[AIVoiceService] AIInsight logging notice: ${logErr.message}`);
+  }
   const isEnglish = language === 'en' || data.detectedLanguage === 'English';
   const rawSpeechText = isEnglish ? data.responseEn : data.responseAm;
   const speakableText = cleanTextForSpeech(rawSpeechText);
