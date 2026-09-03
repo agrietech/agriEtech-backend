@@ -1,9 +1,9 @@
-const authService = require('../auth/auth.service');
 const bcrypt = require('bcryptjs');
 const { prisma, isConnected } = require('../../config/db');
 const redis = require('../../config/redis');
 const { getQueueStats, addJob } = require('../../ingestion/jobs/queue');
 const boundariesService = require('../boundaries/boundaries.service');
+const { NotFoundError, BadRequestError } = require('../../utils/errors');
 const logger = require('../../utils/logger');
 const os = require('os');
 
@@ -164,133 +164,74 @@ async function getOverview() {
 }
 
 /**
- * Get paginated list of users with filtering (Live DB + Synchronized Auth Store)
+ * Get paginated list of users with filtering
  */
 async function getUsers({ page = 1, limit = 20, role, woredaId, search } = {}) {
   const skip = (Number(page) - 1) * Number(limit);
   const take = Number(limit);
 
-  if (isConnected()) {
-    try {
-      const where = {};
-      if (role) where.role = role;
-      if (woredaId) where.woredaId = woredaId;
-      if (search) {
-        where.OR = [
-          { fullName: { contains: search, mode: 'insensitive' } },
-          { email: { contains: search, mode: 'insensitive' } },
-          { phoneNumber: { contains: search } },
-        ];
-      }
+  const where = {};
+  if (role) where.role = role;
+  if (woredaId) where.woredaId = woredaId;
+  if (search && search.trim()) {
+    where.OR = [
+      { fullName: { contains: search.trim(), mode: 'insensitive' } },
+      { email: { contains: search.trim(), mode: 'insensitive' } },
+      { phoneNumber: { contains: search.trim() } },
+    ];
+  }
 
-      const [users, total] = await Promise.all([
-        prisma.user.findMany({
-          where,
-          skip,
-          take,
-          orderBy: { createdAt: 'desc' },
-          select: {
-            id: true,
-            email: true,
-            phoneNumber: true,
-            fullName: true,
-            role: true,
-            preferredLang: true,
-            isEmailVerified: true,
-            woredaId: true,
-            woreda: { 
+  const [users, total] = await Promise.all([
+    prisma.user.findMany({
+      where,
+      skip,
+      take,
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        email: true,
+        phoneNumber: true,
+        fullName: true,
+        role: true,
+        preferredLang: true,
+        isEmailVerified: true,
+        regionId: true,
+        zoneId: true,
+        woredaId: true,
+        kebeleId: true,
+        kebeleName: true,
+        woreda: { 
+          select: { 
+            nameEn: true, 
+            nameAm: true,
+            zone: { 
               select: { 
                 nameEn: true, 
                 nameAm: true,
-                zone: { 
+                region: { 
                   select: { 
                     nameEn: true, 
-                    nameAm: true,
-                    region: { 
-                      select: { 
-                        nameEn: true, 
-                        nameAm: true 
-                      } 
-                    }
-                  }
+                    nameAm: true 
+                  } 
                 }
               }
-            },
-            createdAt: true,
-            updatedAt: true,
-          },
-        }),
-        prisma.user.count({ where }),
-      ]);
-
-      if (users.length > 0 || total > 0) {
-        return {
-          users,
-          pagination: {
-            page: Number(page),
-            limit: Number(limit),
-            total,
-            totalPages: Math.ceil(total / take) || 1,
-          },
-        };
-      }
-    } catch (_err) {
-      // Fallback to authService.mockUsers
-    }
-  }
-
-  // Retrieve all unique users from in-memory authentication map
-  const uniqueUsersMap = new Map();
-  if (authService.mockUsers && typeof authService.mockUsers.values === 'function') {
-    for (const u of authService.mockUsers.values()) {
-      if (u && u.id && !uniqueUsersMap.has(u.id)) {
-        const coords = boundariesService.getWoredaCoordinates ? boundariesService.getWoredaCoordinates(u.woredaId) : null;
-        uniqueUsersMap.set(u.id, {
-          id: u.id,
-          email: u.email || 'N/A',
-          phoneNumber: u.phoneNumber || 'N/A',
-          fullName: u.fullName || 'User',
-          role: u.role || 'FARMER',
-          preferredLang: u.preferredLang || 'en',
-          isEmailVerified: Boolean(u.isEmailVerified),
-          woredaId: u.woredaId || 'ET040101',
-          woreda: {
-            nameEn: coords ? coords.nameEn : (u.woredaId || 'Adama Zuria'),
-            nameAm: coords ? coords.nameAm : 'አዳማ ዙሪያ',
-            zone: {
-              nameEn: 'Agricultural Zone',
-              nameAm: 'የግብርና ዞን',
-              region: { nameEn: 'Ethiopia', nameAm: 'ኢትዮጵያ' }
             }
-          },
-          createdAt: u.createdAt || new Date().toISOString(),
-          updatedAt: u.updatedAt || new Date().toISOString(),
-        });
-      }
-    }
-  }
-
-  let allUsers = Array.from(uniqueUsersMap.values());
-  if (role) allUsers = allUsers.filter(u => u.role === role);
-  if (woredaId) allUsers = allUsers.filter(u => u.woredaId === woredaId);
-  if (search) {
-    const s = search.toLowerCase();
-    allUsers = allUsers.filter(u => 
-      (u.fullName && u.fullName.toLowerCase().includes(s)) ||
-      (u.email && u.email.toLowerCase().includes(s)) ||
-      (u.phoneNumber && u.phoneNumber.includes(s))
-    );
-  }
-
-  const paginated = allUsers.slice(skip, skip + take);
+          }
+        },
+        createdAt: true,
+        updatedAt: true,
+      },
+    }),
+    prisma.user.count({ where }),
+  ]);
 
   return {
-    users: paginated,
+    users,
     pagination: {
       page: Number(page),
       limit: Number(limit),
-      total: allUsers.length,
-      totalPages: Math.ceil(allUsers.length / take) || 1,
+      total,
+      totalPages: Math.ceil(total / take) || 1,
     },
   };
 }
@@ -299,56 +240,40 @@ async function getUsers({ page = 1, limit = 20, role, woredaId, search } = {}) {
  * Update user role
  */
 async function updateUserRole(userId, newRole, adminContext = {}) {
-  const validRoles = ['FARMER', 'DEVELOPMENT_AGENT', 'WOREDA_OFFICER', 'RESEARCHER', 'ADMIN'];
+  const validRoles = [
+    'FARMER',
+    'DEVELOPMENT_AGENT',
+    'WOREDA_OFFICER',
+    'ZONAL_OFFICER',
+    'REGIONAL_OFFICER',
+    'RESEARCHER',
+    'ADMIN',
+  ];
   if (!validRoles.includes(newRole)) {
-    throw new Error(`Invalid role '${newRole}'. Allowed roles: ${validRoles.join(', ')}`);
+    throw new BadRequestError(`Invalid role '${newRole}'. Allowed roles: ${validRoles.join(', ')}`);
   }
 
-  if (isConnected()) {
-    try {
-      const updatedUser = await prisma.user.update({
-        where: { id: userId },
-        data: { role: newRole },
-        select: {
-          id: true,
-          email: true,
-          fullName: true,
-          role: true,
-          updatedAt: true,
-        },
-      });
+  const updatedUser = await prisma.user.update({
+    where: { id: userId },
+    data: { role: newRole },
+    select: {
+      id: true,
+      email: true,
+      fullName: true,
+      role: true,
+      updatedAt: true,
+    },
+  });
 
-      await logAuditAction({
-        action: 'USER_ROLE_UPDATED',
-        adminId: adminContext.id || null,
-        adminEmail: adminContext.email || null,
-        details: `Updated role for user ${userId} to ${newRole}`,
-        ipAddress: adminContext.ip || null,
-      });
+  await logAuditAction({
+    action: 'USER_ROLE_UPDATED',
+    adminId: adminContext.id || null,
+    adminEmail: adminContext.email || null,
+    details: `Updated role for user ${userId} to ${newRole}`,
+    ipAddress: adminContext.ip || null,
+  });
 
-      if (authService.mockUsers) {
-        for (const u of authService.mockUsers.values()) {
-          if (u.id === userId) u.role = newRole;
-        }
-      }
-
-      return updatedUser;
-    } catch (_err) {
-      // Fallback
-    }
-  }
-
-  if (authService.mockUsers) {
-    for (const u of authService.mockUsers.values()) {
-      if (u.id === userId) u.role = newRole;
-    }
-  }
-
-  return {
-    id: userId,
-    role: newRole,
-    updatedAt: new Date().toISOString(),
-  };
+  return updatedUser;
 }
 
 /**
@@ -357,51 +282,27 @@ async function updateUserRole(userId, newRole, adminContext = {}) {
 async function updateUserStatus(userId, { isEmailVerified }, adminContext = {}) {
   const verifiedBool = Boolean(isEmailVerified);
 
-  if (isConnected()) {
-    try {
-      const updatedUser = await prisma.user.update({
-        where: { id: userId },
-        data: { isEmailVerified: verifiedBool },
-        select: {
-          id: true,
-          email: true,
-          fullName: true,
-          isEmailVerified: true,
-          updatedAt: true,
-        },
-      });
+  const updatedUser = await prisma.user.update({
+    where: { id: userId },
+    data: { isEmailVerified: verifiedBool },
+    select: {
+      id: true,
+      email: true,
+      fullName: true,
+      isEmailVerified: true,
+      updatedAt: true,
+    },
+  });
 
-      await logAuditAction({
-        action: 'USER_STATUS_UPDATED',
-        adminId: adminContext.id || null,
-        adminEmail: adminContext.email || null,
-        details: `Updated verification status for user ${userId}: isEmailVerified=${verifiedBool}`,
-        ipAddress: adminContext.ip || null,
-      });
+  await logAuditAction({
+    action: 'USER_STATUS_UPDATED',
+    adminId: adminContext.id || null,
+    adminEmail: adminContext.email || null,
+    details: `Updated verification status for user ${userId}: isEmailVerified=${verifiedBool}`,
+    ipAddress: adminContext.ip || null,
+  });
 
-      if (authService.mockUsers) {
-        for (const u of authService.mockUsers.values()) {
-          if (u.id === userId) u.isEmailVerified = verifiedBool;
-        }
-      }
-
-      return updatedUser;
-    } catch (_err) {
-      // Fallback
-    }
-  }
-
-  if (authService.mockUsers) {
-    for (const u of authService.mockUsers.values()) {
-      if (u.id === userId) u.isEmailVerified = verifiedBool;
-    }
-  }
-
-  return {
-    id: userId,
-    isEmailVerified: verifiedBool,
-    updatedAt: new Date().toISOString(),
-  };
+  return updatedUser;
 }
 
 /**
@@ -466,6 +367,9 @@ async function triggerIngestion(jobType, payload = {}, adminContext = {}) {
     'pullNasaPower',
     'pullFaoLocust',
     'pullNdviData',
+    'pullEarthEngine',
+    'pullGlofas',
+    'pullSoilGrids',
     'calculateRisks',
     'cleanupOldData',
   ];
@@ -608,153 +512,68 @@ async function getAuditLogs(limit = 50) {
  * User Management Operations
  */
 async function createUser(data, adminContext = {}) {
-  const passwordHash = bcrypt.hashSync(data.password || 'Password123!', 10);
-  const userId = `usr_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+  const passwordHash = await bcrypt.hash(data.password || 'Password123!', 10);
 
-  const userObj = {
-    id: userId,
-    fullName: data.fullName,
-    phoneNumber: data.phoneNumber || null,
-    email: data.email || null,
-    passwordHash,
-    role: data.role || 'FARMER',
-    preferredLang: data.preferredLang || 'am',
-    woredaId: data.woredaId || null,
-    isEmailVerified: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-
-  if (isConnected()) {
-    try {
-      const created = await prisma.user.create({
-        data: {
-          id: userId,
-          phoneNumber: data.phoneNumber || null,
-          email: data.email || null,
-          fullName: data.fullName,
-          passwordHash,
-          role: data.role || 'FARMER',
-          preferredLang: data.preferredLang || 'am',
-          woredaId: data.woredaId || null,
-          isEmailVerified: true,
-        },
-        select: {
-          id: true,
-          fullName: true,
-          phoneNumber: true,
-          email: true,
-          role: true,
-          preferredLang: true,
-          woredaId: true,
-          isEmailVerified: true,
-          createdAt: true,
-        },
-      });
-
-      await logAuditAction({
-        action: 'USER_CREATED',
-        adminId: adminContext.id,
-        adminEmail: adminContext.email,
-        details: `Created new user ${created.fullName} (${created.role})`,
-        ipAddress: adminContext.ip,
-      });
-
-      if (authService.mockUsers) {
-        if (data.email) authService.mockUsers.set(data.email.toLowerCase(), userObj);
-        if (data.phoneNumber) authService.mockUsers.set(data.phoneNumber, userObj);
-      }
-
-      return created;
-    } catch (err) {
-      logger.warn(`[AdminService] Create user DB error: ${err.message}`);
-    }
-  }
-
-  if (authService.mockUsers) {
-    if (data.email) authService.mockUsers.set(data.email.toLowerCase(), userObj);
-    if (data.phoneNumber) authService.mockUsers.set(data.phoneNumber, userObj);
-  }
+  const created = await prisma.user.create({
+    data: {
+      phoneNumber: data.phoneNumber || null,
+      email: data.email ? data.email.trim().toLowerCase() : null,
+      fullName: data.fullName,
+      passwordHash,
+      role: data.role || 'FARMER',
+      preferredLang: data.preferredLang || 'am',
+      woredaId: data.woredaId || null,
+      isEmailVerified: true,
+    },
+    select: {
+      id: true,
+      fullName: true,
+      phoneNumber: true,
+      email: true,
+      role: true,
+      preferredLang: true,
+      woredaId: true,
+      isEmailVerified: true,
+      createdAt: true,
+    },
+  });
 
   await logAuditAction({
     action: 'USER_CREATED',
     adminId: adminContext.id,
     adminEmail: adminContext.email,
-    details: `Created new user ${userObj.fullName} (${userObj.role})`,
+    details: `Created new user ${created.fullName} (${created.role})`,
     ipAddress: adminContext.ip,
   });
 
-  return userObj;
+  return created;
 }
 
 async function updateUser(userId, data, adminContext = {}) {
-  if (isConnected()) {
-    try {
-      const updateData = {};
-      if (data.fullName) updateData.fullName = data.fullName;
-      if (data.phoneNumber) updateData.phoneNumber = data.phoneNumber;
-      if (data.email !== undefined) updateData.email = data.email;
-      if (data.role) updateData.role = data.role;
-      if (data.woredaId !== undefined) updateData.woredaId = data.woredaId;
-      if (data.isEmailVerified !== undefined) updateData.isEmailVerified = Boolean(data.isEmailVerified);
-      if (data.preferredLang) updateData.preferredLang = data.preferredLang;
+  const updateData = {};
+  if (data.fullName) updateData.fullName = data.fullName;
+  if (data.phoneNumber) updateData.phoneNumber = data.phoneNumber;
+  if (data.email !== undefined) updateData.email = data.email ? data.email.trim().toLowerCase() : null;
+  if (data.role) updateData.role = data.role;
+  if (data.woredaId !== undefined) updateData.woredaId = data.woredaId;
+  if (data.isEmailVerified !== undefined) updateData.isEmailVerified = Boolean(data.isEmailVerified);
+  if (data.preferredLang) updateData.preferredLang = data.preferredLang;
 
-      const updated = await prisma.user.update({
-        where: { id: userId },
-        data: updateData,
-        select: {
-          id: true,
-          fullName: true,
-          phoneNumber: true,
-          email: true,
-          role: true,
-          preferredLang: true,
-          isEmailVerified: true,
-          woredaId: true,
-          updatedAt: true,
-        },
-      });
-
-      await logAuditAction({
-        action: 'USER_UPDATED',
-        adminId: adminContext.id,
-        adminEmail: adminContext.email,
-        details: `Updated user details for ${userId}`,
-        ipAddress: adminContext.ip,
-      });
-
-      // Update in-memory auth store
-      if (authService.mockUsers) {
-        for (const [, u] of authService.mockUsers.entries()) {
-          if (u.id === userId) {
-            Object.assign(u, updateData, { updatedAt: new Date().toISOString() });
-          }
-        }
-      }
-
-      return updated;
-    } catch (err) {
-      logger.warn(`[AdminService] Update user DB error: ${err.message}`);
-    }
-  }
-
-  // Fallback update in-memory
-  let target = null;
-  if (authService.mockUsers) {
-    for (const [, u] of authService.mockUsers.entries()) {
-      if (u.id === userId) {
-        if (data.fullName) u.fullName = data.fullName;
-        if (data.email) u.email = data.email;
-        if (data.phoneNumber) u.phoneNumber = data.phoneNumber;
-        if (data.role) u.role = data.role;
-        if (data.woredaId) u.woredaId = data.woredaId;
-        if (data.preferredLang) u.preferredLang = data.preferredLang;
-        if (data.isEmailVerified !== undefined) u.isEmailVerified = Boolean(data.isEmailVerified);
-        u.updatedAt = new Date().toISOString();
-        target = u;
-      }
-    }
-  }
+  const updated = await prisma.user.update({
+    where: { id: userId },
+    data: updateData,
+    select: {
+      id: true,
+      fullName: true,
+      phoneNumber: true,
+      email: true,
+      role: true,
+      preferredLang: true,
+      isEmailVerified: true,
+      woredaId: true,
+      updatedAt: true,
+    },
+  });
 
   await logAuditAction({
     action: 'USER_UPDATED',
@@ -764,39 +583,11 @@ async function updateUser(userId, data, adminContext = {}) {
     ipAddress: adminContext.ip,
   });
 
-  return target || { id: userId, ...data, updatedAt: new Date().toISOString() };
+  return updated;
 }
 
 async function deleteUser(userId, adminContext = {}) {
-  if (isConnected()) {
-    try {
-      await prisma.user.delete({ where: { id: userId } });
-      await logAuditAction({
-        action: 'USER_DELETED',
-        adminId: adminContext.id,
-        adminEmail: adminContext.email,
-        details: `Deleted user ${userId}`,
-        ipAddress: adminContext.ip,
-      });
-
-      if (authService.mockUsers) {
-        for (const [k, u] of Array.from(authService.mockUsers.entries())) {
-          if (u.id === userId) authService.mockUsers.delete(k);
-        }
-      }
-
-      return { success: true, id: userId };
-    } catch (err) {
-      logger.warn(`[AdminService] Delete user DB error: ${err.message}`);
-    }
-  }
-
-  if (authService.mockUsers) {
-    for (const [k, u] of Array.from(authService.mockUsers.entries())) {
-      if (u.id === userId) authService.mockUsers.delete(k);
-    }
-  }
-
+  await prisma.user.delete({ where: { id: userId } });
   await logAuditAction({
     action: 'USER_DELETED',
     adminId: adminContext.id,
@@ -804,7 +595,6 @@ async function deleteUser(userId, adminContext = {}) {
     details: `Deleted user ${userId}`,
     ipAddress: adminContext.ip,
   });
-
   return { success: true, id: userId };
 }
 
@@ -815,152 +605,110 @@ async function getFarms({ page = 1, limit = 20, woredaId, search } = {}) {
   const skip = (Number(page) - 1) * Number(limit);
   const take = Number(limit);
 
-  if (isConnected()) {
-    try {
-      const where = {};
-      if (woredaId) where.woredaId = woredaId;
-      if (search) {
-        where.OR = [
-          { farmName: { contains: search, mode: 'insensitive' } },
-          { primaryCrop: { contains: search, mode: 'insensitive' } },
-        ];
-      }
-
-      const [farms, total] = await Promise.all([
-        prisma.farm.findMany({
-          where,
-          skip,
-          take,
-          orderBy: { createdAt: 'desc' },
-          include: {
-            user: { select: { fullName: true, phoneNumber: true } },
-            woreda: { select: { nameEn: true, nameAm: true } },
-          },
-        }),
-        prisma.farm.count({ where }),
-      ]);
-
-      return {
-        farms,
-        pagination: { page: Number(page), limit: Number(limit), total, totalPages: Math.ceil(total / take) },
-      };
-    } catch (_e) {
-      // Fallback
-    }
+  const where = {};
+  if (woredaId) where.woredaId = woredaId;
+  if (search && search.trim()) {
+    where.OR = [
+      { farmName: { contains: search.trim(), mode: 'insensitive' } },
+      { primaryCrop: { contains: search.trim(), mode: 'insensitive' } },
+    ];
   }
 
-  const sampleFarms = [
-    {
-      id: 'farm_demo_01',
-      farmName: 'Adama Teff & Wheat Plot Alpha',
-      areaHectares: 2.5,
-      primaryCrop: 'Wheat',
-      latitude: 8.54,
-      longitude: 39.27,
-      user: { fullName: 'Abebe Bikila', phoneNumber: '+251911223344' },
-      woreda: { nameEn: 'Adama Zuria', nameAm: 'አዳማ ዙሪያ' },
-      createdAt: new Date().toISOString(),
-    },
-  ];
+  const [farms, total] = await Promise.all([
+    prisma.farm.findMany({
+      where,
+      skip,
+      take,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: { select: { fullName: true, phoneNumber: true } },
+        woreda: { select: { nameEn: true, nameAm: true } },
+      },
+    }),
+    prisma.farm.count({ where }),
+  ]);
 
-  return { farms: sampleFarms, pagination: { page: 1, limit: 20, total: 1, totalPages: 1 } };
+  return {
+    farms,
+    pagination: { page: Number(page), limit: Number(limit), total, totalPages: Math.ceil(total / take) || 1 },
+  };
 }
 
 async function createFarm(data, adminContext = {}) {
-  if (isConnected()) {
-    try {
-      let userId = data.userId;
-      if (!userId) {
-        const firstUser = await prisma.user.findFirst({ select: { id: true } });
-        userId = firstUser ? firstUser.id : adminContext.id;
-      }
-
-      let woredaId = data.woredaId;
-      if (!woredaId && data.latitude && data.longitude) {
-        woredaId = await boundariesService.resolveWoredaByCoords(parseFloat(data.latitude), parseFloat(data.longitude));
-      }
-      if (!woredaId) {
-        const firstWoreda = await prisma.woreda.findFirst({ select: { id: true } });
-        woredaId = firstWoreda ? firstWoreda.id : 'woreda_adama_01';
-      }
-
-      const created = await prisma.farm.create({
-        data: {
-          farmName: data.farmName || 'Unnamed Farm Plot',
-          userId: userId || 'usr_test_farmer_01',
-          woredaId: woredaId || 'woreda_adama_01',
-          areaHectares: parseFloat(data.areaHectares || 1.0),
-          primaryCrop: data.primaryCrop || 'Wheat',
-          latitude: parseFloat(data.latitude || 8.54),
-          longitude: parseFloat(data.longitude || 39.27),
-          polygonGeojson: data.polygonGeojson || null,
-        },
-      });
-
-      await logAuditAction({
-        action: 'FARM_CREATED',
-        adminId: adminContext.id,
-        adminEmail: adminContext.email,
-        details: `Created farm ${created.farmName} (${created.areaHectares} Ha)`,
-        ipAddress: adminContext.ip,
-      });
-
-      return created;
-    } catch (err) {
-      logger.warn(`[AdminService] Create farm DB error: ${err.message}`);
-    }
+  let userId = data.userId;
+  if (!userId) {
+    const firstUser = await prisma.user.findFirst({ select: { id: true } });
+    userId = firstUser ? firstUser.id : adminContext.id;
+  }
+  if (!userId) {
+    throw new BadRequestError('User ID is required to create a farm plot');
   }
 
-  return { id: `farm_${Date.now()}`, ...data, createdAt: new Date().toISOString() };
+  let woredaId = data.woredaId;
+  if (!woredaId && data.latitude && data.longitude) {
+    woredaId = await boundariesService.resolveWoredaByCoords(parseFloat(data.latitude), parseFloat(data.longitude));
+  }
+  if (!woredaId) {
+    const firstWoreda = await prisma.woreda.findFirst({ select: { id: true } });
+    woredaId = firstWoreda ? firstWoreda.id : 'ET040101';
+  }
+
+  const created = await prisma.farm.create({
+    data: {
+      farmName: data.farmName || 'Unnamed Farm Plot',
+      userId,
+      woredaId,
+      areaHectares: parseFloat(data.areaHectares || 1.0),
+      primaryCrop: data.primaryCrop || 'Wheat',
+      latitude: parseFloat(data.latitude || 8.54),
+      longitude: parseFloat(data.longitude || 39.27),
+      polygonGeojson: data.polygonGeojson || null,
+    },
+  });
+
+  await logAuditAction({
+    action: 'FARM_CREATED',
+    adminId: adminContext.id,
+    adminEmail: adminContext.email,
+    details: `Created farm ${created.farmName} (${created.areaHectares} Ha)`,
+    ipAddress: adminContext.ip,
+  });
+
+  return created;
 }
 
 async function updateFarm(farmId, data, adminContext = {}) {
-  if (isConnected()) {
-    try {
-      const updated = await prisma.farm.update({
-        where: { id: farmId },
-        data: {
-          farmName: data.farmName,
-          areaHectares: data.areaHectares ? parseFloat(data.areaHectares) : undefined,
-          primaryCrop: data.primaryCrop,
-          latitude: data.latitude ? parseFloat(data.latitude) : undefined,
-          longitude: data.longitude ? parseFloat(data.longitude) : undefined,
-        },
-      });
+  const updated = await prisma.farm.update({
+    where: { id: farmId },
+    data: {
+      farmName: data.farmName,
+      areaHectares: data.areaHectares ? parseFloat(data.areaHectares) : undefined,
+      primaryCrop: data.primaryCrop,
+      latitude: data.latitude ? parseFloat(data.latitude) : undefined,
+      longitude: data.longitude ? parseFloat(data.longitude) : undefined,
+    },
+  });
 
-      await logAuditAction({
-        action: 'FARM_UPDATED',
-        adminId: adminContext.id,
-        adminEmail: adminContext.email,
-        details: `Updated farm ${farmId}`,
-        ipAddress: adminContext.ip,
-      });
+  await logAuditAction({
+    action: 'FARM_UPDATED',
+    adminId: adminContext.id,
+    adminEmail: adminContext.email,
+    details: `Updated farm ${farmId}`,
+    ipAddress: adminContext.ip,
+  });
 
-      return updated;
-    } catch (_e) {
-      // Fallback
-    }
-  }
-
-  return { id: farmId, ...data, updatedAt: new Date().toISOString() };
+  return updated;
 }
 
 async function deleteFarm(farmId, adminContext = {}) {
-  if (isConnected()) {
-    try {
-      await prisma.farm.delete({ where: { id: farmId } });
-      await logAuditAction({
-        action: 'FARM_DELETED',
-        adminId: adminContext.id,
-        adminEmail: adminContext.email,
-        details: `Deleted farm plot ${farmId}`,
-        ipAddress: adminContext.ip,
-      });
-      return { success: true, id: farmId };
-    } catch (_e) {
-      // Fallback
-    }
-  }
+  await prisma.farm.delete({ where: { id: farmId } });
+  await logAuditAction({
+    action: 'FARM_DELETED',
+    adminId: adminContext.id,
+    adminEmail: adminContext.email,
+    details: `Deleted farm plot ${farmId}`,
+    ipAddress: adminContext.ip,
+  });
   return { success: true, id: farmId };
 }
 
@@ -971,115 +719,60 @@ async function getSensors({ page = 1, limit = 20 } = {}) {
   const skip = (Number(page) - 1) * Number(limit);
   const take = Number(limit);
 
-  if (isConnected()) {
-    try {
-      const [sensors, total] = await Promise.all([
-        prisma.sensor.findMany({
-          skip,
-          take,
-          orderBy: { createdAt: 'desc' },
-          include: {
-            farm: { select: { farmName: true } },
-          },
-        }),
-        prisma.sensor.count(),
-      ]);
+  const [sensors, total] = await Promise.all([
+    prisma.sensor.findMany({
+      skip,
+      take,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        farm: { select: { farmName: true } },
+      },
+    }),
+    prisma.sensor.count(),
+  ]);
 
-      return { sensors, pagination: { page: Number(page), limit: Number(limit), total, totalPages: Math.ceil(total / take) } };
-    } catch (_e) {
-      // Fallback
-    }
-  }
-
-  const sampleSensors = [
-    {
-      id: 'sns_esp32_01',
-      hardwareId: 'ESP32_ADAMA_STATION_A',
-      sensorType: 'SOIL_MOISTURE_STATION',
-      isActive: true,
-      farm: { farmName: 'Adama Teff & Wheat Plot Alpha' },
-      createdAt: new Date().toISOString(),
-    },
-  ];
-
-  return { sensors: sampleSensors, pagination: { page: 1, limit: 20, total: 1, totalPages: 1 } };
+  return { sensors, pagination: { page: Number(page), limit: Number(limit), total, totalPages: Math.ceil(total / take) || 1 } };
 }
 
 async function createSensor(data, adminContext = {}) {
-  if (isConnected()) {
-    try {
-      let farmId = data.farmId;
-      if (!farmId) {
-        const firstFarm = await prisma.farm.findFirst({ select: { id: true } });
-        farmId = firstFarm ? firstFarm.id : null;
-      }
-
-      if (!farmId) {
-        let userId = adminContext.id;
-        if (!userId) {
-          const firstUser = await prisma.user.findFirst({ select: { id: true } });
-          userId = firstUser ? firstUser.id : 'usr_test_farmer_01';
-        }
-        const firstWoreda = await prisma.woreda.findFirst({ select: { id: true } });
-        const createdFarm = await prisma.farm.create({
-          data: {
-            farmName: 'Default Station Plot',
-            userId,
-            woredaId: firstWoreda ? firstWoreda.id : 'woreda_adama_01',
-            areaHectares: 2.0,
-            primaryCrop: 'Wheat',
-            latitude: 8.54,
-            longitude: 39.27,
-          },
-        });
-        farmId = createdFarm.id;
-      }
-
-      const created = await prisma.sensor.create({
-        data: {
-          hardwareId: data.hardwareId || `NODE_${Date.now()}`,
-          farmId,
-          sensorType: data.sensorType || 'SOIL_MOISTURE_STATION',
-          isActive: data.isActive !== undefined ? Boolean(data.isActive) : true,
-        },
-      });
-
-      await logAuditAction({
-        action: 'SENSOR_REGISTERED',
-        adminId: adminContext.id,
-        adminEmail: adminContext.email,
-        details: `Registered sensor ${created.hardwareId}`,
-        ipAddress: adminContext.ip,
-      });
-
-      return created;
-    } catch (err) {
-      logger.warn(`[AdminService] Create sensor DB error: ${err.message}`);
-    }
+  let farmId = data.farmId;
+  if (!farmId) {
+    const firstFarm = await prisma.farm.findFirst({ select: { id: true } });
+    farmId = firstFarm ? firstFarm.id : null;
+  }
+  if (!farmId) {
+    throw new BadRequestError('Farm ID required to register sensor hardware');
   }
 
-  return { id: `sns_${Date.now()}`, ...data, createdAt: new Date().toISOString() };
+  const created = await prisma.sensor.create({
+    data: {
+      hardwareId: data.hardwareId || `NODE_${Date.now()}`,
+      farmId,
+      sensorType: data.sensorType || 'SOIL_MOISTURE_STATION',
+      isActive: data.isActive !== undefined ? Boolean(data.isActive) : true,
+    },
+  });
+
+  await logAuditAction({
+    action: 'SENSOR_REGISTERED',
+    adminId: adminContext.id,
+    adminEmail: adminContext.email,
+    details: `Registered sensor ${created.hardwareId}`,
+    ipAddress: adminContext.ip,
+  });
+
+  return created;
 }
 
 async function deleteSensor(sensorId, adminContext = {}) {
-  if (isConnected()) {
-    try {
-      const existing = await prisma.sensor.findUnique({ where: { id: sensorId } });
-      if (existing) {
-        await prisma.sensor.delete({ where: { id: sensorId } });
-      }
-      await logAuditAction({
-        action: 'SENSOR_DELETED',
-        adminId: adminContext.id,
-        adminEmail: adminContext.email,
-        details: `Deleted sensor device ${sensorId}`,
-        ipAddress: adminContext.ip,
-      });
-      return { success: true, id: sensorId };
-    } catch (_e) {
-      // Fallback
-    }
-  }
+  await prisma.sensor.delete({ where: { id: sensorId } });
+  await logAuditAction({
+    action: 'SENSOR_DELETED',
+    adminId: adminContext.id,
+    adminEmail: adminContext.email,
+    details: `Deleted sensor device ${sensorId}`,
+    ipAddress: adminContext.ip,
+  });
   return { success: true, id: sensorId };
 }
 
@@ -1090,57 +783,27 @@ async function getAlerts({ page = 1, limit = 20 } = {}) {
   const skip = (Number(page) - 1) * Number(limit);
   const take = Number(limit);
 
-  if (isConnected()) {
-    try {
-      const [alerts, total] = await Promise.all([
-        prisma.alert.findMany({
-          skip,
-          take,
-          orderBy: { createdAt: 'desc' },
-          include: { woreda: { select: { nameEn: true, nameAm: true } } },
-        }),
-        prisma.alert.count(),
-      ]);
-      return { alerts, pagination: { page: Number(page), limit: Number(limit), total, totalPages: Math.ceil(total / take) } };
-    } catch (_e) {
-      // Fallback
-    }
-  }
-
-  const sampleAlerts = [
-    {
-      id: 'alert_demo_01',
-      hazardType: 'DROUGHT',
-      severity: 'WARNING',
-      titleEn: 'Early Seasonal Moisture Deficit Warning',
-      messageEn: 'Prepare supplemental irrigation in water-stressed sectors.',
-      woreda: { nameEn: 'Adama Zuria', nameAm: 'አዳማ ዙሪያ' },
-      createdAt: new Date().toISOString(),
-    },
-  ];
-
-  return { alerts: sampleAlerts, pagination: { page: 1, limit: 20, total: 1, totalPages: 1 } };
+  const [alerts, total] = await Promise.all([
+    prisma.alert.findMany({
+      skip,
+      take,
+      orderBy: { createdAt: 'desc' },
+      include: { woreda: { select: { nameEn: true, nameAm: true } } },
+    }),
+    prisma.alert.count(),
+  ]);
+  return { alerts, pagination: { page: Number(page), limit: Number(limit), total, totalPages: Math.ceil(total / take) || 1 } };
 }
 
 async function deleteAlert(alertId, adminContext = {}) {
-  if (isConnected()) {
-    try {
-      const existing = await prisma.alert.findUnique({ where: { id: alertId } });
-      if (existing) {
-        await prisma.alert.delete({ where: { id: alertId } });
-      }
-      await logAuditAction({
-        action: 'ALERT_DELETED',
-        adminId: adminContext.id,
-        adminEmail: adminContext.email,
-        details: `Deleted alert ${alertId}`,
-        ipAddress: adminContext.ip,
-      });
-      return { success: true, id: alertId };
-    } catch (_e) {
-      // Fallback
-    }
-  }
+  await prisma.alert.delete({ where: { id: alertId } });
+  await logAuditAction({
+    action: 'ALERT_DELETED',
+    adminId: adminContext.id,
+    adminEmail: adminContext.email,
+    details: `Deleted alert ${alertId}`,
+    ipAddress: adminContext.ip,
+  });
   return { success: true, id: alertId };
 }
 
@@ -1148,56 +811,26 @@ async function getDiagnoses({ page = 1, limit = 20 } = {}) {
   const skip = (Number(page) - 1) * Number(limit);
   const take = Number(limit);
 
-  if (isConnected()) {
-    try {
-      const [diagnoses, total] = await Promise.all([
-        prisma.diseaseDiagnosis.findMany({
-          skip,
-          take,
-          orderBy: { createdAt: 'desc' },
-        }),
-        prisma.diseaseDiagnosis.count(),
-      ]);
-      return { diagnoses, pagination: { page: Number(page), limit: Number(limit), total, totalPages: Math.ceil(total / take) } };
-    } catch (_e) {
-      // Fallback
-    }
-  }
-
-  const sampleDiagnoses = [
-    {
-      id: 'diag_demo_01',
-      cropType: 'Wheat',
-      diseaseName: 'Wheat Stem Rust (Puccinia graminis)',
-      severity: 'HIGH',
-      confidenceScore: 0.94,
-      aiModel: 'Plant.id Botanical + Google Gemini 2.5 Flash',
-      createdAt: new Date().toISOString(),
-    },
-  ];
-
-  return { diagnoses: sampleDiagnoses, pagination: { page: 1, limit: 20, total: 1, totalPages: 1 } };
+  const [diagnoses, total] = await Promise.all([
+    prisma.diseaseDiagnosis.findMany({
+      skip,
+      take,
+      orderBy: { createdAt: 'desc' },
+    }),
+    prisma.diseaseDiagnosis.count(),
+  ]);
+  return { diagnoses, pagination: { page: Number(page), limit: Number(limit), total, totalPages: Math.ceil(total / take) || 1 } };
 }
 
 async function deleteDiagnosis(diagId, adminContext = {}) {
-  if (isConnected()) {
-    try {
-      const existing = await prisma.diseaseDiagnosis.findUnique({ where: { id: diagId } });
-      if (existing) {
-        await prisma.diseaseDiagnosis.delete({ where: { id: diagId } });
-      }
-      await logAuditAction({
-        action: 'DIAGNOSIS_DELETED',
-        adminId: adminContext.id,
-        adminEmail: adminContext.email,
-        details: `Deleted disease diagnosis record ${diagId}`,
-        ipAddress: adminContext.ip,
-      });
-      return { success: true, id: diagId };
-    } catch (_e) {
-      // Fallback
-    }
-  }
+  await prisma.diseaseDiagnosis.delete({ where: { id: diagId } });
+  await logAuditAction({
+    action: 'DIAGNOSIS_DELETED',
+    adminId: adminContext.id,
+    adminEmail: adminContext.email,
+    details: `Deleted disease diagnosis record ${diagId}`,
+    ipAddress: adminContext.ip,
+  });
   return { success: true, id: diagId };
 }
 
