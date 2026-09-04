@@ -32,7 +32,7 @@
     "monitor_closely": "Monitor situation closely"
   },
   "ussd": {
-    "main_menu": "CON Welcome to AgriEtech\n1. Today's Weather\n2. Active Alerts\n3. Report Pest\n4. Crop Advice\n5. Language",
+    "main_menu": "CON Welcome to EthioFarm\n1. Today's Weather\n2. Active Alerts\n3. Report Pest\n4. Crop Advice\n5. Language",
     "weather_forecast": "Weather Forecast",
     "no_alerts": "No active alerts for your area",
     "recent_alerts": "Recent Alerts",
