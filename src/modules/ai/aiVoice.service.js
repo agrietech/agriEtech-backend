@@ -26,13 +26,21 @@ async function processVoiceInquiry({ userQuestion, audioTranscript, audioFile, l
   let audioBase64 = null;
   let mimeType = 'audio/wav';
 
+  let hostedAudioInputUrl = null;
+  const { uploadVoiceAudio } = require('../../utils/supabaseStorage');
   if (audioFile && audioFile.path && fs.existsSync(audioFile.path)) {
     try {
       const buffer = fs.readFileSync(audioFile.path);
       audioBase64 = buffer.toString('base64');
       mimeType = audioFile.mimetype || 'audio/wav';
+      hostedAudioInputUrl = await uploadVoiceAudio({
+        localFilePath: audioFile.path,
+        fileName: path.basename(audioFile.path),
+        mimeType,
+      });
+      try { fs.unlinkSync(audioFile.path); } catch (_unlinkErr) {}
     } catch (err) {
-      logger.warn(`[AIVoiceService] Failed to read audio file: ${err.message}`);
+      logger.warn(`[AIVoiceService] Failed to read or upload audio file: ${err.message}`);
     }
   }
 
@@ -59,17 +67,23 @@ async function processVoiceInquiry({ userQuestion, audioTranscript, audioFile, l
 
 
   const data = aiResult.data || {};
+  const isAiOffline = Boolean(aiResult.isOfflineFallback);
 
   // Persist raw AI inquiry and response to AIInsight table
   try {
     const { prisma } = require('../../config/db');
+    let validUserId = null;
+    if (userId) {
+      const userExists = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+      if (userExists) validUserId = userExists.id;
+    }
     await prisma.aIInsight.create({
       data: {
         prompt: query || 'Voice inquiry',
         model: isAiOffline ? 'agrietech-offline-synthesizer' : (data.aiModel || 'google/gemini-2.5-flash'),
         feature: 'VOICE_ASSISTANT',
         rawResponse: data,
-        userId: userId || null,
+        userId: validUserId,
       },
     });
   } catch (logErr) {
@@ -85,13 +99,12 @@ async function processVoiceInquiry({ userQuestion, audioTranscript, audioFile, l
   const directTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(speakableText.substring(0, 200))}&tl=${targetLang}&client=tw-ob`;
 
   // Surface AI degraded mode to the client so it can show a warning banner
-  const isAiOffline = Boolean(aiResult.isOfflineFallback);
-
   return {
     success: true,
     isAiOffline,
     degradedReason: isAiOffline ? (aiResult.degradedReason || 'AI service temporarily unavailable') : null,
     offlineNotice: isAiOffline ? '⚠️ AI is offline — response uses cached agronomic advisory' : null,
+    audioInputUrl: hostedAudioInputUrl,
     transcription: data.transcription || query || (isEnglish ? 'Voice inquiry received' : 'የድምፅ ጥያቄ ተቀብለናል'),
     detectedLanguage: data.detectedLanguage || (isEnglish ? 'English' : 'Amharic'),
     responseEn: data.responseEn || '',
