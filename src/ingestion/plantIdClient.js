@@ -175,6 +175,8 @@ class PlantIdClient {
     if (normalized.includes('MAIZE') || normalized.includes('CORN')) {
       return {
         success: true,
+        source: 'LOCAL_BOTANICAL_DATABASE',
+        apiVersion: 'local',
         crop: {
           scientificName: 'Zea mays',
           commonNames: ['Maize', 'Corn', 'በቆሎ'],
@@ -202,6 +204,8 @@ class PlantIdClient {
     if (normalized.includes('TEFF')) {
       return {
         success: true,
+        source: 'LOCAL_BOTANICAL_DATABASE',
+        apiVersion: 'local',
         crop: {
           scientificName: 'Eragrostis tef',
           commonNames: ['Teff', 'ጤፍ'],
@@ -222,6 +226,8 @@ class PlantIdClient {
 
     return {
       success: true,
+      source: 'LOCAL_BOTANICAL_DATABASE',
+      apiVersion: 'local',
       crop: {
         scientificName: 'Triticum aestivum',
         commonNames: ['Common Wheat', 'Wheat', 'ስንዴ'],
