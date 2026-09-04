@@ -22,7 +22,14 @@ async function evaluateRisk(req, res, next) {
 async function getLatestAssessments(req, res, next) {
   try {
     const limit = req.query.limit ? parseInt(req.query.limit, 10) : 20;
-    const data = await riskService.getLatestAssessments(limit);
+    const user = req.user || {};
+    const scope = {
+      role: (user.role || '').toUpperCase(),
+      woredaId: user.woredaId,
+      zoneId: user.zoneId,
+      regionId: user.regionId,
+    };
+    const data = await riskService.getLatestAssessments(limit, scope);
     res.status(200).json({ success: true, data });
   } catch (error) {
     next(error);
@@ -40,7 +47,14 @@ async function getWoredaAssessments(req, res, next) {
 
 async function getStatistics(req, res, next) {
   try {
-    const data = await riskService.getRiskStatistics();
+    const user = req.user || {};
+    const scope = {
+      role: (user.role || '').toUpperCase(),
+      woredaId: user.woredaId,
+      zoneId: user.zoneId,
+      regionId: user.regionId,
+    };
+    const data = await riskService.getRiskStatistics(scope);
     res.status(200).json({ success: true, data });
   } catch (error) {
     next(error);
