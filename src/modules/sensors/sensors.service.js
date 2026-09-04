@@ -1,35 +1,170 @@
 const { prisma, isConnected } = require('../../config/db');
-const { BadRequestError, NotFoundError, ServiceUnavailableError } = require('../../utils/errors');
+const { BadRequestError, NotFoundError, ForbiddenError, ConflictError, ServiceUnavailableError } = require('../../utils/errors');
 const env = require('../../config/env');
+const crypto = require('crypto');
+
 const logger = require('../../utils/logger');
 const { FirebaseSensorConnector, normalizeSoilMoisture } = require('../../ingestion/connectors/firebaseSensorConnector');
 
-// Register IoT sensor device
-async function registerSensor({ farmId, hardwareId, serialNumber, sensorType, deviceType }) {
-  const finalHardwareId = hardwareId || serialNumber;
+// Register or provision an IoT sensor device for an individual farmer or farm
+async function registerSensor({
+  farmId,
+  farmerId,
+  userId,
+  hardwareId,
+  serialNumber,
+  sensorType,
+  deviceType,
+  user,
+}) {
+  const finalHardwareId = (hardwareId || serialNumber || '').trim();
   const finalSensorType = sensorType || deviceType || 'SOIL_MOISTURE';
 
-  if (!farmId) {
-    throw new BadRequestError('farmId is required');
-  }
   if (!finalHardwareId) {
     throw new BadRequestError('hardwareId or serialNumber is required');
   }
 
-  const farm = await prisma.farm.findUnique({ where: { id: farmId } });
+  const callerRole = (user?.role || 'FARMER').toUpperCase();
+  const callerId = user?.id;
+
+  let targetFarmId = farmId;
+  let targetFarmerId = farmerId || userId;
+
+  // If caller is a FARMER, target is always themselves
+  if (callerRole === 'FARMER') {
+    targetFarmerId = callerId;
+  }
+
+  // If farmId is not specified, resolve or auto-provision a plot for this farmer
+  if (!targetFarmId) {
+    const ownerId = targetFarmerId || callerId;
+    if (ownerId) {
+      let farm = await prisma.farm.findFirst({
+        where: { userId: ownerId },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (!farm) {
+        const farmerUser = await prisma.user.findUnique({ where: { id: ownerId } });
+        if (!farmerUser) {
+          throw new NotFoundError(`Farmer user with ID ${ownerId} not found`);
+        }
+        let woredaId = farmerUser.woredaId;
+        if (!woredaId) {
+          const firstWoreda = await prisma.woreda.findFirst();
+          woredaId = firstWoreda?.id;
+        }
+
+        farm = await prisma.farm.create({
+          data: {
+            userId: ownerId,
+            farmName: `${farmerUser.fullName || 'Farmer'}'s Farm Plot`,
+            primaryCrop: 'Mixed Crops',
+            latitude: 8.54,
+            longitude: 39.27,
+            woredaId,
+          },
+        });
+      }
+      targetFarmId = farm.id;
+    }
+  }
+
+  if (!targetFarmId) {
+    throw new BadRequestError('farmId or farmerId is required to register sensor');
+  }
+
+  const farm = await prisma.farm.findUnique({
+    where: { id: targetFarmId },
+    include: {
+      user: { select: { id: true, fullName: true, phoneNumber: true, email: true, role: true } },
+      woreda: { include: { zone: true } },
+    },
+  });
+
   if (!farm) {
-    throw new NotFoundError(`Farm with ID ${farmId} not found`);
+    throw new NotFoundError(`Farm with ID ${targetFarmId} not found`);
+  }
+
+  // Jurisdictional / Ownership Authorization
+  if (callerRole === 'FARMER' && farm.userId !== callerId) {
+    throw new ForbiddenError('Access denied: You can only register sensors for your own farm');
+  }
+  if ((callerRole === 'DEVELOPMENT_AGENT' || callerRole === 'WOREDA_OFFICER') && user?.woredaId && farm.woredaId !== user.woredaId) {
+    throw new ForbiddenError('Access denied: Farmer/farm is outside your woreda jurisdiction');
+  }
+  if (callerRole === 'ZONAL_OFFICER' && user?.zoneId && farm.woreda?.zoneId !== user.zoneId) {
+    throw new ForbiddenError('Access denied: Farmer/farm is outside your zone jurisdiction');
+  }
+  if (callerRole === 'REGIONAL_OFFICER' && user?.regionId && farm.woreda?.zone?.regionId !== user.regionId) {
+    throw new ForbiddenError('Access denied: Farmer/farm is outside your region jurisdiction');
+  }
+
+  // Check if sensor with this hardwareId already exists: update and reassign to this farmer's farm
+  const existing = await prisma.sensor.findUnique({
+    where: { hardwareId: finalHardwareId },
+  });
+
+  const generatedToken = 'sec_' + crypto.randomBytes(24).toString('hex');
+
+  if (existing) {
+    return await prisma.sensor.update({
+      where: { id: existing.id },
+      data: {
+        farmId: targetFarmId,
+        sensorType: finalSensorType,
+        isActive: true,
+        secretToken: existing.secretToken || generatedToken,
+      },
+      include: {
+        farm: {
+          include: {
+            user: { select: { id: true, fullName: true, phoneNumber: true, email: true } },
+          },
+        },
+      },
+    });
   }
 
   return await prisma.sensor.create({
     data: {
-      farmId,
+      farmId: targetFarmId,
       hardwareId: finalHardwareId,
       sensorType: finalSensorType,
       isActive: true,
+      secretToken: generatedToken,
+    },
+    include: {
+      farm: {
+        include: {
+          user: { select: { id: true, fullName: true, phoneNumber: true, email: true } },
+        },
+      },
     },
   });
 }
+
+/**
+ * Validate an incoming sensor secret token against database record
+ */
+async function verifySensorToken(hardwareId, token) {
+  if (!hardwareId || !token) return false;
+  try {
+    const sensor = await prisma.sensor.findUnique({
+      where: { hardwareId: String(hardwareId).trim() },
+      select: { id: true, secretToken: true, isActive: true },
+    });
+    if (!sensor || !sensor.isActive) return false;
+    if (sensor.secretToken && sensor.secretToken === String(token).trim()) {
+      return true;
+    }
+    return false;
+  } catch (err) {
+    logger.error(`[SensorAuth] Token verification error for ${hardwareId}: ${err.message}`);
+    return false;
+  }
+}
+
 
 // Record authentic telemetry readings
 async function recordTelemetry({
@@ -204,7 +339,7 @@ async function claimSensor({ userId, farmId, hardwareId, serialNumber, sensorTyp
  */
 async function syncFirebaseTelemetry({ firebaseUrl, apiKey, path, hardwareId, farmId } = {}) {
   const url = firebaseUrl || env.FIREBASE_DATABASE_URL || 'https://arduinomoisture-default-rtdb.firebaseio.com';
-  const key = apiKey || env.FIREBASE_API_KEY || 'AIzaSyDt0I0HwHRlr1qpBHDh_fLlxmtXx3OqVG0';
+  const key = apiKey || env.FIREBASE_API_KEY;
 
   logger.info(`[FirebaseSensorConnector] Initiating sync with Firebase RTDB at ${url}`);
 
@@ -319,12 +454,202 @@ async function receiveFirebaseStream(data) {
   });
 }
 
+// Update sensor with Optimistic Concurrency Control (OCC) and ownership checks
+async function updateSensor({ id, data = {}, user = {}, clientUpdatedAt }) {
+  if (!isConnected()) {
+    throw new ServiceUnavailableError('Database service unavailable for sensor updates');
+  }
+
+  const existing = await prisma.sensor.findUnique({
+    where: { id },
+    include: {
+      farm: {
+        include: {
+          woreda: {
+            include: {
+              zone: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!existing) {
+    throw new NotFoundError(`Sensor with ID ${id} not found`);
+  }
+
+  // 1. Ownership & Jurisdictional Authorization
+  const role = (user.role || 'FARMER').toUpperCase();
+  if (role !== 'ADMIN') {
+    if (role === 'FARMER' && existing.farm.userId !== user.id) {
+      throw new ForbiddenError('Access denied: You can only update sensors on your own farms');
+    }
+    if ((role === 'DEVELOPMENT_AGENT' || role === 'WOREDA_OFFICER') && user.woredaId && existing.farm.woredaId !== user.woredaId) {
+      throw new ForbiddenError('Access denied: Sensor is outside your woreda jurisdiction');
+    }
+    if (role === 'ZONAL_OFFICER' && user.zoneId && existing.farm.woreda?.zoneId !== user.zoneId) {
+      throw new ForbiddenError('Access denied: Sensor is outside your zone jurisdiction');
+    }
+    if (role === 'REGIONAL_OFFICER' && user.regionId && existing.farm.woreda?.zone?.regionId !== user.regionId) {
+      throw new ForbiddenError('Access denied: Sensor is outside your region jurisdiction');
+    }
+  }
+
+  // 2. Optimistic Concurrency Control (OCC)
+  const clientTs = clientUpdatedAt || data.clientUpdatedAt || data.updatedAt || data.lastUpdatedAt;
+  if (clientTs) {
+    const clientTime = new Date(clientTs).getTime();
+    const serverTime = new Date(existing.updatedAt).getTime();
+    if (!isNaN(clientTime) && serverTime - clientTime > 500) {
+      throw new ConflictError(
+        'Concurrency conflict: Sensor settings were modified by another session. Please refresh and re-apply.',
+        'CONCURRENCY_CONFLICT',
+        {
+          currentUpdatedAt: existing.updatedAt.toISOString(),
+          clientUpdatedAt: new Date(clientTs).toISOString(),
+          conflictRecord: {
+            id: existing.id,
+            hardwareId: existing.hardwareId,
+            isActive: existing.isActive,
+            sensorType: existing.sensorType,
+            updatedAt: existing.updatedAt,
+          },
+        }
+      );
+    }
+  }
+
+  // 3. Apply updates
+  const updatePayload = {};
+  if (typeof data.isActive === 'boolean') updatePayload.isActive = data.isActive;
+  if (data.sensorType) updatePayload.sensorType = data.sensorType;
+  if (data.farmId && data.farmId !== existing.farmId) {
+    // If moving to another farm, verify ownership of destination farm
+    const targetFarm = await prisma.farm.findUnique({ where: { id: data.farmId } });
+    if (!targetFarm) throw new NotFoundError(`Destination farm ${data.farmId} not found`);
+    if (role === 'FARMER' && targetFarm.userId !== user.id) {
+      throw new ForbiddenError('Cannot move sensor to a farm you do not own');
+    }
+    updatePayload.farmId = data.farmId;
+  }
+
+  return await prisma.sensor.update({
+    where: { id },
+    data: updatePayload,
+    include: { farm: true },
+  });
+}
+
+// Get single sensor by ID
+async function getSensorById(id) {
+  return await prisma.sensor.findUnique({
+    where: { id },
+    include: {
+      farm: {
+        include: {
+          woreda: {
+            include: {
+              zone: true,
+            },
+          },
+        },
+      },
+      readings: {
+        take: 20,
+        orderBy: { recordedAt: 'desc' },
+      },
+    },
+  });
+}
+
+// Get telemetry history for a sensor by id or hardwareId
+async function getSensorTelemetry({ id, hardwareId, startDate, endDate, limit = 50 } = {}) {
+  const target = id || hardwareId;
+  if (!target) {
+    throw new BadRequestError('Sensor ID or Hardware ID is required');
+  }
+
+  const sensor = await prisma.sensor.findFirst({
+    where: {
+      OR: [{ id: target }, { hardwareId: target }],
+    },
+  });
+
+  if (!sensor) {
+    throw new NotFoundError(`Sensor with identifier '${target}' not found`);
+  }
+
+  const where = { sensorId: sensor.id };
+  if (startDate || endDate) {
+    where.recordedAt = {};
+    if (startDate) where.recordedAt.gte = new Date(startDate);
+    if (endDate) where.recordedAt.lte = new Date(endDate);
+  }
+
+  const take = Math.min(Math.max(Number(limit) || 50, 1), 500);
+
+  return await prisma.sensorReading.findMany({
+    where,
+    orderBy: { recordedAt: 'desc' },
+    take,
+    include: {
+      sensor: {
+        select: {
+          id: true,
+          hardwareId: true,
+          sensorType: true,
+          farmId: true,
+        },
+      },
+    },
+  });
+}
+
+// Get latest telemetry reading for a sensor device
+async function getLatestSensorReading(idOrHardwareId) {
+  if (!idOrHardwareId) {
+    throw new BadRequestError('Sensor ID or Hardware ID is required');
+  }
+
+  const sensor = await prisma.sensor.findFirst({
+    where: {
+      OR: [{ id: idOrHardwareId }, { hardwareId: idOrHardwareId }],
+    },
+  });
+
+  if (!sensor) {
+    throw new NotFoundError(`Sensor with identifier '${idOrHardwareId}' not found`);
+  }
+
+  return await prisma.sensorReading.findFirst({
+    where: { sensorId: sensor.id },
+    orderBy: { recordedAt: 'desc' },
+    include: {
+      sensor: {
+        select: {
+          id: true,
+          hardwareId: true,
+          sensorType: true,
+          farmId: true,
+        },
+      },
+    },
+  });
+}
+
 module.exports = {
   registerSensor,
+  verifySensorToken,
   recordTelemetry,
   getSensorsByFarm,
   getSensorsByFarmer,
+  getSensorById,
+  updateSensor,
   claimSensor,
   syncFirebaseTelemetry,
   receiveFirebaseStream,
+  getSensorTelemetry,
+  getLatestSensorReading,
 };
+
