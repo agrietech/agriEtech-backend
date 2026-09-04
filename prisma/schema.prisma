@@ -229,6 +229,7 @@ model Sensor {
   hardwareId       String            @unique
   sensorType       String            // SOIL_MOISTURE, TEMPERATURE, RAIN_GAUGE, LEAF_WETNESS
   isActive         Boolean           @default(true)
+  secretToken      String?
   readings         SensorReading[]
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
