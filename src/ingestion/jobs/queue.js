@@ -4,8 +4,14 @@ const env = require('../../config/env');
 const logger = require('../../utils/logger');
 
 const QUEUE_NAME = 'ingestionQueue';
+const DIAGNOSIS_QUEUE_NAME = 'diagnosisQueue';
 let ingestionQueue = null;
 let ingestionWorker = null;
+let diagnosisQueue = null;
+let diagnosisWorker = null;
+
+// In-memory fallback map for non-redis environments
+const memoryDiagnosisJobs = new Map();
 
 // Only create BullMQ queue if Redis is explicitly configured (not default localhost)
 const redisConfigured =
@@ -39,14 +45,39 @@ if (env.NODE_ENV !== 'test' && redisConfigured) {
         }
       });
 
-      logger.info('[IngestionQueue] BullMQ queue initialized with Redis');
+      diagnosisQueue = new Queue(DIAGNOSIS_QUEUE_NAME, {
+        connection: redis,
+        defaultJobOptions: {
+          attempts: 2,
+          backoff: {
+            type: 'exponential',
+            delay: 1500,
+          },
+          removeOnComplete: {
+            age: 86400 * 3, // 3 days
+            count: 5000,
+          },
+          removeOnFail: {
+            age: 604800,
+          },
+        },
+      });
+
+      diagnosisQueue.on('error', (err) => {
+        if (err && err.code !== 'ECONNRESET' && err.code !== 'ETIMEDOUT') {
+          logger.warn(`[DiagnosisQueue] Queue notice: ${err.message}`);
+        }
+      });
+
+      logger.info('[Queue] BullMQ queues (ingestion + diagnosis) initialized with Redis');
     }
   } catch (err) {
-    logger.warn(`[IngestionQueue] Initialization notice: ${err.message}`);
+    logger.warn(`[Queue] Initialization notice: ${err.message}`);
   }
 } else if (env.NODE_ENV !== 'test') {
-  logger.info('[IngestionQueue] Running in direct-execution mode (no Redis configured)');
+  logger.info('[Queue] Running in direct-execution mode (no Redis configured)');
 }
+
 
 // Add job to queue or mock
 async function addJob(jobName, payload = {}, opts = {}) {
@@ -121,17 +152,50 @@ async function getFailedJobs(limit = 20) {
   return [];
 }
 
+// Save diagnosis job state to Redis and local memory
+async function setDiagnosisJobState(jobId, state) {
+  memoryDiagnosisJobs.set(jobId, state);
+  if (redis && redis.status === 'ready') {
+    try {
+      await redis.setex(`diagnosis:job:${jobId}`, 86400 * 3, JSON.stringify(state));
+    } catch (err) {
+      logger.warn(`[Queue] Failed to persist diagnosis job to Redis: ${err.message}`);
+    }
+  }
+}
+
+// Retrieve diagnosis job state from Redis or local memory
+async function getDiagnosisJobState(jobId) {
+  if (redis && redis.status === 'ready') {
+    try {
+      const cached = await redis.get(`diagnosis:job:${jobId}`);
+      if (cached) {
+        return JSON.parse(cached);
+      }
+    } catch (_err) {
+      // Fall back to memory map
+    }
+  }
+  return memoryDiagnosisJobs.get(jobId) || null;
+}
+
 // Close queue and worker cleanly
 async function closeQueue() {
   try {
     if (ingestionWorker) {
       await ingestionWorker.close();
     }
+    if (diagnosisWorker) {
+      await diagnosisWorker.close();
+    }
     if (ingestionQueue) {
       await ingestionQueue.close();
     }
+    if (diagnosisQueue) {
+      await diagnosisQueue.close();
+    }
   } catch (err) {
-    logger.warn(`[IngestionQueue] Close error: ${err.message}`);
+    logger.warn(`[Queue] Close error: ${err.message}`);
   }
 }
 
@@ -143,12 +207,18 @@ async function dispatchJob(jobName, payload = {}, opts = {}) {
 module.exports = {
   ingestionQueue,
   ingestionWorker,
+  diagnosisQueue,
+  diagnosisWorker,
   addJob,
   addRecurringJob,
   dispatchJob,
   getQueueStats,
   getFailedJobs,
+  setDiagnosisJobState,
+  getDiagnosisJobState,
   closeQueue,
   connection: redis,
   QUEUE_NAME,
+  DIAGNOSIS_QUEUE_NAME,
 };
+
