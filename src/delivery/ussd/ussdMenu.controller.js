@@ -153,7 +153,7 @@ async function handleUssdSession(req, res, _next) {
       // Find registered user by phone
       let userLang = 'am'; // Default to Amharic in Ethiopia
       let woredaId = null;
-      let woredaName = 'Adama / Central Rift';
+      let woredaName = 'Unassigned / National';
 
       if (cleanPhone && isConnected()) {
         try {
