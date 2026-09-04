@@ -30,7 +30,7 @@ function createRateLimiter({
   max = 100,
   prefix = 'rl:global',
   keyGenerator = (req) =>
-    req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown_ip',
+    req.ip || req.socket?.remoteAddress || 'unknown_ip',
   message = 'Too many requests from this IP, please try again later.',
 } = {}) {
   const windowSec = Math.ceil(windowMs / 1000);
