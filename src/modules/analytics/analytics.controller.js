@@ -205,7 +205,10 @@ async function getAgroZone(req, res, next) {
 
 async function getSeismologyAnalytics(req, res, next) {
   try {
-    const { lat = 8.55, lng = 39.30, woredaName } = req.query;
+    const { lat, lng, woredaName } = req.query;
+    if (!lat || !lng) {
+      return res.status(400).json({ success: false, error: 'Query parameters lat and lng are required for seismology assessment' });
+    }
     const data = await analyticsService.getSeismologyAssessment(Number(lat), Number(lng), woredaName);
     res.status(200).json({ success: true, data });
   } catch (error) {
@@ -215,7 +218,10 @@ async function getSeismologyAnalytics(req, res, next) {
 
 async function getSoilDegradationAnalytics(req, res, next) {
   try {
-    const { lat = 9.08, lng = 36.55, woredaName, slopePct, conservationPractice } = req.query;
+    const { lat, lng, woredaName, slopePct, conservationPractice } = req.query;
+    if (!lat || !lng) {
+      return res.status(400).json({ success: false, error: 'Query parameters lat and lng are required for soil degradation assessment' });
+    }
     const data = await analyticsService.getSoilDegradationAssessment(
       Number(lat),
       Number(lng),
@@ -231,7 +237,10 @@ async function getSoilDegradationAnalytics(req, res, next) {
 
 async function getNaturalDisastersPrediction(req, res, next) {
   try {
-    const { lat = 8.54, lng = 39.27, woredaName } = req.query;
+    const { lat, lng, woredaName } = req.query;
+    if (!lat || !lng) {
+      return res.status(400).json({ success: false, error: 'Query parameters lat and lng are required for disaster predictions' });
+    }
     const data = await analyticsService.getNaturalDisastersPrediction(Number(lat), Number(lng), woredaName);
     res.status(200).json({ success: true, data });
   } catch (error) {
