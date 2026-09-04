@@ -35,16 +35,6 @@ async function authenticate(req, res, next) {
       return next();
     }
 
-    // 2. Dev Bypass — only in development environment
-    if (
-      process.env.NODE_ENV === 'development' &&
-      (process.env.ADMIN_DEV_BYPASS === 'true' || process.env.ADMIN_BYPASS === 'true') &&
-      !req.headers.authorization
-    ) {
-      req.user = { id: 'usr_admin_01', email: 'admin@agrietech.et', fullName: 'System Administrator', role: 'ADMIN' };
-      return next();
-    }
-
 
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -69,7 +59,14 @@ async function authenticate(req, res, next) {
         });
     }
 
-    req.user = jwt.verify(token, env.JWT_SECRET);
+    const decoded = jwt.verify(token, env.JWT_SECRET);
+    if (decoded.type === 'refresh') {
+      return res.status(401).json({
+        success: false,
+        error: { message: 'Refresh token cannot be used as an access token', code: 'INVALID_TOKEN_TYPE' },
+      });
+    }
+    req.user = decoded;
     next();
   } catch (_err) {
     return res
