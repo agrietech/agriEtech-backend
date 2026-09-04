@@ -102,7 +102,7 @@ function renderForgotPasswordHtml() {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Forgot Password - AgriEtech Early Warning</title>
+  <title>Forgot Password - EthioFarm Early Warning</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -268,7 +268,7 @@ function renderResetPasswordHtml({ token = '', email: _email = '', code = '' } =
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Reset Password - AgriEtech Early Warning</title>
+  <title>Reset Password - EthioFarm Early Warning</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -634,7 +634,7 @@ function renderVerificationHtml({ success, title, message }) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title} - AgriEtech</title>
+  <title>${title} - EthioFarm</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     body {
@@ -707,13 +707,13 @@ function renderVerificationHtml({ success, title, message }) {
 </head>
 <body>
   <div class="card">
-    <div class="badge">AgriEtech Early Warning</div>
+    <div class="badge">EthioFarm Early Warning</div>
     ${icon}
     <h1>${title}</h1>
     <p>${message}</p>
-    <a href="${process.env.FRONTEND_URL || process.env.APP_URL || '/'}" class="btn">${success ? 'Open AgriEtech Platform' : 'Return to Home'}</a>
+    <a href="${process.env.FRONTEND_URL || process.env.APP_URL || '/'}" class="btn">${success ? 'Open EthioFarm Platform' : 'Return to Home'}</a>
     <div class="footer">
-      AgriEtech Multi-Hazard Platform for Ethiopia &bull; Addis Ababa
+      EthioFarm Multi-Hazard Platform for Ethiopia &bull; Addis Ababa
     </div>
   </div>
 </body>
@@ -745,7 +745,7 @@ async function verifyEmail(req, res, next) {
       return res.status(200).send(renderVerificationHtml({
         success: true,
         title: 'Email Verified Successfully!',
-        message: result.message || 'Your email address has been verified. You can now access all AgriEtech features.',
+        message: result.message || 'Your email address has been verified. You can now access all EthioFarm features.',
       }));
     }
 
