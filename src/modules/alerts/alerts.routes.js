@@ -14,6 +14,7 @@ router.get('/', authenticate, controller.getAlerts);
 router.get('/active', authenticate, controller.getAlerts);
 router.get('/:id', authenticate, controller.getAlertById);
 router.patch('/:id/read', authenticate, controller.markAlertAsRead);
+router.post('/:id/read', authenticate, controller.markAlertAsRead);
 
 // Ground-truth feedback: farmers can validate whether an alert was accurate
 router.post('/:id/feedback', authenticate, controller.submitFeedback);
