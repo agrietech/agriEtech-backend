@@ -18,6 +18,7 @@ async function diagnose(req, res, next) {
         imageFile,
         imageBase64: resolvedBase64,
         language: lang,
+        user: req.user,
       });
       return res.status(202).json({ success: true, data: job });
     }
@@ -29,6 +30,7 @@ async function diagnose(req, res, next) {
       imageFile,
       imageBase64: resolvedBase64,
       language: lang,
+      user: req.user,
     });
     res.status(201).json({ success: true, data });
   } catch (error) {
@@ -55,7 +57,7 @@ async function getJobStatus(req, res, next) {
 async function getAllDiagnoses(req, res, next) {
   try {
     const { farmId, cropType } = req.query;
-    const data = await diseaseService.getAllDiagnoses({ farmId, cropType });
+    const data = await diseaseService.getAllDiagnoses({ farmId, cropType, user: req.user });
     res.status(200).json({ success: true, data });
   } catch (error) {
     next(error);
@@ -64,7 +66,7 @@ async function getAllDiagnoses(req, res, next) {
 
 async function getDiagnosesByFarm(req, res, next) {
   try {
-    const data = await diseaseService.getDiagnosesByFarm(req.params.farmId);
+    const data = await diseaseService.getDiagnosesByFarm(req.params.farmId, req.user);
     res.status(200).json({ success: true, data });
   } catch (error) {
     next(error);
