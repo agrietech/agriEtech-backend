@@ -34,7 +34,7 @@ class FirebaseSensorConnector {
   constructor(config = {}) {
     this.name = 'Firebase Arduino Sensor Connector';
     this.baseUrl = config.baseUrl || env.FIREBASE_DATABASE_URL || 'https://arduinomoisture-default-rtdb.firebaseio.com';
-    this.apiKey = config.apiKey || env.FIREBASE_API_KEY || 'AIzaSyDt0I0HwHRlr1qpBHDh_fLlxmtXx3OqVG0';
+    this.apiKey = config.apiKey || env.FIREBASE_API_KEY || '';
     this.timeoutMs = config.timeoutMs || 15000;
   }
 
