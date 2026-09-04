@@ -191,8 +191,8 @@ async function createAlert({
   return alert;
 }
 
-// Get active alerts with optional filters
-async function getActiveAlerts({ severity, woredaId, hazardType, status } = {}) {
+// Get active alerts with optional filters — supports jurisdiction scoping
+async function getActiveAlerts({ severity, woredaId, zoneId, regionId, hazardType, status } = {}) {
   const where = {};
   if (status) {
     where.status = status;
@@ -200,8 +200,18 @@ async function getActiveAlerts({ severity, woredaId, hazardType, status } = {}) 
     where.status = 'ACTIVE';
   }
   if (severity) where.severity = severity;
-  if (woredaId) where.woredaId = woredaId;
   if (hazardType) where.hazardType = hazardType;
+
+  // Apply jurisdictional scope filtering
+  if (woredaId) {
+    where.woredaId = woredaId;
+  } else if (zoneId) {
+    // Zonal Officer: restrict alerts to woredas within their assigned zone
+    where.woreda = { zoneId };
+  } else if (regionId) {
+    // Regional Officer: restrict alerts to woredas within their assigned region
+    where.woreda = { zone: { regionId } };
+  }
 
   return await prisma.alert.findMany({
     where,
