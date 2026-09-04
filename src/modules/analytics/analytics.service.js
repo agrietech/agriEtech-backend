@@ -45,10 +45,63 @@ const getDynamicFallbackSummary = async () => {
   };
 };
 
-// National agricultural overview dashboard
-async function getDashboardSummary() {
+// Agricultural overview dashboard — scoped by user jurisdiction
+async function getDashboardSummary({ role, userId, woredaId, zoneId, regionId } = {}) {
   if (isConnected()) {
     try {
+      // Build jurisdictional scope filters based on user role
+      const farmWhere = {};
+      const sensorWhere = {};
+      const alertWhere = { status: 'ACTIVE' };
+      const riskWhere = {};
+      const satWhere = {
+        source: { in: ['MODIS', 'MODIS_NDVI'] },
+        observationDate: { gte: new Date(Date.now() - 30 * 86400000) },
+      };
+      let woredaCountWhere = {};
+
+      if (role === 'FARMER') {
+        // Farmers see only their own farms and woreda data
+        if (userId) farmWhere.userId = userId;
+        if (woredaId) {
+          sensorWhere.farm = { woredaId };
+          alertWhere.woredaId = woredaId;
+          riskWhere.woredaId = woredaId;
+          satWhere.woredaId = woredaId;
+          woredaCountWhere = { id: woredaId };
+        }
+      } else if (role === 'DEVELOPMENT_AGENT' || role === 'WOREDA_OFFICER') {
+        if (woredaId) {
+          farmWhere.woredaId = woredaId;
+          sensorWhere.farm = { woredaId };
+          alertWhere.woredaId = woredaId;
+          riskWhere.woredaId = woredaId;
+          satWhere.woredaId = woredaId;
+          woredaCountWhere = { id: woredaId };
+        }
+      } else if (role === 'ZONAL_OFFICER') {
+        if (zoneId) {
+          farmWhere.woreda = { zoneId };
+          sensorWhere.farm = { woreda: { zoneId } };
+          alertWhere.woreda = { zoneId };
+          riskWhere.woreda = { zoneId };
+          satWhere.woreda = { zoneId };
+          woredaCountWhere = { zoneId };
+        }
+      } else if (role === 'REGIONAL_OFFICER') {
+        if (regionId) {
+          farmWhere.woreda = { zone: { regionId } };
+          sensorWhere.farm = { woreda: { zone: { regionId } } };
+          alertWhere.woreda = { zone: { regionId } };
+          riskWhere.woreda = { zone: { regionId } };
+          satWhere.woreda = { zone: { regionId } };
+          woredaCountWhere = { zone: { regionId } };
+        }
+      }
+      // ADMIN and RESEARCHER: no scope filters — see national totals
+
+      const activeSensorWhere = { ...sensorWhere, isActive: true };
+
       const [
         totalFarmsRegistered,
         activeSensors,
@@ -56,16 +109,17 @@ async function getDashboardSummary() {
         monitoredWoredas,
         activeEarlyWarnings,
       ] = await Promise.all([
-        prisma.farm.count(),
-        prisma.sensor.count({ where: { isActive: true } }),
-        prisma.sensor.count(),
-        prisma.woreda.count(),
-        prisma.alert.count({ where: { status: 'ACTIVE' } }),
+        prisma.farm.count({ where: farmWhere }),
+        prisma.sensor.count({ where: activeSensorWhere }),
+        prisma.sensor.count({ where: sensorWhere }),
+        prisma.woreda.count({ where: woredaCountWhere }),
+        prisma.alert.count({ where: alertWhere }),
       ]);
 
       const riskDistribution = await prisma.riskAssessment.groupBy({
         by: ['alertLevel'],
         _count: { id: true },
+        where: riskWhere,
       });
 
       const compositeRiskDistribution = {
@@ -90,10 +144,7 @@ async function getDashboardSummary() {
 
       const vciAggregate = await prisma.satelliteObservation.aggregate({
         _avg: { modisNdvi: true },
-        where: {
-          source: { in: ['MODIS', 'MODIS_NDVI'] },
-          observationDate: { gte: new Date(Date.now() - 30 * 86400000) },
-        },
+        where: satWhere,
       });
 
       const avgNdvi = vciAggregate._avg.modisNdvi;
