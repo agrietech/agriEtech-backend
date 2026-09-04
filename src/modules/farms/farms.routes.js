@@ -63,4 +63,43 @@ router.get('/', authenticate, controller.getFarms);
 // GET /api/v1/farms/:id – Get single farm details
 router.get('/:id', authenticate, controller.getFarmDetails);
 
+// PUT & PATCH /api/v1/farms/:id – Update farm plot with OCC conflict protection
+router.put(
+  '/:id',
+  authenticate,
+  [
+    body('farmName').optional().trim().notEmpty().withMessage('farmName cannot be empty').isLength({ max: 200 }),
+    body('primaryCrop').optional().isString().trim().notEmpty(),
+    body('areaHectares').optional().isFloat({ gt: 0 }),
+    body('latitude').optional().isFloat(),
+    body('longitude').optional().isFloat(),
+    body('soilType').optional().isString(),
+    body('irrigationType').optional().isString(),
+    body('clientUpdatedAt').optional().isISO8601(),
+  ],
+  validate,
+  controller.updateFarm
+);
+
+router.patch(
+  '/:id',
+  authenticate,
+  [
+    body('farmName').optional().trim().notEmpty().withMessage('farmName cannot be empty').isLength({ max: 200 }),
+    body('primaryCrop').optional().isString().trim().notEmpty(),
+    body('areaHectares').optional().isFloat({ gt: 0 }),
+    body('latitude').optional().isFloat(),
+    body('longitude').optional().isFloat(),
+    body('soilType').optional().isString(),
+    body('irrigationType').optional().isString(),
+    body('clientUpdatedAt').optional().isISO8601(),
+  ],
+  validate,
+  controller.updateFarm
+);
+
+// DELETE /api/v1/farms/:id – Delete a farm plot
+router.delete('/:id', authenticate, controller.deleteFarm);
+
 module.exports = router;
+
