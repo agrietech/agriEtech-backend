@@ -71,7 +71,7 @@ function generateAccessToken(user) {
 function generateRefreshToken(user) {
   return jwt.sign(
     { id: user.id, type: 'refresh' },
-    env.JWT_SECRET,
+    env.JWT_REFRESH_SECRET || env.JWT_SECRET,
     { expiresIn: '30d' }
   );
 }
@@ -146,8 +146,11 @@ async function registerUser({
   if (!resolvedName) {
     throw new BadRequestError('Full name is required');
   }
-  if (!password || password.length < 6) {
-    throw new BadRequestError('Password must be at least 6 characters long');
+  if (!password || password.length < 8) {
+    throw new BadRequestError('Password must be at least 8 characters long');
+  }
+  if (!/\d/.test(password)) {
+    throw new BadRequestError('Password must contain at least one number');
   }
 
   // Enforce staff credentials for professional roles
@@ -190,7 +193,7 @@ async function registerUser({
     }
   }
 
-  const passwordHash = await bcrypt.hash(password, 10);
+  const passwordHash = await bcrypt.hash(password, 12);
   const verificationToken = `${crypto.randomBytes(24).toString('hex')}_${Date.now()}`;
 
   let user;
@@ -359,7 +362,7 @@ async function requestPasswordReset(identifierOrPayload) {
       },
     });
 
-    logger.info(`[Auth Service] Password reset OTP generated for ${user.email || user.phoneNumber}: [${resetToken}] (valid 5 min)`);
+    logger.info(`[Auth Service] Password reset OTP generated for ${user.email || user.phoneNumber} (valid 5 min)`);
 
     // Dispatch via Email if real email exists
     if (user.email && !user.email.includes('@phone.')) {
@@ -379,7 +382,7 @@ async function requestPasswordReset(identifierOrPayload) {
       setImmediate(async () => {
         try {
           const { sendSms } = require('../../delivery/sms/africasTalkingClient');
-          const smsText = `AgriEtech: Your 6-digit password reset OTP is ${resetToken}. Valid for 5 minutes. Do not share this code with anyone.`;
+          const smsText = `EthioFarm: Your 6-digit password reset OTP is ${resetToken}. Valid for 5 minutes. Do not share this code with anyone.`;
           await sendSms([user.phoneNumber], smsText);
           logger.info(`[Auth Service] Password reset SMS dispatched to ${user.phoneNumber}`);
         } catch (smsErr) {
@@ -407,8 +410,11 @@ async function resetPassword({ token, resetToken, code, resetCode, newPassword, 
   if (!resolvedToken) {
     throw new BadRequestError('Password reset code is required');
   }
-  if (!resolvedPassword || resolvedPassword.length < 6) {
-    throw new BadRequestError('New password must be at least 6 characters long');
+  if (!resolvedPassword || resolvedPassword.length < 8) {
+    throw new BadRequestError('New password must be at least 8 characters long');
+  }
+  if (!/\d/.test(resolvedPassword)) {
+    throw new BadRequestError('New password must contain at least one number');
   }
 
   const attempts = resetAttemptsMap.get(resolvedToken) || 0;
@@ -430,7 +436,7 @@ async function resetPassword({ token, resetToken, code, resetCode, newPassword, 
 
   resetAttemptsMap.delete(resolvedToken);
 
-  const newHash = await bcrypt.hash(resolvedPassword, 10);
+  const newHash = await bcrypt.hash(resolvedPassword, 12);
   await prisma.user.update({
     where: { id: user.id },
     data: {
@@ -524,31 +530,6 @@ async function resendVerificationEmail(email) {
   };
 }
 
-/**
- * Refresh access token
- */
-async function refreshAccessToken(refreshToken) {
-  if (!refreshToken) {
-    throw new BadRequestError('Refresh token is required');
-  }
-
-  let decoded;
-  try {
-    decoded = jwt.verify(refreshToken, env.JWT_SECRET);
-    if (decoded.type !== 'refresh') throw new Error('Invalid token type');
-  } catch (_e) {
-    throw new UnauthorizedError('Invalid or expired refresh token');
-  }
-
-  const user = await prisma.user.findUnique({ where: { id: decoded.id } });
-  if (!user) {
-    throw new UnauthorizedError('User account not found');
-  }
-
-  const newAccessToken = generateAccessToken(user);
-  return { token: newAccessToken, accessToken: newAccessToken };
-}
-
 const localBlacklist = new Set();
 
 async function logout(token) {
@@ -585,10 +566,61 @@ async function isTokenBlacklisted(token) {
       const result = await redis.get(`blacklist:${token}`);
       return result !== null;
     }
-  } catch (_err) {
-    logger.warn('[Auth Service] Redis blacklist check failed, allowing token');
+  } catch (err) {
+    if (process.env.NODE_ENV === 'production') {
+      logger.error(`[SECURITY ALERT] Redis token blacklist check failed in production: ${err.message}`);
+    } else {
+      logger.warn(`[Auth Service] Redis blacklist check failed: ${err.message}`);
+    }
   }
   return false;
+}
+
+/**
+ * Refresh access token with token rotation & blacklist protection
+ */
+async function refreshAccessToken(refreshToken) {
+  if (!refreshToken) {
+    throw new BadRequestError('Refresh token is required');
+  }
+
+  // Check if refresh token has been revoked
+  if (await isTokenBlacklisted(refreshToken)) {
+    throw new UnauthorizedError('Refresh token has been revoked');
+  }
+
+  let decoded;
+  try {
+    // Try separate refresh secret first
+    decoded = jwt.verify(refreshToken, env.JWT_REFRESH_SECRET || env.JWT_SECRET);
+    if (decoded.type !== 'refresh') throw new Error('Invalid token type');
+  } catch (err) {
+    // Graceful backward compatibility fallback to JWT_SECRET
+    try {
+      decoded = jwt.verify(refreshToken, env.JWT_SECRET);
+      if (decoded.type !== 'refresh') throw new Error('Invalid token type');
+    } catch (_fallbackErr) {
+      throw new UnauthorizedError('Invalid or expired refresh token');
+    }
+  }
+
+  const user = await prisma.user.findUnique({ where: { id: decoded.id } });
+  if (!user) {
+    throw new UnauthorizedError('User account not found');
+  }
+
+  // Token Rotation (M4): Invalidate the consumed refresh token
+  await logout(refreshToken);
+
+  const newAccessToken = generateAccessToken(user);
+  const newRefreshToken = generateRefreshToken(user);
+
+  return {
+    token: newAccessToken,
+    accessToken: newAccessToken,
+    refreshToken: newRefreshToken,
+    user: sanitizeUser(user),
+  };
 }
 
 async function getUserProfile(userId) {
@@ -615,8 +647,11 @@ async function updatePassword(userId, currentPassword, newPassword) {
   if (!currentPassword || !newPassword) {
     throw new BadRequestError('Current and new passwords required');
   }
-  if (newPassword.length < 6) {
-    throw new BadRequestError('Password must be at least 6 characters long');
+  if (newPassword.length < 8) {
+    throw new BadRequestError('Password must be at least 8 characters long');
+  }
+  if (!/\d/.test(newPassword)) {
+    throw new BadRequestError('Password must contain at least one number');
   }
 
   const user = await prisma.user.findUnique({ where: { id: userId } });
@@ -629,7 +664,7 @@ async function updatePassword(userId, currentPassword, newPassword) {
     throw new UnauthorizedError('Current password incorrect');
   }
 
-  const newHash = await bcrypt.hash(newPassword, 10);
+  const newHash = await bcrypt.hash(newPassword, 12);
   await prisma.user.update({
     where: { id: userId },
     data: { passwordHash: newHash },
