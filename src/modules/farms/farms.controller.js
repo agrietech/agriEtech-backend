@@ -1,5 +1,6 @@
 const farmsService = require('./farms.service');
 const { validateFarmData } = require('../../validation/schemas');
+const { UnauthorizedError } = require('../../utils/errors');
 
 async function createFarm(req, res, next) {
   try {
@@ -15,7 +16,10 @@ async function createFarm(req, res, next) {
     const soilType = body.soilType || body.soil_type;
     const irrigationType = body.irrigationType || body.irrigation_type;
 
-    const userId = req.user?.id || req.user?.userId || 'usr_farmer_01';
+    const userId = req.user?.id || req.user?.userId;
+    if (!userId) {
+      throw new UnauthorizedError('Authentication required to register a farm');
+    }
 
     const farm = await farmsService.createFarm({
       userId,
@@ -84,8 +88,43 @@ async function getFarmDetails(req, res, next) {
   }
 }
 
+async function updateFarm(req, res, next) {
+  try {
+    const { id } = req.params;
+    const clientUpdatedAt =
+      req.headers['if-unmodified-since'] ||
+      req.body.clientUpdatedAt ||
+      req.body.updatedAt ||
+      req.body.lastUpdatedAt;
+
+    const updated = await farmsService.updateFarm({
+      id,
+      data: req.body,
+      user: req.user,
+      clientUpdatedAt,
+    });
+
+    res.status(200).json({ success: true, data: updated });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function deleteFarm(req, res, next) {
+  try {
+    const { id } = req.params;
+    const result = await farmsService.deleteFarm({ id, user: req.user });
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   createFarm,
   getFarms,
   getFarmDetails,
+  updateFarm,
+  deleteFarm,
 };
+
