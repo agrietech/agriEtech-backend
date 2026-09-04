@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const controller = require('./analytics.controller');
-const { authenticate, optionalAuthenticate, authorize, authorizeWoredaScope, authorizeRegionScope } = require('../../middleware/auth.middleware');
+const { authenticate, optionalAuthenticate, authorize, authorizeWoredaScope, authorizeZoneScope, authorizeRegionScope } = require('../../middleware/auth.middleware');
 
 router.get('/dashboard', authenticate, controller.getDashboardSummary);
 router.get('/dashboard-summary', authenticate, controller.getDashboardSummary);
@@ -32,8 +32,8 @@ router.get('/location/map', authenticate, controller.getLocationMap);
 router.get('/location/analytics', authenticate, controller.getLocationAnalytics);
 router.get('/region/:regionId/map', authenticate, authorizeRegionScope('regionId'), controller.getRegionMap);
 router.get('/region/:regionId/analytics', authenticate, authorizeRegionScope('regionId'), controller.getRegionAnalytics);
-router.get('/zone/:zoneId/map', authenticate, controller.getZoneMap);
-router.get('/zone/:zoneId/analytics', authenticate, controller.getZoneAnalytics);
+router.get('/zone/:zoneId/map', authenticate, authorizeZoneScope('zoneId'), controller.getZoneMap);
+router.get('/zone/:zoneId/analytics', authenticate, authorizeZoneScope('zoneId'), controller.getZoneAnalytics);
 router.get('/woreda/:woredaId/map', authenticate, authorizeWoredaScope('woredaId'), controller.getWoredaMap);
 router.get('/woreda/:woredaId/analytics', authenticate, authorizeWoredaScope('woredaId'), controller.getWoredaAnalytics);
 
