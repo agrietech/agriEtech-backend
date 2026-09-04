@@ -60,7 +60,7 @@ class OpenRouterClient {
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
           'HTTP-Referer': this.appUrl,
-          'X-Title': 'AgriEtech Multi-Hazard Platform',
+          'X-Title': 'EthioFarm Multi-Hazard Platform',
           'Content-Type': 'application/json',
         },
         timeout: requestTimeout,
@@ -120,7 +120,7 @@ class OpenRouterClient {
    * Multimodal Vision Analysis: Analyze Crop Image with Gemini 2.5 Flash
    */
   async analyzeCropVision({ imageBase64, imageUrl, mimeType = 'image/jpeg', cropHint, plantIdData }) {
-    const systemPrompt = `You are AgriEtech's Senior Agronomist and Plant Pathologist specializing in Ethiopian crops (Teff, Wheat, Maize, Sorghum, Barley, Coffee).
+    const systemPrompt = `You are EthioFarm's Senior Agronomist and Plant Pathologist specializing in Ethiopian crops (Teff, Wheat, Maize, Sorghum, Barley, Coffee).
 Analyze the provided crop image alongside botanical diagnosis candidates from Plant.id.
 You MUST output valid JSON ONLY with exact bilingual fields in English and Amharic (አማርኛ).
 
@@ -204,7 +204,7 @@ Required JSON format:
    * AI Graph & Time-Series Analytics: Trend, Anomaly & Agronomic Guidance
    */
   async analyzeGraphSeries({ woredaName = 'Adama Zuria', timeframe = 'DAILY', metrics = [], language = 'en' }) {
-    const systemPrompt = `You are AgriEtech's Chief Climate & Agronomic Analyst for Ethiopia.
+    const systemPrompt = `You are EthioFarm's Chief Climate & Agronomic Analyst for Ethiopia.
 Analyze the provided time-series data (Rainfall, NDVI Vegetation Index, SPI Drought Index, Soil Moisture).
 Output structured JSON with insights in BOTH English and Amharic.
 
@@ -268,7 +268,7 @@ JSON schema:
   async processVoiceInquiry({ userQuestion, audioTranscript, audioBase64: _audioBase64, mimeType: _mimeType, language = 'am' }) {
     const textQuery = userQuestion || audioTranscript || 'የሰብል እንክብካቤ እና የበሽታ መከላከል መመሪያ ቢነግሩኝ?';
 
-    const systemPrompt = `You are AgriEtech's Interactive Voice Agronomist supporting Ethiopian farmers in Amharic (አማርኛ) and English.
+    const systemPrompt = `You are EthioFarm's Interactive Voice Agronomist supporting Ethiopian farmers in Amharic (አማርኛ) and English.
 Formulate practical, empathetic, and scientifically accurate agricultural advice based specifically on the user's question.
 You MUST output valid JSON ONLY with exact fields:
 {
@@ -374,7 +374,7 @@ You MUST output valid JSON ONLY with exact fields:
       return {
         transcription: detectedLang === 'Amharic' ? 'የድምፅ ጥያቄዎን ይጠብቃል' : 'Listening for your question',
         detectedLanguage: detectedLang,
-        responseEn: 'Hello! I am your AgriEtech AI Agronomic Assistant. Please type or speak any question regarding your crops, fruit trees, soil moisture, pests, disease treatments, or weather forecasts.',
+        responseEn: 'Hello! I am your EthioFarm AI Agronomic Assistant. Please type or speak any question regarding your crops, fruit trees, soil moisture, pests, disease treatments, or weather forecasts.',
         responseAm: 'ጤና ይስጥልኝ! እኔ የአግሪቴክ የግብርና AI ረዳትዎ ነኝ። እባክዎን ስለ ሰብልዎ፣ ፍራፍሬዎች፣ ማዳቀል፣ በሽታዎች፣ የአፈር እርጥበት ወይም የአየር ሁኔታ ማንኛውንም ጥያቄ ይናገሩ ወይም ይፃፉ።',
         recommendedAction: detectedLang === 'Amharic' ? 'ጥያቄዎን ይናገሩ ወይም ከታች ያሉትን አማራጮች ይምረጡ።' : 'Speak your question or choose one of the quick topics below.',
       };
