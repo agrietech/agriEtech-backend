@@ -4,27 +4,37 @@ const { prisma, isConnected } = require('../../config/db');
 const openRouterClient = require('../../utils/openRouterClient');
 const plantIdClient = require('../../ingestion/plantIdClient');
 const logger = require('../../utils/logger');
-
+const { NotFoundError, ForbiddenError } = require('../../utils/errors');
 
 /**
  * Perform Dual-AI Crop Disease Diagnosis:
  * Combines Plant.id Botanical Taxonomy + Google Gemini 2.5 Flash Vision & Bilingual Agronomic Reasoning
  */
-async function diagnoseCropImage({ farmId, cropType, imageUrl, imageFile, imageBase64: rawBase64, language = 'en' }) {
+async function diagnoseCropImage({ farmId, cropType, imageUrl, imageFile, imageBase64: rawBase64, language = 'en', user }) {
+  if (farmId && user && isConnected()) {
+    const role = (user.role || '').toUpperCase();
+    if (role === 'FARMER') {
+      const farm = await prisma.farm.findUnique({ where: { id: farmId }, select: { userId: true } });
+      if (farm && farm.userId !== user.id) {
+        throw new ForbiddenError('Access denied: You can only submit diagnoses for your own farm');
+      }
+    }
+  }
+
   let imageBase64 = rawBase64 || null;
   let uploadPath = imageUrl || null;
 
-  const { uploadToSupabase } = require('../../utils/supabaseStorage');
+  const { uploadDiagnosisPhoto } = require('../../utils/supabaseStorage');
   if (imageFile && imageFile.path && fs.existsSync(imageFile.path)) {
     try {
       const fileBuffer = fs.readFileSync(imageFile.path);
       imageBase64 = fileBuffer.toString('base64');
-      uploadPath = await uploadToSupabase({
-        bucketName: 'diagnoses',
+      uploadPath = await uploadDiagnosisPhoto({
         localFilePath: imageFile.path,
         fileName: path.basename(imageFile.path),
         mimeType: imageFile.mimetype,
       });
+      try { fs.unlinkSync(imageFile.path); } catch (_unlinkErr) {}
     } catch (err) {
       logger.warn(`[DiseaseDiagnosis] Failed to read or upload image: ${err.message}`);
     }
@@ -258,12 +268,32 @@ async function diagnoseCropImage({ farmId, cropType, imageUrl, imageFile, imageB
 
 
 /**
- * Retrieve all past diagnoses with optional filters
+ * Retrieve all past diagnoses with optional filters and strict jurisdictional scoping
  */
-async function getAllDiagnoses({ farmId, cropType } = {}) {
+async function getAllDiagnoses({ farmId, cropType, user } = {}) {
   const where = {};
   if (farmId) where.farmId = farmId;
   if (cropType) where.cropType = cropType;
+
+  if (user) {
+    const role = (user.role || 'FARMER').toUpperCase();
+    if (role === 'FARMER') {
+      where.farm = { userId: user.id };
+    } else if (role === 'DEVELOPMENT_AGENT' || role === 'WOREDA_OFFICER') {
+      if (user.woredaId) {
+        where.farm = { woredaId: user.woredaId };
+      }
+    } else if (role === 'ZONAL_OFFICER') {
+      if (user.zoneId) {
+        where.farm = { woreda: { zoneId: user.zoneId } };
+      }
+    } else if (role === 'REGIONAL_OFFICER') {
+      if (user.regionId) {
+        where.farm = { woreda: { zone: { regionId: user.regionId } } };
+      }
+    }
+  }
+
   return await prisma.diseaseDiagnosis.findMany({
     where,
     orderBy: { createdAt: 'desc' },
@@ -272,24 +302,26 @@ async function getAllDiagnoses({ farmId, cropType } = {}) {
         select: {
           id: true,
           farmName: true,
-          woreda: { select: { nameEn: true, nameAm: true } },
+          userId: true,
+          woredaId: true,
+          woreda: { select: { id: true, nameEn: true, nameAm: true, zoneId: true, zone: { select: { id: true, regionId: true } } } },
         },
       },
     },
   });
 }
 
-// Asynchronous diagnosis jobs map (jobId -> { status: 'PENDING'|'PROCESSING'|'COMPLETED'|'FAILED', result, error, progress, createdAt, updatedAt })
-const diagnosisJobs = new Map();
+const { setDiagnosisJobState, getDiagnosisJobState } = require('../../ingestion/jobs/queue');
 
 /**
  * Submit an asynchronous crop diagnosis job.
  * Returns immediately with jobId and status 'PROCESSING'.
+ * State is persisted in Redis (or in-memory fallback) across restarts.
  */
-async function submitAsyncDiagnosis({ farmId, cropType, imageUrl, imageFile, imageBase64, language = 'en' }) {
+async function submitAsyncDiagnosis({ farmId, cropType, imageUrl, imageFile, imageBase64, language = 'en', user }) {
   const jobId = `diagjob_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
   
-  const jobState = {
+  let jobState = {
     jobId,
     status: 'PROCESSING',
     progress: 10,
@@ -299,12 +331,13 @@ async function submitAsyncDiagnosis({ farmId, cropType, imageUrl, imageFile, ima
     updatedAt: new Date().toISOString(),
   };
 
-  diagnosisJobs.set(jobId, jobState);
+  await setDiagnosisJobState(jobId, jobState);
 
   // Run in background without blocking the HTTP response
   setImmediate(async () => {
     try {
-      diagnosisJobs.set(jobId, { ...diagnosisJobs.get(jobId), progress: 30, updatedAt: new Date().toISOString() });
+      jobState = { ...jobState, progress: 30, updatedAt: new Date().toISOString() };
+      await setDiagnosisJobState(jobId, jobState);
 
       const result = await diagnoseCropImage({
         farmId,
@@ -313,25 +346,28 @@ async function submitAsyncDiagnosis({ farmId, cropType, imageUrl, imageFile, ima
         imageFile,
         imageBase64,
         language,
+        user,
       });
 
-      diagnosisJobs.set(jobId, {
+      jobState = {
         jobId,
         status: 'COMPLETED',
         progress: 100,
         result,
         updatedAt: new Date().toISOString(),
-      });
+      };
+      await setDiagnosisJobState(jobId, jobState);
       logger.info(`[DiseaseDiagnosis] Async job ${jobId} completed successfully`);
     } catch (err) {
       logger.error(`[DiseaseDiagnosis] Async job ${jobId} failed: ${err.message}`);
-      diagnosisJobs.set(jobId, {
+      jobState = {
         jobId,
         status: 'FAILED',
         progress: 100,
         error: { message: err.message || 'Diagnosis failed' },
         updatedAt: new Date().toISOString(),
-      });
+      };
+      await setDiagnosisJobState(jobId, jobState);
     }
   });
 
@@ -347,28 +383,48 @@ async function submitAsyncDiagnosis({ farmId, cropType, imageUrl, imageFile, ima
  * Get status of an async diagnosis job
  */
 async function getDiagnosisJobStatus(jobId) {
-  const job = diagnosisJobs.get(jobId);
-  if (!job) {
-    return null;
-  }
-  return job;
+  return await getDiagnosisJobState(jobId);
 }
 
+
 /**
- * Get diagnoses for a specific farm
+ * Get diagnoses for a specific farm with ownership & jurisdictional verification
  */
-async function getDiagnosesByFarm(farmId) {
-  return getAllDiagnoses({ farmId });
+async function getDiagnosesByFarm(farmId, user) {
+  if (user && isConnected()) {
+    const role = (user.role || 'FARMER').toUpperCase();
+    if (role !== 'ADMIN' && role !== 'RESEARCHER') {
+      const farm = await prisma.farm.findUnique({
+        where: { id: farmId },
+        include: { woreda: { include: { zone: true } } },
+      });
+      if (!farm) {
+        throw new NotFoundError(`Farm with ID ${farmId} not found`);
+      }
+      if (role === 'FARMER' && farm.userId !== user.id) {
+        throw new ForbiddenError('Access denied: You can only view diagnoses for your own farms');
+      }
+      if ((role === 'DEVELOPMENT_AGENT' || role === 'WOREDA_OFFICER') && user.woredaId && farm.woredaId !== user.woredaId) {
+        throw new ForbiddenError('Access denied: Farm is outside your woreda jurisdiction');
+      }
+      if (role === 'ZONAL_OFFICER' && user.zoneId && farm.woreda?.zoneId !== user.zoneId) {
+        throw new ForbiddenError('Access denied: Farm is outside your zone jurisdiction');
+      }
+      if (role === 'REGIONAL_OFFICER' && user.regionId && farm.woreda?.zone?.regionId !== user.regionId) {
+        throw new ForbiddenError('Access denied: Farm is outside your region jurisdiction');
+      }
+    }
+  }
+  return getAllDiagnoses({ farmId, user });
 }
 
 module.exports = {
-
-
   diagnoseCropImage,
   submitAsyncDiagnosis,
   getDiagnosisJobStatus,
   getAllDiagnoses,
   getDiagnosesByFarm,
-  diagnosisJobs,
+  getDiagnosisJobState,
 };
+
 
