@@ -839,19 +839,24 @@ async function cleanTestData(adminContext = {}) {
   if (isConnected()) {
     try {
       const allUsers = await prisma.user.findMany({ select: { id: true, email: true, role: true } });
-      const testUsers = allUsers.filter(u => 
-        u.email.startsWith('audit_farmer_') || 
-        u.email.startsWith('farmer_diag_') || 
-        u.email.startsWith('test_') || 
-        u.email.startsWith('mock_') ||
-        u.email.startsWith('farmer_178') ||
-        u.email.startsWith('woreda_officer_178') ||
-        u.email.startsWith('admin_178') ||
-        u.email.startsWith('render_test_') ||
-        u.email.startsWith('camera_farmer_') ||
-        u.email.startsWith('form_user_') ||
-        (u.email.includes('test') && u.role !== 'ADMIN' && !u.email.includes('admin@agrietech.et'))
-      );
+      const testUsers = allUsers.filter(u => {
+        if (u.role === 'ADMIN' || u.email.includes('admin@agrietech.et')) return false;
+        return (
+          u.email.startsWith('audit_farmer_') ||
+          u.email.startsWith('farmer_diag_') ||
+          u.email.startsWith('test_') ||
+          u.email.startsWith('mock_') ||
+          u.email.startsWith('farmer_178') ||
+          u.email.startsWith('woreda_officer_178') ||
+          u.email.startsWith('admin_178') ||
+          u.email.startsWith('render_test_') ||
+          u.email.startsWith('camera_farmer_') ||
+          u.email.startsWith('form_user_') ||
+          /^(test[._-]|mock[._-]|temp[._-])/i.test(u.email) ||
+          /@test\.(com|et)$/i.test(u.email) ||
+          u.email.endsWith('@example.com')
+        );
+      });
 
       const testUserIds = testUsers.map(u => u.id);
 
@@ -934,25 +939,110 @@ async function cleanTestData(adminContext = {}) {
   return { success: true, message: 'Database simulated test data cleaned.' };
 }
 
+async function getUserById(id) {
+  return await prisma.user.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      email: true,
+      phoneNumber: true,
+      fullName: true,
+      role: true,
+      preferredLang: true,
+      isEmailVerified: true,
+      regionId: true,
+      zoneId: true,
+      woredaId: true,
+      kebeleId: true,
+      kebeleName: true,
+      region: { select: { id: true, nameEn: true, nameAm: true } },
+      zone: { select: { id: true, nameEn: true, nameAm: true } },
+      woreda: { select: { id: true, nameEn: true, nameAm: true } },
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
+}
+
+async function getFarmById(id) {
+  return await prisma.farm.findUnique({
+    where: { id },
+    include: {
+      user: { select: { id: true, fullName: true, phoneNumber: true, email: true } },
+      woreda: {
+        select: {
+          id: true,
+          nameEn: true,
+          nameAm: true,
+          zone: { select: { id: true, nameEn: true, region: { select: { id: true, nameEn: true } } } },
+        },
+      },
+      crop: true,
+      sensors: true,
+    },
+  });
+}
+
+async function getSensorById(id) {
+  return await prisma.sensor.findFirst({
+    where: {
+      OR: [{ id }, { hardwareId: id }],
+    },
+    include: {
+      farm: {
+        select: {
+          id: true,
+          farmName: true,
+          user: { select: { id: true, fullName: true, phoneNumber: true } },
+        },
+      },
+      readings: { take: 10, orderBy: { recordedAt: 'desc' } },
+    },
+  });
+}
+
+async function getAlertById(id) {
+  return await prisma.alert.findUnique({
+    where: { id },
+    include: {
+      woreda: { select: { id: true, nameEn: true, nameAm: true } },
+    },
+  });
+}
+
+async function getDiagnosisById(id) {
+  return await prisma.diseaseDiagnosis.findUnique({
+    where: { id },
+    include: {
+      farm: { select: { id: true, farmName: true } },
+    },
+  });
+}
+
 module.exports = {
   cleanTestData,
   getOverview,
   getUsers,
+  getUserById,
   createUser,
   updateUser,
   updateUserRole,
   updateUserStatus,
   deleteUser,
   getFarms,
+  getFarmById,
   createFarm,
   updateFarm,
   deleteFarm,
   getSensors,
+  getSensorById,
   createSensor,
   deleteSensor,
   getAlerts,
+  getAlertById,
   deleteAlert,
   getDiagnoses,
+  getDiagnosisById,
   deleteDiagnosis,
   getSystemHealth,
   triggerIngestion,
