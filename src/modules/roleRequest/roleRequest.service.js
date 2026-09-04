@@ -51,7 +51,7 @@ async function submitRoleRequest(userId, requestData) {
   // Get user details
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, fullName: true, phoneNumber: true, email: true, role: true },
+    select: { id: true, fullName: true, phoneNumber: true, email: true, role: true, regionId: true, zoneId: true, woredaId: true },
   });
 
   if (!user) {
@@ -92,12 +92,12 @@ async function submitRoleRequest(userId, requestData) {
       userEmail: user.email,
       currentRole: user.role,
       requestedRole,
-      regionId: regionId || 'ET04',
-      regionName: regionName || 'Oromia',
-      zoneId: zoneId || 'zone_east_shewa',
-      zoneName: zoneName || 'East Shewa',
-      woredaId: woredaId || 'ET040101',
-      woredaName: woredaName || 'Adama Zuria',
+      regionId: regionId || user.regionId || null,
+      regionName: regionName || null,
+      zoneId: zoneId || user.zoneId || null,
+      zoneName: zoneName || null,
+      woredaId: woredaId || user.woredaId || null,
+      woredaName: woredaName || null,
       kebeleName: kebeleName || null,
       staffIdNumber,
       organizationName,
