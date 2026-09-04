@@ -79,9 +79,22 @@ async function evaluateWoredaRisk(woredaId, hazardScores = {}) {
   return { ...record, recommendations };
 }
 
-// Get recent risk assessments
-async function getLatestAssessments(limit = 20) {
+// Get recent risk assessments — scoped by user jurisdiction
+async function getLatestAssessments(limit = 20, { role, woredaId, zoneId, regionId } = {}) {
+  const where = {};
+
+  // Apply jurisdictional scope based on user role
+  if (role === 'FARMER' || role === 'DEVELOPMENT_AGENT' || role === 'WOREDA_OFFICER') {
+    if (woredaId) where.woredaId = woredaId;
+  } else if (role === 'ZONAL_OFFICER') {
+    if (zoneId) where.woreda = { zoneId };
+  } else if (role === 'REGIONAL_OFFICER') {
+    if (regionId) where.woreda = { zone: { regionId } };
+  }
+  // ADMIN and RESEARCHER: no scope filters — see national data
+
   return await prisma.riskAssessment.findMany({
+    where,
     orderBy: { assessedAt: 'desc' },
     take: Number(limit) || 20,
     include: {
@@ -129,18 +142,28 @@ async function getAssessmentsByWoreda(woredaId) {
   return rows;
 }
 
-// Get risk statistics from live database
-async function getRiskStatistics() {
+// Get risk statistics — scoped by user jurisdiction
+async function getRiskStatistics({ role, woredaId, zoneId, regionId } = {}) {
+  const baseWhere = {};
+
+  if (role === 'FARMER' || role === 'DEVELOPMENT_AGENT' || role === 'WOREDA_OFFICER') {
+    if (woredaId) baseWhere.woredaId = woredaId;
+  } else if (role === 'ZONAL_OFFICER') {
+    if (zoneId) baseWhere.woreda = { zoneId };
+  } else if (role === 'REGIONAL_OFFICER') {
+    if (regionId) baseWhere.woreda = { zone: { regionId } };
+  }
+
   const [total, high, moderate, low] = await Promise.all([
-    prisma.riskAssessment.count(),
+    prisma.riskAssessment.count({ where: baseWhere }),
     prisma.riskAssessment.count({
-      where: { alertLevel: { in: ['RED', 'CRITICAL', 'HIGH'] } },
+      where: { ...baseWhere, alertLevel: { in: ['RED', 'CRITICAL', 'HIGH'] } },
     }),
     prisma.riskAssessment.count({
-      where: { alertLevel: { in: ['YELLOW', 'ORANGE', 'MODERATE', 'WATCH'] } },
+      where: { ...baseWhere, alertLevel: { in: ['YELLOW', 'ORANGE', 'MODERATE', 'WATCH'] } },
     }),
     prisma.riskAssessment.count({
-      where: { alertLevel: { in: ['GREEN', 'LOW', 'NORMAL'] } },
+      where: { ...baseWhere, alertLevel: { in: ['GREEN', 'LOW', 'NORMAL'] } },
     }),
   ]);
 
