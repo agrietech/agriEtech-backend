@@ -264,25 +264,85 @@ async function cleanTestData(req, res, next) {
     }
 }
 
+async function getUserDetails(req, res, next) {
+    try {
+        const { id } = req.params;
+        const data = await adminService.getUserById(id);
+        if (!data) return res.status(404).json({ success: false, error: { message: 'User not found' } });
+        return res.status(200).json({ success: true, data });
+    } catch (error) {
+        next(error);
+    }
+}
+
+async function getFarmDetails(req, res, next) {
+    try {
+        const { id } = req.params;
+        const data = await adminService.getFarmById(id);
+        if (!data) return res.status(404).json({ success: false, error: { message: 'Farm not found' } });
+        return res.status(200).json({ success: true, data });
+    } catch (error) {
+        next(error);
+    }
+}
+
+async function getSensorDetails(req, res, next) {
+    try {
+        const { id } = req.params;
+        const data = await adminService.getSensorById(id);
+        if (!data) return res.status(404).json({ success: false, error: { message: 'Sensor not found' } });
+        return res.status(200).json({ success: true, data });
+    } catch (error) {
+        next(error);
+    }
+}
+
+async function getAlertDetails(req, res, next) {
+    try {
+        const { id } = req.params;
+        const data = await adminService.getAlertById(id);
+        if (!data) return res.status(404).json({ success: false, error: { message: 'Alert not found' } });
+        return res.status(200).json({ success: true, data });
+    } catch (error) {
+        next(error);
+    }
+}
+
+async function getDiagnosisDetails(req, res, next) {
+    try {
+        const { id } = req.params;
+        const data = await adminService.getDiagnosisById(id);
+        if (!data) return res.status(404).json({ success: false, error: { message: 'Diagnosis not found' } });
+        return res.status(200).json({ success: true, data });
+    } catch (error) {
+        next(error);
+    }
+}
+
 module.exports = {
     cleanTestData,
     getOverview,
     getUsers,
+    getUserDetails,
     createUser,
     updateUser,
     updateUserRole,
     updateUserStatus,
     deleteUser,
     getFarms,
+    getFarmDetails,
     createFarm,
     updateFarm,
     deleteFarm,
     getSensors,
+    getSensorDetails,
     createSensor,
     deleteSensor,
     getAlerts,
+    getAlertDetails,
     deleteAlert,
     getDiagnoses,
+    getDiagnosisDetails,
     deleteDiagnosis,
     getSystemHealth,
     triggerIngestion,
