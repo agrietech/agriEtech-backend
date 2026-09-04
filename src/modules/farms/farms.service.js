@@ -1,6 +1,7 @@
 const { prisma, isConnected } = require('../../config/db');
-const { ServiceUnavailableError } = require('../../utils/errors');
+const { ServiceUnavailableError, NotFoundError, ForbiddenError, ConflictError } = require('../../utils/errors');
 const logger = require('../../utils/logger');
+
 const centroid = require('@turf/centroid').default || require('@turf/centroid');
 const { getCoord } = require('@turf/invariant');
 const boundariesService = require('../boundaries/boundaries.service');
@@ -212,10 +213,176 @@ async function getFarmById(id) {
   });
 }
 
+// Update farm with Optimistic Concurrency Control (OCC) and jurisdictional security
+async function updateFarm({ id, data = {}, user = {}, clientUpdatedAt }) {
+  if (!isConnected()) {
+    throw new ServiceUnavailableError('Database service unavailable for farm updates');
+  }
+
+  const existing = await prisma.farm.findUnique({
+    where: { id },
+    include: {
+      woreda: {
+        include: {
+          zone: true,
+        },
+      },
+    },
+  });
+
+  if (!existing) {
+    throw new NotFoundError(`Farm with ID ${id} not found`);
+  }
+
+  // 1. Jurisdictional / Ownership Authorization
+  const role = (user.role || 'FARMER').toUpperCase();
+  if (role !== 'ADMIN' && role !== 'RESEARCHER') {
+    if (role === 'FARMER' && existing.userId !== user.id) {
+      throw new ForbiddenError('Access denied: You can only update your own farms');
+    }
+    if ((role === 'DEVELOPMENT_AGENT' || role === 'WOREDA_OFFICER') && user.woredaId && existing.woredaId !== user.woredaId) {
+      throw new ForbiddenError('Access denied: Farm is outside your woreda jurisdiction');
+    }
+    if (role === 'ZONAL_OFFICER' && user.zoneId && existing.woreda?.zoneId !== user.zoneId) {
+      throw new ForbiddenError('Access denied: Farm is outside your zone jurisdiction');
+    }
+    if (role === 'REGIONAL_OFFICER' && user.regionId && existing.woreda?.zone?.regionId !== user.regionId) {
+      throw new ForbiddenError('Access denied: Farm is outside your region jurisdiction');
+    }
+  }
+
+  // 2. Optimistic Concurrency Control (OCC)
+  const clientTs = clientUpdatedAt || data.clientUpdatedAt || data.updatedAt || data.lastUpdatedAt;
+  if (clientTs) {
+    const clientTime = new Date(clientTs).getTime();
+    const serverTime = new Date(existing.updatedAt).getTime();
+    // 500ms grace window for timestamp precision differences
+    if (!isNaN(clientTime) && serverTime - clientTime > 500) {
+      throw new ConflictError(
+        'Concurrency conflict: This farm was updated concurrently. Please refresh your view to get latest changes.',
+        'CONCURRENCY_CONFLICT',
+        {
+          currentUpdatedAt: existing.updatedAt.toISOString(),
+          clientUpdatedAt: new Date(clientTs).toISOString(),
+          conflictRecord: {
+            id: existing.id,
+            farmName: existing.farmName,
+            primaryCrop: existing.primaryCrop,
+            areaHectares: existing.areaHectares,
+            updatedAt: existing.updatedAt,
+          },
+        }
+      );
+    }
+  }
+
+  // 3. Prepare updated data
+  const updatePayload = {};
+  if (data.farmName) updatePayload.farmName = data.farmName.trim();
+  if (data.areaHectares !== undefined && data.areaHectares !== null) updatePayload.areaHectares = Number(data.areaHectares);
+  if (data.soilType !== undefined) updatePayload.soilType = data.soilType;
+  if (data.irrigationType !== undefined) updatePayload.irrigationType = data.irrigationType;
+
+  if (data.primaryCrop !== undefined) {
+    updatePayload.primaryCrop = data.primaryCrop;
+    try {
+      const cropRecord = await prisma.crop.findFirst({
+        where: {
+          OR: [
+            { nameEn: { equals: data.primaryCrop, mode: 'insensitive' } },
+            { nameAm: { equals: data.primaryCrop } },
+            { nameOm: { equals: data.primaryCrop, mode: 'insensitive' } },
+          ],
+        },
+      });
+      if (cropRecord) updatePayload.cropId = cropRecord.id;
+    } catch (_e) {}
+  }
+
+  if (data.latitude !== undefined && data.longitude !== undefined) {
+    const lat = Number(data.latitude);
+    const lng = Number(data.longitude);
+    if (!isNaN(lat) && !isNaN(lng)) {
+      updatePayload.latitude = lat;
+      updatePayload.longitude = lng;
+    }
+  }
+
+  if (data.polygonGeojson) {
+    updatePayload.polygonGeojson = data.polygonGeojson;
+  }
+
+  return await prisma.farm.update({
+    where: { id },
+    data: updatePayload,
+    include: {
+      woreda: {
+        select: {
+          id: true,
+          nameEn: true,
+          nameAm: true,
+          zoneId: true,
+          zone: { select: { id: true, nameEn: true, regionId: true } },
+        },
+      },
+      crop: true,
+      sensors: true,
+    },
+  });
+}
+
+// Delete farm plot with jurisdictional / ownership authorization
+async function deleteFarm({ id, user = {} }) {
+  if (!isConnected()) {
+    throw new ServiceUnavailableError('Database service unavailable for farm deletion');
+  }
+
+  const existing = await prisma.farm.findUnique({
+    where: { id },
+    include: {
+      woreda: {
+        include: {
+          zone: true,
+        },
+      },
+    },
+  });
+
+  if (!existing) {
+    throw new NotFoundError(`Farm with ID ${id} not found`);
+  }
+
+  // Ownership & Jurisdictional Authorization
+  const role = (user.role || 'FARMER').toUpperCase();
+  if (role !== 'ADMIN') {
+    if (role === 'FARMER' && existing.userId !== user.id) {
+      throw new ForbiddenError('Access denied: You can only delete your own farms');
+    }
+    if ((role === 'DEVELOPMENT_AGENT' || role === 'WOREDA_OFFICER') && user.woredaId && existing.woredaId !== user.woredaId) {
+      throw new ForbiddenError('Access denied: Farm is outside your woreda jurisdiction');
+    }
+    if (role === 'ZONAL_OFFICER' && user.zoneId && existing.woreda?.zoneId !== user.zoneId) {
+      throw new ForbiddenError('Access denied: Farm is outside your zone jurisdiction');
+    }
+    if (role === 'REGIONAL_OFFICER' && user.regionId && existing.woreda?.zone?.regionId !== user.regionId) {
+      throw new ForbiddenError('Access denied: Farm is outside your region jurisdiction');
+    }
+  }
+
+  await prisma.farm.delete({
+    where: { id },
+  });
+
+  return { success: true, id, message: 'Farm plot deleted successfully' };
+}
+
 module.exports = {
   createFarm,
   registerFarm: createFarm,
+  updateFarm,
+  deleteFarm,
   getFarmsByScope,
   getFarmsByUser,
   getFarmById,
 };
+
