@@ -4,18 +4,20 @@ const controller = require('./admin.controller');
 const roleRequestController = require('../roleRequest/roleRequest.controller');
 
 // Admin authentication middleware (Supports API Keys, JWT Bearer Tokens, and browser sessions)
-const adminAuth = (req, res, next) => {
-  if (process.env.NODE_ENV === 'test' || process.env.ADMIN_DEV_BYPASS === 'true') {
+const { isTokenBlacklisted } = require('../auth/auth.service');
+
+const adminAuth = async (req, res, next) => {
+  if (process.env.NODE_ENV === 'test') {
     if (!req.user) req.user = { id: 'usr_admin_01', email: 'admin@agrietech.et', role: 'ADMIN' };
     return next();
   }
 
-  // 1. API Key Authentication (x-api-key header or query param)
-  // Validates against ADMIN_API_KEYS env variable (comma-separated whitelist)
-  const apiKey = req.headers['x-api-key'] || req.headers['api-key'] || req.query.apiKey || req.query.api_key;
+  // 1. API Key Authentication (x-api-key header)
+  // Strictly validates against ADMIN_API_KEYS env variable only
+  const apiKey = req.headers['x-api-key'] || req.headers['api-key'];
   if (apiKey) {
-    const validKeys = (process.env.ADMIN_API_KEYS || process.env.SENSOR_API_KEYS || '').split(',').map(k => k.trim()).filter(Boolean);
-    if (validKeys.length > 0 && validKeys.includes(apiKey)) {
+    const validKeys = (process.env.ADMIN_API_KEYS || '').split(',').map(k => k.trim()).filter(Boolean);
+    if (validKeys.length > 0 && validKeys.includes(apiKey.trim())) {
       req.user = { id: 'usr_admin_apikey', email: 'admin_apikey@agrietech.et', fullName: 'API Key Administrator', role: 'ADMIN' };
       return next();
     }
@@ -23,14 +25,32 @@ const adminAuth = (req, res, next) => {
 
   // 2. JWT Bearer Token Authentication
   const authHeader = req.headers.authorization;
-  const token = (authHeader && authHeader.startsWith('Bearer ')) ? authHeader.substring(7) : (req.query.token || req.query.accessToken);
+  const token = (authHeader && authHeader.startsWith('Bearer '))
+    ? authHeader.substring(7)
+    : (process.env.NODE_ENV === 'development' ? (req.query.token || req.query.accessToken) : null);
   
   if (token) {
     try {
       const jwt = require('jsonwebtoken');
       const env = require('../../config/env');
+
+      // Check token blacklist
+      if (await isTokenBlacklisted(token)) {
+        return res.status(401).json({
+          success: false,
+          error: { message: 'Token has been revoked. Please log in again.', code: 'TOKEN_REVOKED' },
+        });
+      }
+
       const decoded = jwt.verify(token, env.JWT_SECRET);
       if (decoded) {
+        if (decoded.type === 'refresh') {
+          return res.status(401).json({
+            success: false,
+            error: { message: 'Refresh token cannot be used for administrative access', code: 'INVALID_TOKEN_TYPE' },
+          });
+        }
+
         req.user = decoded;
         const allowedRoles = [
           'ADMIN',
@@ -64,7 +84,7 @@ const adminAuth = (req, res, next) => {
 
 // Strict administrator authorization for sensitive operations
 const requireAdmin = (req, res, next) => {
-  if (process.env.NODE_ENV === 'test' || process.env.ADMIN_DEV_BYPASS === 'true') {
+  if (process.env.NODE_ENV === 'test') {
     return next();
   }
   if (!req.user || req.user.role !== 'ADMIN') {
@@ -85,6 +105,7 @@ router.get('/overview', adminAuth, controller.getOverview);
 
 // User Management Routes
 router.get('/users', adminAuth, controller.getUsers);
+router.get('/users/:id', adminAuth, controller.getUserDetails);
 router.post('/users', adminAuth, controller.createUser);
 router.put('/users/:id', adminAuth, controller.updateUser);
 router.patch('/users/:id/role', adminAuth, requireAdmin, controller.updateUserRole);
@@ -93,22 +114,26 @@ router.delete('/users/:id', adminAuth, requireAdmin, controller.deleteUser);
 
 // Farm Management Routes
 router.get('/farms', adminAuth, controller.getFarms);
+router.get('/farms/:id', adminAuth, controller.getFarmDetails);
 router.post('/farms', adminAuth, controller.createFarm);
 router.put('/farms/:id', adminAuth, controller.updateFarm);
 router.delete('/farms/:id', adminAuth, controller.deleteFarm);
 
 // Sensor Management Routes
 router.get('/sensors', adminAuth, controller.getSensors);
+router.get('/sensors/:id', adminAuth, controller.getSensorDetails);
 router.post('/sensors', adminAuth, controller.createSensor);
 router.delete('/sensors/:id', adminAuth, controller.deleteSensor);
 
 // Alert Management & Emergency Broadcast
 router.get('/alerts', adminAuth, controller.getAlerts);
+router.get('/alerts/:id', adminAuth, controller.getAlertDetails);
 router.post('/broadcast-alert', adminAuth, controller.broadcastEmergencyAlert);
 router.delete('/alerts/:id', adminAuth, controller.deleteAlert);
 
 // Disease Diagnosis Management
 router.get('/diagnoses', adminAuth, controller.getDiagnoses);
+router.get('/diagnoses/:id', adminAuth, controller.getDiagnosisDetails);
 router.delete('/diagnoses/:id', adminAuth, controller.deleteDiagnosis);
 
 // System Health, Ingestion Trigger & Audit Logs
