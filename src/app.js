@@ -35,21 +35,75 @@ const aiRoutes = require('./modules/ai/aiVoice.routes');
 const ingestionRoutes = require('./ingestion/ingestion.routes');
 const ussdRoutes = require('./delivery/ussd/ussd.routes');
 const adminRoutes = require('./modules/admin/admin.routes');
+const mediaRoutes = require('./modules/media/media.routes');
 const { isConnected } = require('./config/db');
 
-const app = express();
 
-// Security and standard middlewares
-app.use(helmet({
-  contentSecurityPolicy: false, // Allows inline script/styles for admin dashboard
-}));
+const app = express();
+app.set('trust proxy', 1);
+
+const crypto = require('crypto');
+
+// Generate per-request cryptographically secure nonce for CSP
+app.use((_req, res, next) => {
+  res.locals.cspNonce = crypto.randomBytes(16).toString('base64');
+  next();
+});
+
+// Robust Content Security Policy (CSP) & HTTP security headers
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: [
+          "'self'",
+          (_req, res) => `'nonce-${res.locals.cspNonce}'`,
+          "'unsafe-inline'", // Fallback for embedded dashboard/docs
+        ],
+        styleSrc: [
+          "'self'",
+          "'unsafe-inline'",
+          'https://fonts.googleapis.com',
+          'https://unpkg.com',
+        ],
+        fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
+        imgSrc: [
+          "'self'",
+          'data:',
+          'blob:',
+          'https://uhktbbeqqdsfkooyrgmq.supabase.co',
+          'https://*.tile.openstreetmap.org',
+          'https://unpkg.com',
+        ],
+        mediaSrc: [
+          "'self'",
+          'data:',
+          'blob:',
+          'https://uhktbbeqqdsfkooyrgmq.supabase.co',
+        ],
+        connectSrc: [
+          "'self'",
+          'https://uhktbbeqqdsfkooyrgmq.supabase.co',
+          'https://openrouter.ai',
+          'https://api.plant.id',
+        ],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        frameAncestors: ["'none'"],
+      },
+    },
+    crossOriginEmbedderPolicy: false,
+  })
+);
 app.use(requestTimeout(30)); // 30 second timeout for all requests
+
 
 // Configurable CORS whitelist
 const corsOptions = {
   origin: env.CORS_ORIGIN === '*' ? '*' : env.CORS_ORIGIN,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Correlation-Id', 'x-api-key'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Correlation-Id', 'x-api-key', 'x-sensor-api-key'],
   credentials: true,
 };
 app.use(cors(corsOptions));
@@ -61,7 +115,15 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(sanitizeInput);
 const path = require('path');
-app.use('/uploads', express.static(path.resolve(__dirname, '../uploads')));
+app.use(
+  '/uploads',
+  require('./middleware/auth.middleware').authenticate,
+  express.static(path.resolve(__dirname, '../uploads'), {
+    setHeaders: (res) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+    },
+  })
+);
 
 // Global rate limiter
 app.use(globalLimiter);
@@ -76,7 +138,7 @@ app.get('/health', (_req, res) => {
 
   res.status(dbUp ? 200 : 503).json({
     status: overallStatus,
-    service: 'AgriEtech Multi-Hazard Early Warning Backend',
+    service: 'EthioFarm Multi-Hazard Early Warning Backend',
     timestamp: new Date().toISOString(),
     uptimeSeconds: Math.floor(process.uptime()),
     system: {
@@ -112,7 +174,7 @@ app.get('/', (_req, res) => {
   res.status(200).json({
     success: true,
     data: {
-      project: 'AgriEtech Multi-Hazard Early Warning Platform',
+      project: 'EthioFarm Multi-Hazard Early Warning Platform',
       version: '1.0.0',
       status: 'ONLINE',
       docs: '/api/v1',
@@ -126,7 +188,7 @@ app.get('/api/v1', (_req, res) => {
   res.status(200).json({
     success: true,
     data: {
-      name: 'AgriEtech Multi-Hazard Early Warning Platform API',
+      name: 'EthioFarm Multi-Hazard Early Warning Platform API',
       version: '1.0.0',
       status: 'ONLINE',
       baseUrl: '/api/v1',
@@ -145,6 +207,7 @@ app.get('/api/v1', (_req, res) => {
         diseaseDiagnosis: { path: '/api/v1/disease-diagnosis', description: 'Plant.id botanical identification + Gemini 2.5 Flash multimodal vision' },
         analytics: { path: '/api/v1/analytics', description: 'Executive dashboard analytics, regional breakdown, temporal trends' },
         ai: { path: '/api/v1/ai', description: 'Bilingual AI voice assistant, farmer Q&A, text-to-speech' },
+        media: { path: '/api/v1/media', description: 'Supabase storage uploads (agrEtech public bucket and private signed URL documents)' },
         ingestion: { path: '/api/v1/ingestion', description: 'Data connector status, manual pipeline pull triggers' },
         ussd: { path: '/api/v1/delivery/ussd', description: 'Interactive USSD menu handler (*804#)' },
         admin: { path: '/api/v1/admin', description: 'System administration, user roles, emergency broadcasts, audit logs, role request approvals' },
@@ -184,11 +247,13 @@ app.use('/api/v1/alerts', alertsRoutes);
 app.use('/api/v1/advisories', advisoriesRoutes);
 app.use('/api/v1/notifications', notificationsRoutes);
 app.use('/api/v1/disease-diagnosis', aiLimiter, diseaseRoutes);
+app.use('/api/v1/media', mediaRoutes);
 app.use('/api/v1/analytics', analyticsRoutes);
 app.use('/api/v1/ai', aiLimiter, aiRoutes);
 app.use('/api/v1/ingestion', telemetryLimiter, ingestionRoutes);
 app.use('/api/v1/delivery/ussd', ussdLimiter, ussdRoutes);
 app.use('/api/v1/admin', adminRoutes);
+
 
 // 404 catch-all
 app.use((req, res) => {
