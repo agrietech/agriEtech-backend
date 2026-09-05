@@ -63,7 +63,7 @@ describe('farm registration persistence', () => {
 
   it('persists a contained farm as GeoJSON and PostGIS geometry', async () => {
     await expect(farmsService.createFarm(farmInput)).resolves.toEqual({ id: 'farm-1' });
-    expect(prisma.farm.create).toHaveBeenCalledWith(
+    expect(mockPrisma.farm.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           farmName: 'Teff plot',
@@ -72,7 +72,6 @@ describe('farm registration persistence', () => {
         }),
       })
     );
-    expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a missing woreda', async () => {

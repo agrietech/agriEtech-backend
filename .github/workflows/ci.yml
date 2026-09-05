@@ -52,6 +52,11 @@ jobs:
       - name: Generate Prisma Client
         run: npx prisma generate
 
+      - name: Push Database Schema
+        run: npx prisma db push --skip-generate
+        env:
+          DATABASE_URL: postgresql://agrietech_user:agrietech_password@localhost:5432/agrietech_db?schema=public
+
       - name: Run Test Suite
         run: npm test
         env:
@@ -60,3 +65,4 @@ jobs:
           DATABASE_URL: postgresql://agrietech_user:agrietech_password@localhost:5432/agrietech_db?schema=public
           REDIS_HOST: localhost
           REDIS_PORT: 6379
+          DISABLE_RATE_LIMIT: 'true'

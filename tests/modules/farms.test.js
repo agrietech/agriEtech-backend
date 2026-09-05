@@ -1,13 +1,54 @@
 const request = require('supertest');
 const app = require('../../src/app');
 const { generateAccessToken } = require('../../src/modules/auth/auth.service');
+const { prisma, connectDB, disconnectDB } = require('../../src/config/db');
+const { disconnectRedis } = require('../../src/config/redis');
 
 describe('Farms Module API Suite', () => {
   const user = { id: 'usr_farmer_01', phoneNumber: '+251911223344', role: 'FARMER' };
   const token = generateAccessToken(user);
   let createdFarmId = '';
+  let testWoreda = null;
+
+  beforeAll(async () => {
+    await connectDB();
+    // Ensure test user exists for foreign key constraint
+    await prisma.user.upsert({
+      where: { id: user.id },
+      update: {},
+      create: {
+        id: user.id,
+        phoneNumber: user.phoneNumber,
+        fullName: 'Test Farmer',
+        role: 'FARMER',
+      },
+    }).catch(() => {});
+
+    // Find a valid Ethiopian woreda
+    testWoreda = await prisma.woreda.findFirst({
+      where: {
+        OR: [
+          { id: 'ET040709' },
+          { nameEn: { contains: 'Bishoftu', mode: 'insensitive' } },
+        ],
+      },
+    }) || await prisma.woreda.findFirst();
+  });
+
+  afterAll(async () => {
+    if (createdFarmId) {
+      await prisma.farm.deleteMany({ where: { id: createdFarmId } }).catch(() => {});
+    }
+    await prisma.user.deleteMany({ where: { id: user.id } }).catch(() => {});
+    await disconnectDB();
+    await disconnectRedis();
+  });
 
   it('POST /api/v1/farms - should register a farm plot with valid coordinates and polygon', async () => {
+    const lat = testWoreda?.centerLat || 8.7496;
+    const lng = testWoreda?.centerLng || 38.9762;
+    const offset = 0.002;
+
     const res = await request(app)
       .post('/api/v1/farms')
       .set('Authorization', `Bearer ${token}`)
@@ -15,18 +56,18 @@ describe('Farms Module API Suite', () => {
         farmName: 'Bishoftu Wheat Plot Alpha',
         primaryCrop: 'Wheat',
         areaHectares: 3.5,
-        latitude: 8.7523,
-        longitude: 38.9785,
-        woredaId: 'woreda_bishoftu_02',
+        latitude: lat,
+        longitude: lng,
+        woredaId: testWoreda?.id || 'ET040709',
         polygonGeojson: {
           type: 'Polygon',
           coordinates: [
             [
-              [38.978, 8.752],
-              [38.98, 8.752],
-              [38.98, 8.755],
-              [38.978, 8.755],
-              [38.978, 8.752],
+              [lng - offset, lat - offset],
+              [lng + offset, lat - offset],
+              [lng + offset, lat + offset],
+              [lng - offset, lat + offset],
+              [lng - offset, lat - offset],
             ],
           ],
         },

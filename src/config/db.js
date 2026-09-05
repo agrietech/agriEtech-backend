@@ -29,8 +29,9 @@ function resolveIpv4DatabaseUrl(url) {
       const dbName = match[5];
       const queryParams = match[6] || '';
       const poolerUser = user.includes('.') ? user : `${user}.${projectRef}`;
-      cleanUrl = `postgresql://${poolerUser}:${pass}@aws-0-ap-northeast-2.pooler.supabase.com:5432/${dbName}${queryParams}`;
-      logger.info('[DB Config] Automatically converted IPv6-only Supabase direct host to IPv4 Pooler host');
+      const defaultHost = process.env.SUPABASE_POOLER_HOST || env.SUPABASE_POOLER_HOST || 'aws-0-ap-northeast-2.pooler.supabase.com';
+      cleanUrl = `postgresql://${poolerUser}:${pass}@${defaultHost}:5432/${dbName}${queryParams}`;
+      logger.info(`[DB Config] Automatically converted IPv6-only Supabase direct host to IPv4 Pooler host (${defaultHost})`);
     }
   }
 
@@ -54,7 +55,7 @@ const pool = new Pool({
     dns.lookup(hostname, { family: 4 }, callback);
   },
   max: 5, // Keep connection count safely within Supabase pool limit
-  min: 1,  // Minimum pool size
+  min: env.NODE_ENV === 'test' ? 0 : 1,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 15000,
   keepAlive: true,
@@ -103,6 +104,11 @@ async function disconnectDB() {
   } catch (_e) {
     // Ignore disconnect error during shutdown
   }
+  try {
+    await pool.end();
+  } catch (_e) {
+    // Ignore pool end error during shutdown
+  }
   isDbConnected = false;
 }
 
@@ -113,6 +119,7 @@ function isConnected() {
 
 module.exports = {
   prisma,
+  pool,
   connectDB,
   disconnectDB,
   isConnected,

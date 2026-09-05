@@ -5,6 +5,7 @@ services:
     plan: free
     region: frankfurt
     buildCommand: npm install && npx prisma generate
+    preDeployCommand: npx prisma migrate deploy
     startCommand: npm start
     healthCheckPath: /health/liveness
     envVars:
@@ -36,4 +37,10 @@ services:
         sync: false
       - key: FIREBASE_PROJECT_ID
         sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: SUPABASE_POOLER_HOST
+        sync: false
+      - key: E2E_TEST_SECRET
+        generateValue: true
 

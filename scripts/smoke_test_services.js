@@ -2,8 +2,11 @@ const jwt = require('jsonwebtoken');
 const app = require('../src/app');
 const request = require('supertest');
 const env = require('../src/config/env');
-
 const { connectDB, disconnectDB } = require('../src/config/db');
+const { disconnectRedis } = require('../src/config/redis');
+
+const targetUrl = process.env.TARGET_URL;
+const testSecret = env.E2E_TEST_SECRET || process.env.E2E_TEST_SECRET || 'agrietech_e2e_test_secret';
 
 const testToken = jwt.sign(
   { id: 'usr_test_farmer_01', email: 'farmer@agrietech.et', role: 'ADMIN' },
@@ -11,11 +14,39 @@ const testToken = jwt.sign(
   { expiresIn: '1h' }
 );
 
+async function warmupRemoteInstance(url) {
+  console.log(`[Warmup] Pinging ${url}/health/liveness to wake up Render container (handling cold starts)...`);
+  for (let attempt = 1; attempt <= 15; attempt++) {
+    try {
+      const ping = await request(url).get('/health/liveness');
+      if (ping.status === 200) {
+        console.log(`[Warmup] Instance is awake and healthy (attempt ${attempt})!\n`);
+        return true;
+      }
+    } catch (_err) {
+      // Waiting on sleep/spin-up
+    }
+    console.log(`[Warmup] Service waking up... (${attempt}/15 - sleeping 5s)`);
+    await new Promise((r) => setTimeout(r, 5000));
+  }
+  console.warn('[Warmup] Timed out waiting for 200 response, proceeding with test suite anyway...\n');
+  return false;
+}
+
 async function testSuite() {
-  await connectDB();
   console.log('====================================================');
   console.log('       AGRIETECH FULL SYSTEM SERVICE SMOKE TEST');
+  console.log('====================================================');
+  if (targetUrl) {
+    console.log(` Target Environment: DEPLOYED (${targetUrl})`);
+    await warmupRemoteInstance(targetUrl);
+  } else {
+    console.log(' Target Environment: LOCAL IN-PROCESS');
+    await connectDB();
+  }
   console.log('====================================================\n');
+
+  const requester = targetUrl ? request(targetUrl) : request(app);
 
   const tests = [
     { name: 'Root API Metadata', method: 'get', url: '/' },
@@ -44,7 +75,8 @@ async function testSuite() {
 
   for (const t of tests) {
     try {
-      let req = request(app)[t.method](t.url);
+      let req = requester[t.method](t.url);
+      req = req.set('x-e2e-test-key', testSecret);
       if (t.auth) {
         req = req.set('Authorization', `Bearer ${testToken}`);
       }
@@ -52,12 +84,12 @@ async function testSuite() {
         req = req.send(t.body);
       }
       const res = await req;
-      
+
       const isSuccess = (t.name.includes('404') && res.status === 404) ||
                         (t.name.includes('Validation') && (res.status === 400 || res.status === 422)) ||
                         (res.status >= 200 && res.status < 400) ||
                         (t.name.includes('Healthcheck') && (res.status === 200 || res.status === 503));
-      
+
       if (isSuccess) {
         console.log(`✅ PASS [HTTP ${res.status}]: ${t.name} (${t.url})`);
         passed++;
@@ -74,7 +106,10 @@ async function testSuite() {
   console.log('\n====================================================');
   console.log(`  RESULTS: ${passed} PASSED | ${failed} FAILED`);
   console.log('====================================================');
-  await disconnectDB();
+  if (!targetUrl) {
+    await disconnectDB();
+    await disconnectRedis();
+  }
   process.exit(failed > 0 ? 1 : 0);
 }
 

@@ -36,8 +36,20 @@ function createRateLimiter({
   const windowSec = Math.ceil(windowMs / 1000);
 
   return async (req, res, next) => {
-    // Bypass rate limiting in test environment unless specifically configured
+    // Bypass rate limiting if disabled globally
+    if (process.env.DISABLE_RATE_LIMIT === 'true') {
+      return next();
+    }
+
+    // Bypass in local test environment unless explicitly testing rate limits
     if (process.env.NODE_ENV === 'test' && !process.env.ENABLE_TEST_RATELIMIT) {
+      return next();
+    }
+
+    // Bypass for authenticated E2E test runners in deployment/staging
+    const testKeyHeader = req.headers['x-e2e-test-key'] || req.headers['x-test-bypass-secret'];
+    const configuredSecret = process.env.E2E_TEST_SECRET || process.env.TEST_API_KEY;
+    if (testKeyHeader && configuredSecret && testKeyHeader === configuredSecret) {
       return next();
     }
 
@@ -101,6 +113,9 @@ function createRateLimiter({
 }
 
 function handleMemoryRateLimit(key, now, windowMs) {
+  if (memoryStore.size > 5000) {
+    memoryStore.clear();
+  }
   let record = memoryStore.get(key);
   if (!record || now > record.resetTime) {
     record = {
