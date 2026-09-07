@@ -104,9 +104,12 @@ app.use(requestTimeout(30)); // 30 second timeout for all requests
 
 
 // Configurable CORS whitelist
-const configuredOrigins = (env.CORS_ORIGIN || '*')
-  .split(',')
-  .map((o) => o.trim())
+const rawOrigins = Array.isArray(env.CORS_ORIGIN)
+  ? env.CORS_ORIGIN
+  : (typeof env.CORS_ORIGIN === 'string' ? env.CORS_ORIGIN.split(',') : ['*']);
+
+const configuredOrigins = rawOrigins
+  .map((o) => (typeof o === 'string' ? o.trim() : String(o)))
   .filter(Boolean);
 
 const isWildcardOrigin = configuredOrigins.includes('*');
