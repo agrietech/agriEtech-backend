@@ -8,7 +8,7 @@ const { isTokenBlacklisted } = require('../auth/auth.service');
 
 const adminAuth = async (req, res, next) => {
   if (process.env.NODE_ENV === 'test') {
-    if (!req.user) req.user = { id: 'usr_admin_01', email: 'admin@agrietech.et', role: 'ADMIN' };
+    if (!req.user) req.user = { id: 'usr_admin_01', email: 'admin@ethiofarm.et', role: 'ADMIN' };
     return next();
   }
 
@@ -18,7 +18,7 @@ const adminAuth = async (req, res, next) => {
   if (apiKey) {
     const validKeys = (process.env.ADMIN_API_KEYS || '').split(',').map(k => k.trim()).filter(Boolean);
     if (validKeys.length > 0 && validKeys.includes(apiKey.trim())) {
-      req.user = { id: 'usr_admin_apikey', email: 'admin_apikey@agrietech.et', fullName: 'API Key Administrator', role: 'ADMIN' };
+      req.user = { id: 'usr_admin_apikey', email: 'admin_apikey@ethiofarm.et', fullName: 'API Key Administrator', role: 'ADMIN' };
       return next();
     }
   }
@@ -96,9 +96,31 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
-// Public dashboard console view (serves HTML admin interface)
-router.get('/', (_req, res) => res.redirect('/admin/dashboard'));
-router.get('/dashboard', controller.renderDashboard);
+// Public dashboard console view (serves HTML admin interface when accessed via /admin)
+router.get('/', (req, res) => {
+  if (req.baseUrl && req.baseUrl.startsWith('/api')) {
+    return res.status(200).json({
+      success: true,
+      message: 'EthioFarm Admin API',
+      endpoints: {
+        overview: `${req.baseUrl}/overview`,
+        users: `${req.baseUrl}/users`,
+        farms: `${req.baseUrl}/farms`,
+        sensors: `${req.baseUrl}/sensors`,
+        alerts: `${req.baseUrl}/alerts`,
+        diagnoses: `${req.baseUrl}/diagnoses`,
+      },
+    });
+  }
+  return res.redirect('/admin/dashboard');
+});
+
+router.get('/dashboard', (req, res) => {
+  if (req.baseUrl && req.baseUrl.startsWith('/api')) {
+    return res.redirect('/admin/dashboard');
+  }
+  return controller.renderDashboard(req, res);
+});
 
 // Admin Operations & Diagnostics Endpoints
 router.get('/overview', adminAuth, controller.getOverview);

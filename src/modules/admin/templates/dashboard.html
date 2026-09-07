@@ -787,7 +787,7 @@
       <div id="alerts" class="tab">
         <div class="panel">
           <div class="panel-header">
-            <div class="panel-title">📢 Multi-Hazard Early Warnings & Emergency Broadcast</div>
+            <div class="panel-title">📢 Smart Farmings & Emergency Broadcast</div>
             <button class="btn btn-danger" onclick="openModal('alertModal')">📢 Broadcast New Alert</button>
           </div>
           <div class="panel-body">
@@ -849,7 +849,7 @@
       <div id="riskAssessments" class="tab">
         <div class="panel">
           <div class="panel-header">
-            <div class="panel-title">⚠️ Woreda Multi-Hazard Risk Assessments</div>
+            <div class="panel-title">⚠️ Woreda Integrated Risk Risk Assessments</div>
             <button class="btn btn-primary btn-sm" onclick="openModal('evaluateRiskModal')">+ Evaluate Woreda Risk</button>
           </div>
           <div class="panel-body">
@@ -926,7 +926,7 @@
               </div>
               <div class="pipeline-card">
                 <div class="pipeline-title">⚠️ Risk Assessment Engine</div>
-                <div class="pipeline-desc">Compute multi-hazard drought, flood, and pest risk metrics.</div>
+                <div class="pipeline-desc">Compute integrated risk drought, flood, and pest risk metrics.</div>
                 <button class="btn btn-edit btn-sm" onclick="triggerJob('calculateRisks')">Run Risk Analytics</button>
               </div>
             </div>
@@ -1057,7 +1057,7 @@
           </div>
           <div class="form-group">
             <label class="form-label">Email Address *</label>
-            <input type="email" class="form-input" id="userEmail" placeholder="farmer@agrietech.et" required>
+            <input type="email" class="form-input" id="userEmail" placeholder="farmer@ethiofarm.et" required>
           </div>
           <div class="form-group">
             <label class="form-label">Phone Number</label>
@@ -1283,7 +1283,7 @@
         <form id="adminLoginForm" onsubmit="event.preventDefault(); submitAdminLogin();">
           <div class="form-group">
             <label class="form-label">Admin Email *</label>
-            <input type="email" class="form-input" id="adminLoginEmail" placeholder="admin@agrietech.et" required>
+            <input type="email" class="form-input" id="adminLoginEmail" placeholder="admin@ethiofarm.et" required>
           </div>
           <div class="form-group">
             <label class="form-label">Password *</label>
@@ -1641,7 +1641,7 @@
     }
 
     async function resetUserPasswordPrompt(userId, name) {
-      const newPwd = prompt(`Enter new password for ${name}:`, 'AgriEtech2026!');
+      const newPwd = prompt(`Enter new password for ${name}:`, 'EthioFarm2026!');
       if (!newPwd) return;
       try {
         const res = await fetch(`/api/v1/admin/users/${userId}`, {
@@ -1888,7 +1888,7 @@
         const json = await res.json();
         if (json.success) {
           closeModal('evaluateRiskModal');
-          showToast('Multi-hazard risk evaluation calculated successfully');
+          showToast('Integrated risk risk evaluation calculated successfully');
           loadRisks();
           loadOverview();
         } else {
@@ -2143,7 +2143,7 @@ Active real records preserved: ${json.data.current.users} users, ${json.data.cur
               tbody.innerHTML = (logsJson.data || []).map(l => `
                 <tr>
                   <td><span class="badge badge-info">${l.action || 'ACTION'}</span></td>
-                  <td><strong>${l.adminEmail || 'system@agrietech.et'}</strong></td>
+                  <td><strong>${l.adminEmail || 'system@ethiofarm.et'}</strong></td>
                   <td><small>${l.details || 'N/A'}</small></td>
                   <td><code>${l.ipAddress || '127.0.0.1'}</code></td>
                   <td>${formatDateTime(l.createdAt)}</td>

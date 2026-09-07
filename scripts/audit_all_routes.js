@@ -321,9 +321,10 @@ async function runRouteAudit() {
   console.log('\n--- 7. SENSORS & TELEMETRY ---');
   await testRoute({
     category: 'Sensors',
-    name: 'Get Sensors List',
+    name: 'Get Sensors List (Protected)',
     method: 'GET',
     url: '/api/v1/sensors',
+    token: farmerToken,
     expectedStatuses: [200, 500, 503],
     desc: 'List IoT sensor devices',
   });
@@ -424,9 +425,10 @@ async function runRouteAudit() {
   console.log('\n--- 11. INGESTION & CONNECTORS ---');
   await testRoute({
     category: 'Ingestion',
-    name: 'List Ingestion Connectors',
+    name: 'List Ingestion Connectors (Admin Token)',
     method: 'GET',
     url: '/api/v1/ingestion/connectors',
+    token: adminToken,
     expectedStatuses: [200],
     desc: 'Registered satellite & weather connectors',
   });

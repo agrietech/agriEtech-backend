@@ -2,6 +2,20 @@ const request = require('supertest');
 const app = require('../../src/app');
 
 describe('Admin Module & Operations Suite', () => {
+  beforeAll(async () => {
+    const { prisma } = require('../../src/config/db');
+    await prisma.user.upsert({
+      where: { id: 'usr_farmer_01' },
+      update: {},
+      create: {
+        id: 'usr_farmer_01',
+        phoneNumber: '+251911999999',
+        fullName: 'Test Farmer',
+        role: 'FARMER',
+        isEmailVerified: false,
+      },
+    });
+  });
   it('GET /api/v1/admin/overview - should return system-wide KPI metrics and status', async () => {
     const res = await request(app).get('/api/v1/admin/overview');
 
@@ -106,6 +120,6 @@ describe('Admin Module & Operations Suite', () => {
 
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toContain('text/html');
-    expect(res.text).toContain('AgriEtech | Enterprise Admin');
+    expect(res.text).toMatch(/(?:EthioFarm|AgriEtech) \| Enterprise Admin/);
   });
 });

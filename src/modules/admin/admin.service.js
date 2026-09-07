@@ -3,7 +3,7 @@ const { prisma, isConnected } = require('../../config/db');
 const redis = require('../../config/redis');
 const { getQueueStats, addJob } = require('../../ingestion/jobs/queue');
 const boundariesService = require('../boundaries/boundaries.service');
-const { NotFoundError, BadRequestError } = require('../../utils/errors');
+const { BadRequestError } = require('../../utils/errors');
 const logger = require('../../utils/logger');
 const os = require('os');
 
@@ -68,8 +68,8 @@ async function getOverview() {
     {
       id: 'log_01',
       action: 'SYSTEM_STARTUP',
-      adminEmail: 'system@agrietech.et',
-      details: 'AgriEtech Multi-Hazard backend initialized',
+      adminEmail: 'system@ethiofarm.et',
+      details: 'EthioFarm Integrated Risk backend initialized',
       createdAt: new Date().toISOString(),
     },
   ];
@@ -335,7 +335,7 @@ async function getSystemHealth() {
       externalIntegrations: {
         openRouterAI: { status: 'CONFIGURED', model: 'google/gemini-2.5-flash' },
         plantIdClassifier: { status: 'CONFIGURED' },
-        africasTalkingSMS: { status: 'CONFIGURED' },
+        smsEthiopia: { status: 'CONFIGURED', provider: 'SMSEthiopia (smsethiopia.com)', active: true },
         openMeteoWeather: { status: 'OPERATIONAL' },
         chirpsRainfall: { status: 'OPERATIONAL' },
       },
@@ -501,8 +501,8 @@ async function getAuditLogs(limit = 50) {
     {
       id: 'log_01',
       action: 'SYSTEM_STARTUP',
-      adminEmail: 'system@agrietech.et',
-      details: 'AgriEtech Multi-Hazard backend initialized',
+      adminEmail: 'system@ethiofarm.et',
+      details: 'EthioFarm Integrated Risk backend initialized',
       createdAt: new Date().toISOString(),
     },
   ];
@@ -840,7 +840,7 @@ async function cleanTestData(adminContext = {}) {
     try {
       const allUsers = await prisma.user.findMany({ select: { id: true, email: true, role: true } });
       const testUsers = allUsers.filter(u => {
-        if (u.role === 'ADMIN' || u.email.includes('admin@agrietech.et')) return false;
+        if (u.role === 'ADMIN' || u.email.includes('admin@ethiofarm.et')) return false;
         return (
           u.email.startsWith('audit_farmer_') ||
           u.email.startsWith('farmer_diag_') ||
