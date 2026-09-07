@@ -336,6 +336,11 @@ async function registerUser({
         phoneVerificationToken,
         phoneVerificationExpires,
       },
+      include: {
+        region: { select: { id: true, code: true, nameEn: true, nameAm: true } },
+        zone: { select: { id: true, nameEn: true, nameAm: true } },
+        woreda: { select: { id: true, nameEn: true, nameAm: true } },
+      },
     });
   } catch (dbErr) {
     if (dbErr.code === 'P2002') {
@@ -415,10 +420,17 @@ async function loginUser({ email, phoneNumber, identifier, password }) {
     await _checkLoginLockout(rawIdentifier);
   }
 
+  const includeRelations = {
+    region: { select: { id: true, code: true, nameEn: true, nameAm: true } },
+    zone: { select: { id: true, nameEn: true, nameAm: true } },
+    woreda: { select: { id: true, nameEn: true, nameAm: true } },
+  };
+
   let user = null;
   if (isEmail) {
     user = await prisma.user.findFirst({
       where: { email: { equals: normalizedIdentifier, mode: 'insensitive' } },
+      include: includeRelations,
     });
   } else {
     const variants = getPhoneLookupVariants(rawIdentifier);
@@ -426,6 +438,7 @@ async function loginUser({ email, phoneNumber, identifier, password }) {
       where: {
         OR: variants.map((p) => ({ phoneNumber: p })),
       },
+      include: includeRelations,
     });
   }
 
