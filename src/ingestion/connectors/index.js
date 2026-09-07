@@ -6,8 +6,6 @@ const soilGridsConnector = require('./soilGridsConnector');
 const openElevationConnector = require('./openElevationConnector');
 const worldBankClimateConnector = require('./worldBankClimateConnector');
 const openWeatherMapConnector = require('./openWeatherMapConnector');
-const { FirebaseSensorConnector } = require('./firebaseSensorConnector');
-const firebaseSensorConnector = new FirebaseSensorConnector();
 
 // 1. CHIRPS Rainfall Connector — fetches real rainfall data via Open-Meteo historical API
 // (CHIRPS GeoTIFF requires offline processing; using Open-Meteo archive as production proxy)
@@ -346,8 +344,6 @@ module.exports = {
   openElevationConnector,
   worldBankClimateConnector,
   openWeatherMapConnector,
-  firebaseSensorConnector,
-  FirebaseSensorConnector,
   earthEngineConnector,
 };
 

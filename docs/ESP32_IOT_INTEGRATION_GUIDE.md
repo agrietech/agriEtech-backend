@@ -1434,7 +1434,7 @@ npx prisma studio
 | **MQTT Broker** | IoT telemetry transport | Self-hosted (Mosquitto) or CloudMQTT | Free (self) / $5/mo (cloud) |
 | **OpenRouter** | Gemini AI analytics | https://openrouter.ai/keys | $0.075/1M tokens |
 | **Plant.id** | Crop disease diagnosis | https://web.plant.id/api-access | $0.02/image |
-| **Africa's Talking** | SMS alerts | https://account.africastalking.com | $0.01/SMS |
+| **SMS Ethiopia** | National SMS alerts | https://smsethiopia.com | Ethio Telecom |
 | **Firebase FCM** | Push notifications | https://console.firebase.google.com | Free |
 
 ### Hardware Purchase Links

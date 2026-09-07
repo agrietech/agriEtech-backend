@@ -3,7 +3,7 @@ const router = express.Router();
 const controller = require('./sensors.controller');
 const { telemetryLimiter } = require('../../middleware/rate-limiter.middleware');
 
-const { authenticate, authorize } = require('../../middleware/auth.middleware');
+const { authenticate } = require('../../middleware/auth.middleware');
 
 const service = require('./sensors.service');
 
@@ -25,16 +25,6 @@ async function authenticateSensor(req, res, next) {
     } catch (_err) {}
   }
 
-  // 2. Authenticate if global configured sensor API key is provided
-  const apiKey = req.headers['x-sensor-api-key'] || req.headers['x-api-key'] || req.query?.apiKey;
-  const configuredKeys = (process.env.SENSOR_API_KEYS || process.env.IOT_API_KEYS || '')
-    .split(',')
-    .map((k) => k.trim())
-    .filter(Boolean);
-
-  if (apiKey && configuredKeys.length > 0 && configuredKeys.includes(apiKey.trim())) {
-    return next();
-  }
 
   // 3. IoT device direct identification with cryptographic device secret token
   const hardwareId =
@@ -67,8 +57,8 @@ async function authenticateSensor(req, res, next) {
       });
     }
 
-    // In development environment only: allow bare hardwareId if device is registered
-    if (process.env.NODE_ENV === 'development') {
+    // In development or test environment: allow bare hardwareId if device is registered
+    if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
       return next();
     }
   }
@@ -94,16 +84,6 @@ router.get('/farm/:farmId', authenticate, controller.getSensors);
 router.post('/', authenticate, controller.registerSensor);
 router.get('/', authenticate, controller.getSensors);
 
-
-// Firebase Realtime DB & Firestore Sensor Ingestion
-// Management endpoints require officer/admin JWT authentication
-router.get('/firebase/status', authenticate, authorize('WOREDA_OFFICER', 'ZONAL_OFFICER', 'REGIONAL_OFFICER', 'ADMIN'), controller.getFirebaseStatus);
-router.get('/firebase/test', authenticate, authorize('ADMIN'), controller.testFirebaseConnection);
-router.get('/firebase/sync', authenticate, authorize('WOREDA_OFFICER', 'ZONAL_OFFICER', 'REGIONAL_OFFICER', 'ADMIN'), controller.syncFirebase);
-router.post('/firebase/sync', authenticate, authorize('WOREDA_OFFICER', 'ZONAL_OFFICER', 'REGIONAL_OFFICER', 'ADMIN'), controller.syncFirebase);
-// Webhook/stream endpoints authenticate via sensor API key (IoT device push)
-router.post('/firebase/stream', authenticateSensor, controller.receiveFirebaseStream);
-router.post('/firebase/webhook', authenticateSensor, controller.receiveFirebaseStream);
 
 // Telemetry query endpoints matching Flutter SensorRepository
 router.get('/:id/telemetry', authenticate, controller.getSensorTelemetry);

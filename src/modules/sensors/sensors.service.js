@@ -1,10 +1,8 @@
 const { prisma, isConnected } = require('../../config/db');
 const { BadRequestError, NotFoundError, ForbiddenError, ConflictError, ServiceUnavailableError } = require('../../utils/errors');
-const env = require('../../config/env');
 const crypto = require('crypto');
 
 const logger = require('../../utils/logger');
-const { FirebaseSensorConnector, normalizeSoilMoisture } = require('../../ingestion/connectors/firebaseSensorConnector');
 
 // Register or provision an IoT sensor device for an individual farmer or farm
 async function registerSensor({
@@ -165,6 +163,30 @@ async function verifySensorToken(hardwareId, token) {
   }
 }
 
+/**
+ * Normalizes analog soil moisture readings into percentage if raw ADC value detected.
+ * Standard Arduino ADC (0-1023) or ESP32 ADC (0-4095)
+ */
+function normalizeSoilMoisture(val) {
+  if (val === undefined || val === null || isNaN(Number(val))) return null;
+  const num = Number(val);
+
+  if (num >= 0 && num <= 100) {
+    return Math.round(num * 10) / 10;
+  }
+
+  if (num > 100 && num <= 1024) {
+    const pct = ((1023 - num) / (1023 - 300)) * 100;
+    return Math.max(0, Math.min(100, Math.round(pct * 10) / 10));
+  }
+
+  if (num > 1024 && num <= 4095) {
+    const pct = ((3000 - num) / (3000 - 1500)) * 100;
+    return Math.max(0, Math.min(100, Math.round(pct * 10) / 10));
+  }
+
+  return Math.min(100, Math.max(0, num));
+}
 
 // Record authentic telemetry readings
 async function recordTelemetry({
@@ -345,125 +367,6 @@ async function claimSensor({ userId, farmId, hardwareId, serialNumber, sensorTyp
   });
 }
 
-/**
- * Ingest or sync telemetry data from Firebase
- */
-async function syncFirebaseTelemetry({ firebaseUrl, apiKey, path, hardwareId, farmId } = {}) {
-  const url = firebaseUrl || env.FIREBASE_DATABASE_URL || 'https://arduinomoisture-default-rtdb.firebaseio.com';
-  const key = apiKey || env.FIREBASE_API_KEY;
-
-  logger.info(`[FirebaseSensorConnector] Initiating sync with Firebase RTDB at ${url}`);
-
-  const connector = new FirebaseSensorConnector({ baseUrl: url, apiKey: key });
-  const fetchResult = await connector.fetchTelemetry({
-    path,
-    firebaseUrl: url,
-    apiKey: key,
-    defaultHardwareId: hardwareId || 'ARDUINO-MOISTURE-01',
-  });
-
-  const readings = [];
-  for (const record of fetchResult.readings) {
-    try {
-      const reading = await recordTelemetry({
-        hardwareId: record.hardwareId || hardwareId || 'ARDUINO-MOISTURE-01',
-        farmId: record.farmId || farmId,
-        soilMoisture: record.soilMoisture,
-        soilTemp: record.soilTemp,
-        ambientTemp: record.ambientTemp,
-        humidity: record.humidity,
-        rainfallMm: record.rainfallMm,
-        batteryLevel: record.batteryLevel,
-        recordedAt: record.recordedAt,
-      });
-      readings.push(reading);
-    } catch (err) {
-      logger.warn(`[FirebaseSensorConnector] Failed to insert record: ${err.message}`);
-    }
-  }
-
-  return {
-    success: true,
-    message: `Successfully synchronized ${readings.length} telemetry readings from Firebase Realtime Database`,
-    count: readings.length,
-    endpoint: fetchResult.endpoint,
-    readings,
-  };
-}
-
-/**
- * Ingest real-time stream / webhook push from Firebase or IoT hardware
- */
-async function receiveFirebaseStream(data) {
-  const {
-    hardwareId,
-    hardware_id,
-    device_id,
-    deviceId,
-    sensorId,
-    sensor_id,
-    farmId,
-    farm_id,
-    soilMoisture,
-    moisture,
-    soil_moisture,
-    soilMoisturePct,
-    val,
-    value,
-    raw,
-    analog,
-    soilTemp,
-    soil_temp,
-    soil_temperature,
-    ambientTemp,
-    temperature,
-    temp,
-    airTemp,
-    air_temp,
-    humidity,
-    relative_humidity,
-    rh,
-    rainfallMm,
-    rainfall,
-    rain,
-    batteryLevel,
-    battery,
-    battery_pct,
-    batt,
-    timestamp,
-    recordedAt,
-    time,
-  } = data || {};
-
-  const hwId =
-    hardwareId ||
-    hardware_id ||
-    device_id ||
-    deviceId ||
-    sensorId ||
-    sensor_id ||
-    'ARDUINO-FIREBASE-STREAM';
-
-  return await recordTelemetry({
-    hardwareId: hwId,
-    farmId: farmId || farm_id,
-    soilMoisture:
-      soilMoisture ??
-      moisture ??
-      soil_moisture ??
-      soilMoisturePct ??
-      val ??
-      value ??
-      raw ??
-      analog,
-    soilTemp: soilTemp ?? soil_temp ?? soil_temperature,
-    ambientTemp: ambientTemp ?? temperature ?? temp ?? airTemp ?? air_temp,
-    humidity: humidity ?? relative_humidity ?? rh,
-    rainfallMm: rainfallMm ?? rainfall ?? rain,
-    batteryLevel: batteryLevel ?? battery ?? battery_pct ?? batt,
-    recordedAt: timestamp || recordedAt || time,
-  });
-}
 
 // Update sensor with Optimistic Concurrency Control (OCC) and ownership checks
 async function updateSensor({ id, data = {}, user = {}, clientUpdatedAt }) {
@@ -658,8 +561,6 @@ module.exports = {
   getSensorById,
   updateSensor,
   claimSensor,
-  syncFirebaseTelemetry,
-  receiveFirebaseStream,
   getSensorTelemetry,
   getLatestSensorReading,
 };
