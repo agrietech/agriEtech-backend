@@ -47,12 +47,17 @@ async function getRegions(includeGeometry = false) {
   return regions;
 }
 
-async function getZones(regionId = null) {
+async function getZones(regionId = null, includeGeometry = false) {
   const where = regionId ? { regionId } : {};
   return await prisma.zone.findMany({
     where,
     orderBy: { nameEn: 'asc' },
-    include: {
+    select: {
+      id: true,
+      nameEn: true,
+      nameAm: true,
+      regionId: true,
+      geojson: includeGeometry ? true : false,
       region: {
         select: { id: true, nameEn: true, nameAm: true, code: true },
       },
