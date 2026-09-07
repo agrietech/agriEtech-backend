@@ -2,6 +2,43 @@ const request = require('supertest');
 const app = require('../../src/app');
 
 describe('Boundaries Module API Suite', () => {
+  beforeAll(async () => {
+    const { prisma } = require('../../src/config/db');
+    await prisma.region.upsert({
+      where: { id: 'reg_oromia_01' },
+      update: {},
+      create: {
+        id: 'reg_oromia_01',
+        nameEn: 'Oromia',
+        nameAm: 'ኦሮሚያ',
+        code: 'ET-OR',
+      },
+    });
+
+    await prisma.zone.upsert({
+      where: { id: 'zone_east_shewa_01' },
+      update: {},
+      create: {
+        id: 'zone_east_shewa_01',
+        nameEn: 'East Shewa',
+        nameAm: 'ምስራቅ ሸዋ',
+        regionId: 'reg_oromia_01',
+      },
+    });
+
+    await prisma.woreda.upsert({
+      where: { id: 'woreda_adama_01' },
+      update: {},
+      create: {
+        id: 'woreda_adama_01',
+        nameEn: 'Adama Zuria',
+        nameAm: 'አዳማ ዙሪያ',
+        zoneId: 'zone_east_shewa_01',
+        centerLat: 8.54,
+        centerLng: 39.27,
+      },
+    });
+  });
   it('GET /api/v1/boundaries/regions - should return administrative regions list', async () => {
     const res = await request(app).get('/api/v1/boundaries/regions');
 

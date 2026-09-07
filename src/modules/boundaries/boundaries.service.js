@@ -1,6 +1,5 @@
-const { prisma, isConnected } = require('../../config/db');
+const { prisma } = require('../../config/db');
 const redis = require('../../config/redis');
-const logger = require('../../utils/logger');
 const { NotFoundError } = require('../../utils/errors');
 
 /**
