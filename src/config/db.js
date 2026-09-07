@@ -19,20 +19,38 @@ function resolveIpv4DatabaseUrl(url) {
 
   let cleanUrl = url.trim();
 
-  // If using direct Supabase URL (db.<project>.supabase.co), convert to Supavisor Pooler URL
+  // Extract project ref from SUPABASE_URL if available
+  let projectRef = 'uhktbbeqqdsfkooyrgmq';
+  if (env && env.SUPABASE_URL) {
+    const refMatch = env.SUPABASE_URL.match(/https:\/\/([^.]+)\.supabase\.co/);
+    if (refMatch) projectRef = refMatch[1];
+  }
+
+  // 1. If using direct Supabase URL (db.<project>.supabase.co), convert to Supavisor Pooler URL
   if (cleanUrl.includes('db.') && cleanUrl.includes('.supabase.co')) {
     const match = cleanUrl.match(/postgresql:\/\/([^:]+):([^@]+)@db\.([^.]+)\.supabase\.co:(\d+)\/([^?]+)(\?.*)?/);
     if (match) {
       const user = match[1];
       const pass = match[2];
-      const projectRef = match[3];
+      const urlProjectRef = match[3] || projectRef;
       const dbName = match[5];
       const queryParams = match[6] || '';
-      const poolerUser = user.includes('.') ? user : `${user}.${projectRef}`;
+      const poolerUser = user.includes('.') ? user : `${user}.${urlProjectRef}`;
       const defaultHost = process.env.SUPABASE_POOLER_HOST || env.SUPABASE_POOLER_HOST || 'aws-0-ap-northeast-2.pooler.supabase.com';
       cleanUrl = `postgresql://${poolerUser}:${pass}@${defaultHost}:5432/${dbName}${queryParams}`;
       logger.info(`[DB Config] Automatically converted IPv6-only Supabase direct host to IPv4 Pooler host (${defaultHost})`);
     }
+  }
+
+  // 2. If using pooler.supabase.com but username is just 'postgres' without the '.<projectRef>', auto-append it!
+  if (cleanUrl.includes('pooler.supabase.com')) {
+    cleanUrl = cleanUrl.replace(/postgresql:\/\/([^:]+):/, (m, user) => {
+      if (!user.includes('.')) {
+        logger.info(`[DB Config] Augmented pooler user '${user}' with project ref to '${user}.${projectRef}'`);
+        return `postgresql://${user}.${projectRef}:`;
+      }
+      return m;
+    });
   }
 
   return cleanUrl;
@@ -89,6 +107,8 @@ let isDbConnected = false;
 async function connectDB() {
   try {
     await prisma.$connect();
+    // Test live authentication & connectivity
+    await pool.query('SELECT 1');
     isDbConnected = true;
     logger.info('Database connected successfully');
   } catch (error) {
