@@ -1,14 +1,13 @@
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const { prisma, isConnected } = require('../../config/db');
+const { prisma } = require('../../config/db');
 const env = require('../../config/env');
 const {
   BadRequestError,
   UnauthorizedError,
   ConflictError,
   NotFoundError,
-  ServiceUnavailableError,
 } = require('../../utils/errors');
 const {
   sendPasswordResetEmail,
@@ -16,6 +15,11 @@ const {
 } = require('../../delivery/email/emailDispatcher');
 const logger = require('../../utils/logger');
 const redis = require('../../config/redis');
+const {
+  normalizeEthiopianPhone,
+  getPhoneLookupVariants,
+  formatPhoneForDisplay,
+} = require('../../utils/phoneUtils');
 
 // Helper to validate email format
 function isValidEmail(email) {
@@ -30,6 +34,8 @@ function sanitizeUser(user) {
     resetPasswordToken: _resetPasswordToken,
     resetPasswordExpires: _resetPasswordExpires,
     verificationToken: _verificationToken,
+    phoneVerificationToken: _phoneVerificationToken,
+    phoneVerificationExpires: _phoneVerificationExpires,
     ...sanitized
   } = user;
 
@@ -46,6 +52,7 @@ function sanitizeUser(user) {
     kebeleName: sanitized.kebeleName || null,
     preferredLang: sanitized.preferredLang || 'en',
     isEmailVerified: Boolean(sanitized.isEmailVerified),
+    isPhoneVerified: Boolean(sanitized.isPhoneVerified),
     createdAt: sanitized.createdAt,
     updatedAt: sanitized.updatedAt,
   };
@@ -76,13 +83,39 @@ function generateRefreshToken(user) {
   );
 }
 
-// In-memory rate limiting for login attempts
+// Distributed & In-Memory Hybrid Rate Limiting for Account Lockout
 const loginAttemptsMap = new Map();
+const resetAttemptsMap = new Map();
+const phoneResendMap = new Map();
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOGIN_LOCKOUT_MS = 15 * 60 * 1000; // 15 minutes
+const MAX_RESET_ATTEMPTS = 5;
+const PHONE_RESEND_COOLDOWN_MS = 60 * 1000; // 60 seconds
 
-function _checkLoginLockout(identifier) {
-  const record = loginAttemptsMap.get(identifier);
+async function _checkLoginLockout(identifier) {
+  const cleanId = (identifier || '').toString().trim().toLowerCase();
+  if (!cleanId) return;
+
+  // 1. Check Redis distributed lockout if available
+  try {
+    if (redis && typeof redis.get === 'function') {
+      const lockVal = await redis.get(`lockout:${cleanId}`);
+      if (lockVal) {
+        const lockedUntil = Number(lockVal);
+        if (Date.now() < lockedUntil) {
+          const remainingMin = Math.ceil((lockedUntil - Date.now()) / 60000);
+          throw new UnauthorizedError(
+            `Account temporarily locked due to too many failed attempts. Try again in ${remainingMin} minute(s).`
+          );
+        }
+      }
+    }
+  } catch (err) {
+    if (err instanceof UnauthorizedError) throw err;
+  }
+
+  // 2. In-memory fallback
+  const record = loginAttemptsMap.get(cleanId);
   if (!record) return;
   if (record.lockedUntil && Date.now() < record.lockedUntil) {
     const remainingMin = Math.ceil((record.lockedUntil - Date.now()) / 60000);
@@ -91,23 +124,94 @@ function _checkLoginLockout(identifier) {
     );
   }
   if (record.lockedUntil && Date.now() >= record.lockedUntil) {
-    loginAttemptsMap.delete(identifier);
+    loginAttemptsMap.delete(cleanId);
   }
 }
 
-function _recordLoginFailure(identifier) {
-  const record = loginAttemptsMap.get(identifier) || { count: 0, lockedUntil: null };
+async function _recordLoginFailure(identifier) {
+  const cleanId = (identifier || '').toString().trim().toLowerCase();
+  if (!cleanId) return;
+
+  // In-memory update
+  const record = loginAttemptsMap.get(cleanId) || { count: 0, lockedUntil: null };
   record.count += 1;
   if (record.count >= MAX_LOGIN_ATTEMPTS) {
     record.lockedUntil = Date.now() + LOGIN_LOCKOUT_MS;
-    logger.warn(`[Auth Service] Account locked for 15 minutes after ${record.count} failed attempts: ${identifier}`);
+    logger.warn(`[Auth Service] Account locked for 15 minutes after ${record.count} failed attempts: ${cleanId}`);
   }
-  loginAttemptsMap.set(identifier, record);
+  loginAttemptsMap.set(cleanId, record);
+
+  // Redis distributed update (15m TTL)
+  try {
+    if (redis && typeof redis.incr === 'function') {
+      const attempts = await redis.incr(`failed_attempts:${cleanId}`);
+      if (attempts === 1) {
+        await redis.expire(`failed_attempts:${cleanId}`, 900);
+      }
+      if (attempts >= MAX_LOGIN_ATTEMPTS) {
+        const lockedUntil = Date.now() + LOGIN_LOCKOUT_MS;
+        await redis.setex(`lockout:${cleanId}`, 900, lockedUntil.toString());
+        logger.warn(`[Auth Service] Distributed Redis account locked for 15m: ${cleanId}`);
+      }
+    }
+  } catch (_e) {
+    // Non-blocking fallback
+  }
 }
 
-// In-memory rate limiting for OTP reset attempts
-const resetAttemptsMap = new Map();
-const MAX_RESET_ATTEMPTS = 5;
+async function _clearLoginFailure(identifier) {
+  const cleanId = (identifier || '').toString().trim().toLowerCase();
+  if (!cleanId) return;
+  loginAttemptsMap.delete(cleanId);
+  try {
+    if (redis && typeof redis.del === 'function') {
+      await redis.del(`failed_attempts:${cleanId}`, `lockout:${cleanId}`);
+    }
+  } catch (_e) {}
+}
+
+async function _checkResetAttempts(tokenKey) {
+  const cleanKey = (tokenKey || '').toString().trim();
+  if (!cleanKey) return;
+  try {
+    if (redis && typeof redis.get === 'function') {
+      const val = await redis.get(`reset_attempts:${cleanKey}`);
+      if (val && Number(val) >= MAX_RESET_ATTEMPTS) {
+        throw new BadRequestError('Too many failed reset attempts. Please request a new code.');
+      }
+    }
+  } catch (err) {
+    if (err instanceof BadRequestError) throw err;
+  }
+  const attempts = resetAttemptsMap.get(cleanKey) || 0;
+  if (attempts >= MAX_RESET_ATTEMPTS) {
+    throw new BadRequestError('Too many failed reset attempts. Please request a new code.');
+  }
+}
+
+async function _recordResetFailure(tokenKey) {
+  const cleanKey = (tokenKey || '').toString().trim();
+  if (!cleanKey) return;
+  const attempts = (resetAttemptsMap.get(cleanKey) || 0) + 1;
+  resetAttemptsMap.set(cleanKey, attempts);
+  try {
+    if (redis && typeof redis.incr === 'function') {
+      const c = await redis.incr(`reset_attempts:${cleanKey}`);
+      if (c === 1) await redis.expire(`reset_attempts:${cleanKey}`, 600);
+    }
+  } catch (_e) {}
+}
+
+async function _clearResetAttempts(tokenKey) {
+  const cleanKey = (tokenKey || '').toString().trim();
+  if (!cleanKey) return;
+  resetAttemptsMap.delete(cleanKey);
+  try {
+    if (redis && typeof redis.del === 'function') {
+      await redis.del(`reset_attempts:${cleanKey}`);
+    }
+  } catch (_e) {}
+}
 
 /**
  * Register a new user
@@ -133,7 +237,8 @@ async function registerUser({
   officialRole,
 }) {
   const resolvedEmail = email && typeof email === 'string' && email.trim() ? email.trim().toLowerCase() : null;
-  const resolvedPhone = (phoneNumber || phone || '').toString().trim() || null;
+  const rawPhone = (phoneNumber || phone || '').toString().trim() || null;
+  const resolvedPhone = rawPhone ? (normalizeEthiopianPhone(rawPhone) || rawPhone) : null;
   const resolvedName = (fullName || name || '').toString().trim();
   const resolvedRole = (role || 'FARMER').toString().trim().toUpperCase();
 
@@ -183,10 +288,13 @@ async function registerUser({
     }
   }
 
-  // Check if phone already exists
+  // Check if phone already exists (checks all format variants, e.g. +251... vs 09...)
   if (resolvedPhone) {
+    const variants = getPhoneLookupVariants(resolvedPhone);
     const existingPhone = await prisma.user.findFirst({
-      where: { phoneNumber: resolvedPhone },
+      where: {
+        OR: variants.map((p) => ({ phoneNumber: p })),
+      },
     });
     if (existingPhone) {
       throw new ConflictError('User with this phone number already exists');
@@ -196,11 +304,21 @@ async function registerUser({
   const passwordHash = await bcrypt.hash(password, 12);
   const verificationToken = `${crypto.randomBytes(24).toString('hex')}_${Date.now()}`;
 
+  let phoneVerificationCode = null;
+  let phoneVerificationToken = null;
+  let phoneVerificationExpires = null;
+
+  if (resolvedPhone) {
+    phoneVerificationCode = crypto.randomInt(100000, 999999).toString();
+    phoneVerificationToken = crypto.createHash('sha256').update(phoneVerificationCode).digest('hex');
+    phoneVerificationExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+  }
+
   let user;
   try {
     user = await prisma.user.create({
       data: {
-        email: resolvedEmail || (resolvedPhone ? `user_${resolvedPhone.replace(/[^0-9]/g, '')}@phone.agrietech.et` : null),
+        email: resolvedEmail || (resolvedPhone ? `user_${resolvedPhone.replace(/[^0-9]/g, '')}@phone.ethiofarm.et` : null),
         phoneNumber: resolvedPhone || null,
         fullName: resolvedName,
         passwordHash,
@@ -214,6 +332,9 @@ async function registerUser({
         deviceToken: (deviceToken && String(deviceToken).trim()) || null,
         fcmToken: (fcmToken && String(fcmToken).trim()) || null,
         verificationToken,
+        isPhoneVerified: false,
+        phoneVerificationToken,
+        phoneVerificationExpires,
       },
     });
   } catch (dbErr) {
@@ -236,6 +357,27 @@ async function registerUser({
     });
   }
 
+  // Send phone verification OTP asynchronously if phone was provided (non-blocking)
+  if (resolvedPhone && phoneVerificationCode) {
+    phoneResendMap.set(resolvedPhone, Date.now());
+    try {
+      if (redis && typeof redis.setex === 'function') {
+        redis.setex(`phone_cooldown:${resolvedPhone}`, 60, '1').catch(() => {});
+      }
+    } catch (_e) {}
+
+    setImmediate(async () => {
+      try {
+        const { sendSms } = require('../../delivery/sms/smsEthiopiaClient');
+        const smsText = `EthioFarm: Your registration verification code is ${phoneVerificationCode}. Valid for 10 minutes. Do not share this code.`;
+        await sendSms([resolvedPhone], smsText);
+        logger.info(`[Auth Service] Phone verification SMS OTP dispatched to ${resolvedPhone}`);
+      } catch (smsErr) {
+        logger.warn(`[Auth Service] Phone verification SMS notice: ${smsErr.message}`);
+      }
+    });
+  }
+
   const accessToken = generateAccessToken(user);
   const refreshToken = generateRefreshToken(user);
 
@@ -244,9 +386,14 @@ async function registerUser({
     token: accessToken,
     accessToken,
     refreshToken,
+    requiresPhoneVerification: Boolean(resolvedPhone && !user.isPhoneVerified),
+    ...(process.env.NODE_ENV === 'test' && phoneVerificationCode ? { phoneVerificationCode } : {}),
   };
 }
 
+/**
+ * Log in an existing user
+ */
 /**
  * Log in an existing user
  */
@@ -260,9 +407,13 @@ async function loginUser({ email, phoneNumber, identifier, password }) {
   }
 
   const isEmail = rawIdentifier.includes('@');
-  const normalizedIdentifier = isEmail ? rawIdentifier.toLowerCase() : rawIdentifier;
+  const canonicalPhone = !isEmail ? (normalizeEthiopianPhone(rawIdentifier) || rawIdentifier) : null;
+  const normalizedIdentifier = isEmail ? rawIdentifier.toLowerCase() : canonicalPhone;
 
-  _checkLoginLockout(normalizedIdentifier);
+  await _checkLoginLockout(normalizedIdentifier);
+  if (!isEmail && canonicalPhone !== rawIdentifier) {
+    await _checkLoginLockout(rawIdentifier);
+  }
 
   let user = null;
   if (isEmail) {
@@ -270,30 +421,30 @@ async function loginUser({ email, phoneNumber, identifier, password }) {
       where: { email: { equals: normalizedIdentifier, mode: 'insensitive' } },
     });
   } else {
+    const variants = getPhoneLookupVariants(rawIdentifier);
     user = await prisma.user.findFirst({
       where: {
-        OR: [
-          { phoneNumber: rawIdentifier },
-          { phoneNumber: rawIdentifier.startsWith('+251') ? '0' + rawIdentifier.slice(4) : rawIdentifier },
-          { phoneNumber: rawIdentifier.startsWith('0') ? '+251' + rawIdentifier.slice(1) : rawIdentifier },
-        ],
+        OR: variants.map((p) => ({ phoneNumber: p })),
       },
     });
   }
 
   if (!user) {
-    _recordLoginFailure(normalizedIdentifier);
+    await _recordLoginFailure(normalizedIdentifier);
     throw new UnauthorizedError('Invalid email or password');
   }
 
   const isMatch = await bcrypt.compare(password, user.passwordHash || '').catch(() => false);
   if (!isMatch) {
-    _recordLoginFailure(normalizedIdentifier);
+    await _recordLoginFailure(normalizedIdentifier);
     throw new UnauthorizedError('Invalid email or password');
   }
 
   // Clear failed login attempts on success
-  loginAttemptsMap.delete(normalizedIdentifier);
+  await _clearLoginFailure(normalizedIdentifier);
+  if (!isEmail && canonicalPhone !== rawIdentifier) {
+    await _clearLoginFailure(rawIdentifier);
+  }
 
   const accessToken = generateAccessToken(user);
   const refreshToken = generateRefreshToken(user);
@@ -307,7 +458,7 @@ async function loginUser({ email, phoneNumber, identifier, password }) {
 }
 
 /**
- * Request Password Reset OTP
+ * Request Password Reset OTP (with SHA-256 OTP hashing)
  */
 async function requestPasswordReset(identifierOrPayload) {
   let rawIdentifier = '';
@@ -329,27 +480,26 @@ async function requestPasswordReset(identifierOrPayload) {
 
   const isEmail = rawIdentifier.includes('@');
   const normalizedEmail = isEmail ? rawIdentifier.toLowerCase() : null;
-  const normalizedPhone = !isEmail ? rawIdentifier : null;
+  const canonicalPhone = !isEmail ? (normalizeEthiopianPhone(rawIdentifier) || rawIdentifier) : null;
 
   let user = null;
   if (isEmail) {
     user = await prisma.user.findFirst({
       where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
     });
-  } else if (normalizedPhone) {
+  } else if (canonicalPhone) {
+    const variants = getPhoneLookupVariants(canonicalPhone);
     user = await prisma.user.findFirst({
       where: {
-        OR: [
-          { phoneNumber: normalizedPhone },
-          { phoneNumber: normalizedPhone.startsWith('+251') ? '0' + normalizedPhone.slice(4) : normalizedPhone },
-          { phoneNumber: normalizedPhone.startsWith('0') ? '+251' + normalizedPhone.slice(1) : normalizedPhone },
-        ],
+        OR: variants.map((p) => ({ phoneNumber: p })),
       },
     });
   }
 
   // Generate a secure 6-digit numeric OTP code with 5-minute validation
-  const resetToken = crypto.randomInt(100000, 999999).toString();
+  const rawOtp = crypto.randomInt(100000, 999999).toString();
+  // SHA-256 hash stored in DB for defense-in-depth against db snapshot leaks
+  const tokenHash = crypto.createHash('sha256').update(rawOtp).digest('hex');
   const AUTH_VALIDATION_TTL_MS = 5 * 60 * 1000;
   const resetExpires = new Date(Date.now() + AUTH_VALIDATION_TTL_MS);
 
@@ -357,7 +507,7 @@ async function requestPasswordReset(identifierOrPayload) {
     await prisma.user.update({
       where: { id: user.id },
       data: {
-        resetPasswordToken: resetToken,
+        resetPasswordToken: tokenHash,
         resetPasswordExpires: resetExpires,
       },
     });
@@ -368,8 +518,8 @@ async function requestPasswordReset(identifierOrPayload) {
     if (user.email && !user.email.includes('@phone.')) {
       setImmediate(async () => {
         try {
-          const resetLink = `${env.APP_URL}/reset-password?token=${resetToken}&email=${encodeURIComponent(user.email)}`;
-          await sendPasswordResetEmail(user.email, resetToken, resetLink);
+          const resetLink = `${env.APP_URL}/reset-password?token=${rawOtp}&email=${encodeURIComponent(user.email)}`;
+          await sendPasswordResetEmail(user.email, rawOtp, resetLink);
           logger.info(`[Auth Service] Password reset email dispatched to ${user.email}`);
         } catch (emailErr) {
           logger.warn(`[Auth Service] Password reset email notice: ${emailErr.message}`);
@@ -377,14 +527,15 @@ async function requestPasswordReset(identifierOrPayload) {
       });
     }
 
-    // Dispatch via SMS if phone number exists
+    // Dispatch via SMS if phone number exists (using normalized recipient)
     if (user.phoneNumber) {
       setImmediate(async () => {
         try {
-          const { sendSms } = require('../../delivery/sms/africasTalkingClient');
-          const smsText = `EthioFarm: Your 6-digit password reset OTP is ${resetToken}. Valid for 5 minutes. Do not share this code with anyone.`;
-          await sendSms([user.phoneNumber], smsText);
-          logger.info(`[Auth Service] Password reset SMS dispatched to ${user.phoneNumber}`);
+          const { sendSms } = require('../../delivery/sms/smsEthiopiaClient');
+          const destinationPhone = normalizeEthiopianPhone(user.phoneNumber) || user.phoneNumber;
+          const smsText = `EthioFarm: Your 6-digit password reset OTP is ${rawOtp}. Valid for 5 minutes. Do not share this code with anyone.`;
+          await sendSms([destinationPhone], smsText);
+          logger.info(`[Auth Service] Password reset SMS dispatched to ${destinationPhone}`);
         } catch (smsErr) {
           logger.warn(`[Auth Service] Password reset SMS notice: ${smsErr.message}`);
         }
@@ -395,13 +546,17 @@ async function requestPasswordReset(identifierOrPayload) {
   return {
     message: 'If an account matches that identifier, a password reset code has been sent.',
     expiresInSeconds: 300,
+    ...(process.env.NODE_ENV === 'test' && {
+      token: rawOtp,
+      resetLink: `${env.APP_URL}/reset-password?token=${rawOtp}`,
+    }),
   };
 }
 
 const forgotPassword = requestPasswordReset;
 
 /**
- * Reset password with OTP code
+ * Reset password with OTP code (supports SHA-256 hashed token with backward compatibility)
  */
 async function resetPassword({ token, resetToken, code, resetCode, newPassword, password } = {}) {
   const resolvedToken = (token || resetToken || code || resetCode || '').toString().trim();
@@ -417,24 +572,30 @@ async function resetPassword({ token, resetToken, code, resetCode, newPassword, 
     throw new BadRequestError('New password must contain at least one number');
   }
 
-  const attempts = resetAttemptsMap.get(resolvedToken) || 0;
-  if (attempts >= MAX_RESET_ATTEMPTS) {
-    throw new BadRequestError('Too many failed reset attempts. Please request a new code.');
-  }
+  const tokenHash = crypto.createHash('sha256').update(resolvedToken).digest('hex');
 
+  await _checkResetAttempts(resolvedToken);
+  await _checkResetAttempts(tokenHash);
+
+  // Search by either SHA-256 hash or plain token (for seamless backward-compatibility)
   const user = await prisma.user.findFirst({
     where: {
-      resetPasswordToken: resolvedToken,
+      OR: [
+        { resetPasswordToken: tokenHash },
+        { resetPasswordToken: resolvedToken },
+      ],
       resetPasswordExpires: { gt: new Date() },
     },
   });
 
   if (!user) {
-    resetAttemptsMap.set(resolvedToken, attempts + 1);
+    await _recordResetFailure(resolvedToken);
+    await _recordResetFailure(tokenHash);
     throw new BadRequestError('Password reset code is invalid or has expired');
   }
 
-  resetAttemptsMap.delete(resolvedToken);
+  await _clearResetAttempts(resolvedToken);
+  await _clearResetAttempts(tokenHash);
 
   const newHash = await bcrypt.hash(resolvedPassword, 12);
   await prisma.user.update({
@@ -448,6 +609,144 @@ async function resetPassword({ token, resetToken, code, resetCode, newPassword, 
 
   return {
     message: 'Password has been reset successfully. You can now log in with your new password.',
+  };
+}
+
+/**
+ * Request direct passwordless login OTP via SMS
+ */
+async function requestLoginOtp(phoneNumberOrPayload) {
+  let rawPhone = '';
+  if (typeof phoneNumberOrPayload === 'string') {
+    rawPhone = phoneNumberOrPayload.trim();
+  } else if (phoneNumberOrPayload && typeof phoneNumberOrPayload === 'object') {
+    rawPhone = (phoneNumberOrPayload.phoneNumber || phoneNumberOrPayload.phone || phoneNumberOrPayload.identifier || '').toString().trim();
+  }
+
+  if (!rawPhone) {
+    throw new BadRequestError('Phone number is required');
+  }
+
+  const canonicalPhone = normalizeEthiopianPhone(rawPhone) || rawPhone;
+  const variants = getPhoneLookupVariants(canonicalPhone);
+
+  await _checkLoginLockout(canonicalPhone);
+
+  let user = await prisma.user.findFirst({
+    where: {
+      OR: variants.map((p) => ({ phoneNumber: p })),
+    },
+  });
+
+  // Auto-onboard grassroots farmers if not yet registered
+  if (!user) {
+    const placeholderEmail = `farmer_${canonicalPhone.replace(/[^0-9]/g, '')}@phone.ethiofarm.et`;
+    user = await prisma.user.create({
+      data: {
+        phoneNumber: canonicalPhone,
+        fullName: `Farmer (${formatPhoneForDisplay(canonicalPhone)})`,
+        email: placeholderEmail,
+        role: 'FARMER',
+        preferredLang: 'am',
+      },
+    });
+    logger.info(`[Auth Service] Auto-onboarded new FARMER via Phone OTP: ${canonicalPhone}`);
+  }
+
+  const rawOtp = crypto.randomInt(100000, 999999).toString();
+  const tokenHash = crypto.createHash('sha256').update(rawOtp).digest('hex');
+  const AUTH_VALIDATION_TTL_MS = 5 * 60 * 1000;
+  const resetExpires = new Date(Date.now() + AUTH_VALIDATION_TTL_MS);
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      resetPasswordToken: tokenHash,
+      resetPasswordExpires: resetExpires,
+    },
+  });
+
+  // Dispatch SMS
+  setImmediate(async () => {
+    try {
+      const { sendSms } = require('../../delivery/sms/smsEthiopiaClient');
+      const smsText = `EthioFarm: Your login verification code is ${rawOtp}. Valid for 5 minutes. Do not share this code.`;
+      await sendSms([canonicalPhone], smsText);
+      logger.info(`[Auth Service] Login OTP SMS dispatched to ${canonicalPhone}`);
+    } catch (smsErr) {
+      logger.warn(`[Auth Service] Login OTP SMS notice: ${smsErr.message}`);
+    }
+  });
+
+  return {
+    message: 'Login code sent via SMS to your phone.',
+    phoneNumber: formatPhoneForDisplay(canonicalPhone),
+    expiresInSeconds: 300,
+    ...(process.env.NODE_ENV === 'test' && { code: rawOtp }),
+  };
+}
+
+/**
+ * Verify direct passwordless login OTP and return JWT session
+ */
+async function verifyLoginOtp({ phoneNumber, phone, code, otp } = {}) {
+  const rawPhone = (phoneNumber || phone || '').toString().trim();
+  const rawCode = (code || otp || '').toString().trim();
+
+  if (!rawPhone || !rawCode) {
+    throw new BadRequestError('Phone number and 6-digit verification code are required');
+  }
+
+  const canonicalPhone = normalizeEthiopianPhone(rawPhone) || rawPhone;
+  const variants = getPhoneLookupVariants(canonicalPhone);
+  const codeHash = crypto.createHash('sha256').update(rawCode).digest('hex');
+
+  await _checkLoginLockout(canonicalPhone);
+  await _checkResetAttempts(`login_otp:${canonicalPhone}`);
+
+  const user = await prisma.user.findFirst({
+    where: {
+      OR: variants.map((p) => ({ phoneNumber: p })),
+      AND: [
+        {
+          OR: [
+            { resetPasswordToken: codeHash },
+            { resetPasswordToken: rawCode },
+          ],
+        },
+        {
+          resetPasswordExpires: { gt: new Date() },
+        },
+      ],
+    },
+  });
+
+  if (!user) {
+    await _recordLoginFailure(canonicalPhone);
+    await _recordResetFailure(`login_otp:${canonicalPhone}`);
+    throw new UnauthorizedError('Invalid or expired verification code');
+  }
+
+  // Clear counters and consumed OTP token
+  await _clearLoginFailure(canonicalPhone);
+  await _clearResetAttempts(`login_otp:${canonicalPhone}`);
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      resetPasswordToken: null,
+      resetPasswordExpires: null,
+    },
+  });
+
+  const accessToken = generateAccessToken(user);
+  const refreshToken = generateRefreshToken(user);
+
+  return {
+    user: sanitizeUser(user),
+    token: accessToken,
+    accessToken,
+    refreshToken,
   };
 }
 
@@ -713,6 +1012,169 @@ async function updateUserProfile(userId, data = {}) {
   return sanitizeUser(user);
 }
 
+/**
+ * Verify Phone Ownership OTP for user sign-up
+ */
+async function verifyPhoneOtp({ phoneNumber, phone, code, otp } = {}) {
+  const rawPhone = (phoneNumber || phone || '').toString().trim();
+  const rawCode = (code || otp || '').toString().trim();
+
+  if (!rawPhone || !rawCode) {
+    throw new BadRequestError('Phone number and 6-digit verification code are required');
+  }
+
+  const canonicalPhone = normalizeEthiopianPhone(rawPhone) || rawPhone;
+  const variants = getPhoneLookupVariants(canonicalPhone);
+  const codeHash = crypto.createHash('sha256').update(rawCode).digest('hex');
+
+  await _checkLoginLockout(canonicalPhone);
+  await _checkResetAttempts(`phone_verify:${canonicalPhone}`);
+
+  const user = await prisma.user.findFirst({
+    where: {
+      OR: variants.map((p) => ({ phoneNumber: p })),
+      AND: [
+        {
+          OR: [
+            { phoneVerificationToken: codeHash },
+            { phoneVerificationToken: rawCode },
+          ],
+        },
+        {
+          phoneVerificationExpires: { gt: new Date() },
+        },
+      ],
+    },
+  });
+
+  if (!user) {
+    await _recordResetFailure(`phone_verify:${canonicalPhone}`);
+    throw new BadRequestError('Invalid or expired phone verification code');
+  }
+
+  // Clear counters on successful verification
+  await _clearResetAttempts(`phone_verify:${canonicalPhone}`);
+
+  const updatedUser = await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      isPhoneVerified: true,
+      phoneVerificationToken: null,
+      phoneVerificationExpires: null,
+    },
+  });
+
+  const accessToken = generateAccessToken(updatedUser);
+  const refreshToken = generateRefreshToken(updatedUser);
+
+  return {
+    message: 'Phone number verified successfully.',
+    user: sanitizeUser(updatedUser),
+    token: accessToken,
+    accessToken,
+    refreshToken,
+  };
+}
+
+/**
+ * Resend Phone Verification OTP with 60-second cooldown
+ */
+async function resendPhoneOtp(phoneNumberOrPayload) {
+  let rawPhone = '';
+  if (typeof phoneNumberOrPayload === 'string') {
+    rawPhone = phoneNumberOrPayload.trim();
+  } else if (phoneNumberOrPayload && typeof phoneNumberOrPayload === 'object') {
+    rawPhone = (phoneNumberOrPayload.phoneNumber || phoneNumberOrPayload.phone || '').toString().trim();
+  }
+
+  if (!rawPhone) {
+    throw new BadRequestError('Phone number is required');
+  }
+
+  const canonicalPhone = normalizeEthiopianPhone(rawPhone) || rawPhone;
+  const variants = getPhoneLookupVariants(canonicalPhone);
+
+  // 1. Check 60-second cooldown (Redis distributed + in-memory)
+  const cooldownKey = `phone_cooldown:${canonicalPhone}`;
+  try {
+    if (redis && typeof redis.get === 'function') {
+      const remainingTtl = await redis.ttl(cooldownKey);
+      if (remainingTtl > 0) {
+        throw new BadRequestError(`Please wait ${remainingTtl} second(s) before requesting another code.`);
+      }
+    }
+  } catch (err) {
+    if (err instanceof BadRequestError) throw err;
+  }
+
+  const lastSent = phoneResendMap.get(canonicalPhone) || 0;
+  const elapsed = Date.now() - lastSent;
+  if (elapsed < PHONE_RESEND_COOLDOWN_MS) {
+    const remainingSec = Math.ceil((PHONE_RESEND_COOLDOWN_MS - elapsed) / 1000);
+    throw new BadRequestError(`Please wait ${remainingSec} second(s) before requesting another code.`);
+  }
+
+  const user = await prisma.user.findFirst({
+    where: {
+      OR: variants.map((p) => ({ phoneNumber: p })),
+    },
+  });
+
+  if (!user) {
+    return {
+      message: 'If an account with this phone number exists, a verification code has been sent.',
+      cooldownSeconds: 60,
+    };
+  }
+
+  if (user.isPhoneVerified) {
+    return {
+      message: 'This phone number is already verified.',
+      alreadyVerified: true,
+    };
+  }
+
+  const rawOtp = crypto.randomInt(100000, 999999).toString();
+  const tokenHash = crypto.createHash('sha256').update(rawOtp).digest('hex');
+  const expires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      phoneVerificationToken: tokenHash,
+      phoneVerificationExpires: expires,
+    },
+  });
+
+  // Set cooldown in memory and Redis
+  phoneResendMap.set(canonicalPhone, Date.now());
+  try {
+    if (redis && typeof redis.setex === 'function') {
+      await redis.setex(cooldownKey, 60, '1');
+    }
+  } catch (_e) {}
+
+  // Dispatch SMS
+  setImmediate(async () => {
+    try {
+      const { sendSms } = require('../../delivery/sms/smsEthiopiaClient');
+      const smsText = `EthioFarm: Your new registration verification code is ${rawOtp}. Valid for 10 minutes.`;
+      await sendSms([canonicalPhone], smsText);
+      logger.info(`[Auth Service] Resent phone verification SMS OTP to ${canonicalPhone}`);
+    } catch (smsErr) {
+      logger.warn(`[Auth Service] Resend phone verification SMS notice: ${smsErr.message}`);
+    }
+  });
+
+  return {
+    message: 'A new verification code has been sent via SMS.',
+    phoneNumber: formatPhoneForDisplay(canonicalPhone),
+    expiresInSeconds: 600,
+    cooldownSeconds: 60,
+    ...(process.env.NODE_ENV === 'test' && { code: rawOtp }),
+  };
+}
+
 module.exports = {
   registerUser,
   loginUser,
@@ -730,4 +1192,8 @@ module.exports = {
   updateUserProfile,
   updatePassword,
   isTokenBlacklisted,
+  requestLoginOtp,
+  verifyLoginOtp,
+  verifyPhoneOtp,
+  resendPhoneOtp,
 };

@@ -163,12 +163,142 @@ describe('Auth & Email Verification Suite', () => {
     expect(res.status).toBe(400);
     expect(res.body.error?.message || res.body.message).toMatch(/expired|invalid/i);
   });
+});
+
+describe('Enterprise Phone & OTP Hardening Suite', () => {
+  const { prisma } = require('../../src/config/db');
+  const crypto = require('crypto');
+  const timestamp = Date.now();
+  const testPhoneRaw = `0911${String(timestamp).slice(-6)}`;
+  const testPhoneCanonical = `+251911${String(timestamp).slice(-6)}`;
+  let registeredUserId = null;
 
   afterAll(async () => {
-    const { disconnectDB } = require('../../src/config/db');
-    const { disconnectRedis } = require('../../src/config/redis');
-    await disconnectDB();
-    await disconnectRedis();
+    await prisma.user.deleteMany({
+      where: {
+        OR: [
+          { phoneNumber: testPhoneCanonical },
+          { phoneNumber: testPhoneRaw },
+        ],
+      },
+    });
+  });
+
+  it('1. Phone Registration Normalization - should store phone in canonical E.164 (+251...) format', async () => {
+    const res = await request(app)
+      .post('/api/v1/auth/register')
+      .send({
+        phoneNumber: testPhoneRaw,
+        fullName: 'Ethiopian Enterprise Farmer',
+        password: 'Password123!',
+        role: 'FARMER',
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.user.phoneNumber).toBe(testPhoneCanonical);
+    registeredUserId = res.body.data.user.id;
+
+    // Direct DB check
+    const userInDb = await prisma.user.findUnique({ where: { id: registeredUserId } });
+    expect(userInDb.phoneNumber).toBe(testPhoneCanonical);
+  });
+
+  it('2. Prevent Duplicate Accounts - should reject equivalent format (+251...) with 409 Conflict', async () => {
+    const res = await request(app)
+      .post('/api/v1/auth/register')
+      .send({
+        phoneNumber: testPhoneCanonical,
+        fullName: 'Duplicate Farmer',
+        password: 'Password123!',
+      });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error?.message || res.body.message).toMatch(/already exists/i);
+  });
+
+  it('3. Multi-Format Login - should allow login using local 09... format even when stored as +251...', async () => {
+    const res = await request(app)
+      .post('/api/v1/auth/login')
+      .send({
+        identifier: testPhoneRaw,
+        password: 'Password123!',
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.user.id).toBe(registeredUserId);
+    expect(res.body.data.accessToken).toBeDefined();
+  });
+
+  it('4. SHA-256 OTP Hashing - Password reset OTP should be hashed in DB, never plain text', async () => {
+    const res = await request(app)
+      .post('/api/v1/auth/forgot-password')
+      .send({ phoneNumber: testPhoneRaw });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.token).toBeDefined();
+
+    const plainOtp = res.body.data.token;
+    expect(plainOtp).toMatch(/^\d{6}$/);
+
+    // Direct DB check: verify the DB contains the SHA-256 hash, NOT the plain 6-digit OTP
+    const userInDb = await prisma.user.findUnique({ where: { id: registeredUserId } });
+    const expectedHash = crypto.createHash('sha256').update(plainOtp).digest('hex');
+
+    expect(userInDb.resetPasswordToken).toBe(expectedHash);
+    expect(userInDb.resetPasswordToken).not.toBe(plainOtp);
+
+    // Reset password using the plain OTP
+    const resetRes = await request(app)
+      .post('/api/v1/auth/reset-password')
+      .send({
+        token: plainOtp,
+        newPassword: 'NewPassword999!',
+      });
+
+    expect(resetRes.status).toBe(200);
+    expect(resetRes.body.success).toBe(true);
+
+    // Verify OTP token is purged
+    const updatedUser = await prisma.user.findUnique({ where: { id: registeredUserId } });
+    expect(updatedUser.resetPasswordToken).toBeNull();
+    expect(updatedUser.resetPasswordExpires).toBeNull();
+  });
+
+  it('5. Passwordless Phone OTP Login - should request login OTP and authenticate via SMS code', async () => {
+    const otpPhone = `0977${String(Date.now()).slice(-6)}`;
+    const expectedCanonical = `+251977${otpPhone.slice(4)}`;
+
+    // Request Login OTP
+    const reqRes = await request(app)
+      .post('/api/v1/auth/request-login-otp')
+      .send({ phoneNumber: otpPhone });
+
+    expect(reqRes.status).toBe(200);
+    expect(reqRes.body.success).toBe(true);
+    expect(reqRes.body.data.code).toBeDefined();
+
+    const loginCode = reqRes.body.data.code;
+    expect(loginCode).toMatch(/^\d{6}$/);
+
+    // Verify Login OTP
+    const verifyRes = await request(app)
+      .post('/api/v1/auth/verify-login-otp')
+      .send({
+        phoneNumber: otpPhone,
+        code: loginCode,
+      });
+
+    expect(verifyRes.status).toBe(200);
+    expect(verifyRes.body.success).toBe(true);
+    expect(verifyRes.body.data.accessToken).toBeDefined();
+    expect(verifyRes.body.data.refreshToken).toBeDefined();
+    expect(verifyRes.body.data.user.role).toBe('FARMER');
+
+    // Clean up created user
+    await prisma.user.deleteMany({ where: { phoneNumber: expectedCanonical } });
   });
 });
 

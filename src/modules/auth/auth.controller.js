@@ -64,6 +64,18 @@ async function updateProfile(req, res, next) {
   }
 }
 
+// Update device FCM token (authenticated)
+async function updateDeviceToken(req, res, next) {
+  try {
+    const { deviceToken, token } = req.body || {};
+    const resolvedToken = deviceToken || token;
+    const updated = await authService.updateUserProfile(req.user?.id, { deviceToken: resolvedToken });
+    res.status(200).json({ success: true, data: updated, message: 'Device token updated' });
+  } catch (error) {
+    next(error);
+  }
+}
+
 // Update password (authenticated)
 async function updatePassword(req, res, next) {
   try {
@@ -96,13 +108,53 @@ async function resetPassword(req, res, next) {
   }
 }
 
+// Request login OTP via SMS (Passwordless Login)
+async function requestLoginOtp(req, res, next) {
+  try {
+    const result = await authService.requestLoginOtp(req.body);
+    res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Verify login OTP and authenticate
+async function verifyLoginOtp(req, res, next) {
+  try {
+    const result = await authService.verifyLoginOtp(req.body);
+    res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Verify sign-up phone ownership OTP
+async function verifyPhoneOtp(req, res, next) {
+  try {
+    const result = await authService.verifyPhoneOtp(req.body);
+    res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Resend sign-up phone ownership OTP
+async function resendPhoneOtp(req, res, next) {
+  try {
+    const result = await authService.resendPhoneOtp(req.body);
+    res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+}
+
 function renderForgotPasswordHtml() {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Forgot Password - EthioFarm Early Warning</title>
+  <title>Forgot Password - EthioFarm Smart Farming</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -209,7 +261,7 @@ function renderForgotPasswordHtml() {
     <form id="forgotForm" onsubmit="event.preventDefault(); submitForgot();">
       <div class="form-group">
         <label for="email">Email Address</label>
-        <input type="email" id="email" placeholder="farmer@agrietech.et" required autocomplete="email">
+        <input type="email" id="email" placeholder="farmer@ethiofarm.et" required autocomplete="email">
       </div>
       <button type="submit" id="submitBtn" class="btn">Send Reset Code ➔</button>
     </form>
@@ -268,7 +320,7 @@ function renderResetPasswordHtml({ token = '', email: _email = '', code = '' } =
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Reset Password - EthioFarm Early Warning</title>
+  <title>Reset Password - EthioFarm Smart Farming</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -707,13 +759,13 @@ function renderVerificationHtml({ success, title, message }) {
 </head>
 <body>
   <div class="card">
-    <div class="badge">EthioFarm Early Warning</div>
+    <div class="badge">EthioFarm Smart Farming</div>
     ${icon}
     <h1>${title}</h1>
     <p>${message}</p>
     <a href="${process.env.FRONTEND_URL || process.env.APP_URL || '/'}" class="btn">${success ? 'Open EthioFarm Platform' : 'Return to Home'}</a>
     <div class="footer">
-      EthioFarm Multi-Hazard Platform for Ethiopia &bull; Addis Ababa
+      EthioFarm Smart Farming Platform for Ethiopia &bull; Addis Ababa
     </div>
   </div>
 </body>
@@ -780,6 +832,7 @@ module.exports = {
   logout,
   getProfile,
   updateProfile,
+  updateDeviceToken,
   updatePassword,
   forgotPassword,
   resetPassword,
@@ -787,4 +840,8 @@ module.exports = {
   renderForgotPasswordPage,
   verifyEmail,
   resendVerification,
+  requestLoginOtp,
+  verifyLoginOtp,
+  verifyPhoneOtp,
+  resendPhoneOtp,
 };

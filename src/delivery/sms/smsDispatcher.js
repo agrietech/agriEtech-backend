@@ -1,25 +1,25 @@
-const { sendSms } = require('./africasTalkingClient');
+const { sendSms } = require('./smsEthiopiaClient');
 
 // Multi-language alert templates (Amharic, Afaan Oromoo, English)
 const TEMPLATES = {
   DROUGHT: {
     EN: (woreda, severity) =>
-      `[AgriEtech Alert] Drought Warning for ${woreda}: Severity is ${severity}.`,
-    AM: (woreda, _sev) => `[አግሪኢቴክ ማስጠንቀቂያ] በ${woreda} ወረዳ የድርቅ ስጋት ተከስቷል።`,
+      `[EthioFarm Alert] Drought Warning for ${woreda}: Severity is ${severity}.`,
+    AM: (woreda, _sev) => `[ኢትዮፋርም ማስጠንቀቂያ] በ${woreda} ወረዳ የድርቅ ስጋት ተከስቷል።`,
     OM: (woreda, _sev) =>
-      `[AgriEtech Akeekkachiisa] Aanaa ${woreda} keessatti balaan ongeen mul'ateera.`,
+      `[EthioFarm Akeekkachiisa] Aanaa ${woreda} keessatti balaan ongeen mul'ateera.`,
   },
   FLOOD: {
     EN: (woreda, severity) =>
-      `[AgriEtech Alert] Flood Warning for ${woreda}: Severity is ${severity}.`,
-    AM: (woreda, _sev) => `[አግሪኢቴክ ማስጠንቀቂያ] በ${woreda} ወረዳ የጎርፍ አደጋ ስጋት አለ።`,
-    OM: (woreda, _sev) => `[AgriEtech Akeekkachiisa] Aanaa ${woreda} keessatti balaan lolaa jira.`,
+      `[EthioFarm Alert] Flood Warning for ${woreda}: Severity is ${severity}.`,
+    AM: (woreda, _sev) => `[ኢትዮፋርም ማስጠንቀቂያ] በ${woreda} ወረዳ የጎርፍ አደጋ ስጋት አለ።`,
+    OM: (woreda, _sev) => `[EthioFarm Akeekkachiisa] Aanaa ${woreda} keessatti balaan lolaa jira.`,
   },
   LOCUST: {
-    EN: (woreda, _sev) => `[AgriEtech Alert] Desert Locust Swarm sighted near ${woreda}.`,
-    AM: (woreda, _sev) => `[አግሪኢቴክ ማስጠንቀቂያ] በ${woreda} የአንበጣ መንጋ ተስተውሏል።`,
+    EN: (woreda, _sev) => `[EthioFarm Alert] Desert Locust Swarm sighted near ${woreda}.`,
+    AM: (woreda, _sev) => `[ኢትዮፋርም ማስጠንቀቂያ] በ${woreda} የአንበጣ መንጋ ተስተውሏል።`,
     OM: (woreda, _sev) =>
-      `[AgriEtech Akeekkachiisa] Hawannisa gammoojjii naannoo ${woreda}tti mul'ateera.`,
+      `[EthioFarm Akeekkachiisa] Hawannisa gammoojjii naannoo ${woreda}tti mul'ateera.`,
   },
 };
 

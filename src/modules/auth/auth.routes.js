@@ -10,6 +10,8 @@ const roleRequestRoutes = require('../roleRequest/roleRequest.routes');
 // Public authentication routes
 router.post('/register', authLimiter, controller.register);
 router.post('/login', authLimiter, userAuthLimiter, controller.login);
+router.post('/request-login-otp', authLimiter, controller.requestLoginOtp);
+router.post('/verify-login-otp', authLimiter, userAuthLimiter, controller.verifyLoginOtp);
 router.post('/refresh-token', authLimiter, controller.refreshToken);
 router.post('/forgot-password', authLimiter, controller.forgotPassword);
 router.get('/forgot-password', controller.renderForgotPasswordPage);
@@ -18,12 +20,15 @@ router.get('/reset-password', controller.renderResetPasswordPage);
 router.post('/verify-email', controller.verifyEmail);
 router.get('/verify-email', controller.verifyEmail);
 router.post('/resend-verification', authLimiter, controller.resendVerification);
+router.post('/verify-phone-otp', authLimiter, userAuthLimiter, controller.verifyPhoneOtp);
+router.post('/resend-phone-otp', authLimiter, controller.resendPhoneOtp);
 
 // Protected routes (require valid JWT bearer token)
 router.post('/logout', authenticate, controller.logout);
 router.get('/me', authenticate, controller.getProfile);
 router.put('/me', authenticate, controller.updateProfile);
 router.patch('/me', authenticate, controller.updateProfile);
+router.post('/device-token', authenticate, controller.updateDeviceToken);
 router.patch('/update-password', authenticate, controller.updatePassword);
 
 // Role upgrade application routes
