@@ -243,7 +243,7 @@ async function registerUser({
   const resolvedRole = (role || 'FARMER').toString().trim().toUpperCase();
 
   if (!resolvedEmail && !resolvedPhone) {
-    throw new BadRequestError('Either an email address or phone number is required');
+    throw new BadRequestError('Phone number or email address is required');
   }
   if (resolvedEmail && !isValidEmail(resolvedEmail)) {
     throw new BadRequestError('Invalid email format');
@@ -402,10 +402,10 @@ async function registerUser({
 /**
  * Log in an existing user
  */
-async function loginUser({ email, phoneNumber, identifier, password }) {
-  const rawIdentifier = (identifier || email || phoneNumber || '').toString().trim();
+async function loginUser({ email, phoneNumber, phone, identifier, password }) {
+  const rawIdentifier = (phoneNumber || phone || identifier || email || '').toString().trim();
   if (!rawIdentifier) {
-    throw new BadRequestError('Email address or phone number is required');
+    throw new BadRequestError('Phone number or email address is required');
   }
   if (!password) {
     throw new BadRequestError('Password is required');
@@ -444,13 +444,13 @@ async function loginUser({ email, phoneNumber, identifier, password }) {
 
   if (!user) {
     await _recordLoginFailure(normalizedIdentifier);
-    throw new UnauthorizedError('Invalid email or password');
+    throw new UnauthorizedError(isEmail ? 'Invalid email or password' : 'Invalid phone number or password');
   }
 
   const isMatch = await bcrypt.compare(password, user.passwordHash || '').catch(() => false);
   if (!isMatch) {
     await _recordLoginFailure(normalizedIdentifier);
-    throw new UnauthorizedError('Invalid email or password');
+    throw new UnauthorizedError(isEmail ? 'Invalid email or password' : 'Invalid phone number or password');
   }
 
   // Clear failed login attempts on success
@@ -479,16 +479,16 @@ async function requestPasswordReset(identifierOrPayload) {
     rawIdentifier = identifierOrPayload.trim();
   } else if (identifierOrPayload && typeof identifierOrPayload === 'object') {
     rawIdentifier = (
-      identifierOrPayload.email ||
-      identifierOrPayload.identifier ||
       identifierOrPayload.phoneNumber ||
       identifierOrPayload.phone ||
+      identifierOrPayload.identifier ||
+      identifierOrPayload.email ||
       ''
     ).toString().trim();
   }
 
   if (!rawIdentifier) {
-    throw new BadRequestError('Email address or phone number is required');
+    throw new BadRequestError('Phone number or email is required');
   }
 
   const isEmail = rawIdentifier.includes('@');
