@@ -50,6 +50,10 @@ app.use((_req, res, next) => {
   next();
 });
 
+const supabaseHost = env.SUPABASE_URL
+  ? new URL(env.SUPABASE_URL).origin
+  : 'https://uhktbbeqqdsfkooyrgmq.supabase.co';
+
 // Robust Content Security Policy (CSP) & HTTP security headers
 app.use(
   helmet({
@@ -72,7 +76,7 @@ app.use(
           "'self'",
           'data:',
           'blob:',
-          'https://uhktbbeqqdsfkooyrgmq.supabase.co',
+          supabaseHost,
           'https://*.tile.openstreetmap.org',
           'https://unpkg.com',
         ],
@@ -80,11 +84,11 @@ app.use(
           "'self'",
           'data:',
           'blob:',
-          'https://uhktbbeqqdsfkooyrgmq.supabase.co',
+          supabaseHost,
         ],
         connectSrc: [
           "'self'",
-          'https://uhktbbeqqdsfkooyrgmq.supabase.co',
+          supabaseHost,
           'https://openrouter.ai',
           'https://api.plant.id',
         ],
@@ -100,8 +104,21 @@ app.use(requestTimeout(30)); // 30 second timeout for all requests
 
 
 // Configurable CORS whitelist
+const configuredOrigins = (env.CORS_ORIGIN || '*')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+const isWildcardOrigin = configuredOrigins.includes('*');
+
 const corsOptions = {
-  origin: env.CORS_ORIGIN === '*' ? '*' : env.CORS_ORIGIN,
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, native clients)
+    if (!origin) return callback(null, true);
+    if (isWildcardOrigin) return callback(null, true);
+    if (configuredOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error(`Origin ${origin} not allowed by CORS`));
+  },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Correlation-Id', 'x-api-key', 'x-sensor-api-key'],
   credentials: true,
@@ -138,7 +155,7 @@ app.get('/health', (_req, res) => {
 
   res.status(dbUp ? 200 : 503).json({
     status: overallStatus,
-    service: 'EthioFarm Multi-Hazard Early Warning Backend',
+    service: 'EthioFarm Smart Farming Backend',
     timestamp: new Date().toISOString(),
     uptimeSeconds: Math.floor(process.uptime()),
     system: {
@@ -174,7 +191,7 @@ app.get('/', (_req, res) => {
   res.status(200).json({
     success: true,
     data: {
-      project: 'EthioFarm Multi-Hazard Early Warning Platform',
+      project: 'EthioFarm Smart Farming Platform',
       version: '1.0.0',
       status: 'ONLINE',
       docs: '/api/v1',
@@ -188,7 +205,7 @@ app.get('/api/v1', (_req, res) => {
   res.status(200).json({
     success: true,
     data: {
-      name: 'EthioFarm Multi-Hazard Early Warning Platform API',
+      name: 'EthioFarm Smart Farming Platform API',
       version: '1.0.0',
       status: 'ONLINE',
       baseUrl: '/api/v1',
@@ -202,8 +219,8 @@ app.get('/api/v1', (_req, res) => {
         farms: { path: '/api/v1/farms', description: 'Farm plot registration, spatial boundaries, crop metadata' },
         sensors: { path: '/api/v1/sensors', description: 'IoT sensor registration, telemetry readings, telemetry history' },
         satelliteObservations: { path: '/api/v1/satellite-observations', description: 'CHIRPS rainfall, NASA POWER, NDVI, GloFAS river discharge' },
-        riskAssessments: { path: '/api/v1/risk-assessments', description: 'Multi-hazard SPI drought, flood, locust, vegetation risk calculation' },
-        alerts: { path: '/api/v1/alerts', description: 'Early warning alert generation, advisory dispatch, push notifications' },
+        riskAssessments: { path: '/api/v1/risk-assessments', description: 'Integrated SPI drought, flood, locust, vegetation risk calculation' },
+        alerts: { path: '/api/v1/alerts', description: 'Smart alert generation, advisory dispatch, push notifications' },
         diseaseDiagnosis: { path: '/api/v1/disease-diagnosis', description: 'Plant.id botanical identification + Gemini 2.5 Flash multimodal vision' },
         analytics: { path: '/api/v1/analytics', description: 'Executive dashboard analytics, regional breakdown, temporal trends' },
         ai: { path: '/api/v1/ai', description: 'Bilingual AI voice assistant, farmer Q&A, text-to-speech' },
@@ -212,7 +229,7 @@ app.get('/api/v1', (_req, res) => {
         ussd: { path: '/api/v1/delivery/ussd', description: 'Interactive USSD menu handler (*804#)' },
         admin: { path: '/api/v1/admin', description: 'System administration, user roles, emergency broadcasts, audit logs, role request approvals' },
       },
-      documentation: 'file:///c:/Users/a/Desktop/agriEtech-backend/docs/API_SPECIFICATION.md',
+      documentation: '/docs/API_SPECIFICATION.md',
     },
   });
 });

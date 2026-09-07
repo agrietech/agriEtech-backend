@@ -104,7 +104,7 @@ function authorizeWoredaScope(paramName = 'woredaId') {
     }
 
     const { role, woredaId, zoneId, regionId } = req.user;
-    if (role === 'ADMIN' || role === 'RESEARCHER') {
+    if (['ADMIN', 'RESEARCHER', 'REGIONAL_OFFICER', 'ZONAL_OFFICER'].includes(role)) {
       return next();
     }
 
@@ -197,7 +197,7 @@ function authorizeZoneScope(paramName = 'zoneId') {
     }
 
     const { role, zoneId, regionId } = req.user;
-    if (role === 'ADMIN' || role === 'RESEARCHER') {
+    if (['ADMIN', 'RESEARCHER', 'REGIONAL_OFFICER'].includes(role)) {
       return next();
     }
 

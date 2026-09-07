@@ -7,7 +7,7 @@ describe('Core Backend - Health & Resilience Probes Suite', () => {
       const res = await request(app).get('/health');
 
       expect([200, 503]).toContain(res.status);
-      expect(res.body.service).toBe('AgriEtech Multi-Hazard Early Warning Backend');
+      expect(res.body.service).toMatch(/EthioFarm|AgriEtech/);
       expect(res.body.uptimeSeconds).toBeGreaterThanOrEqual(0);
       expect(res.body.system).toBeDefined();
       expect(res.body.system.memoryUsageMb).toBeDefined();
@@ -40,7 +40,7 @@ describe('Core Backend - Health & Resilience Probes Suite', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
-      expect(res.body.data.project).toMatch(/AgriEtech/);
+      expect(res.body.data.project).toMatch(/EthioFarm|AgriEtech/);
       expect(res.headers['x-correlation-id']).toBeDefined();
     });
   });

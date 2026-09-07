@@ -1,5 +1,5 @@
 /**
- * Custom Application Error Classes for AgriEtech Platform
+ * Custom Application Error Classes for EthioFarm Platform
  * Enables uniform error propagation, HTTP status code mapping, and observability.
  */
 

@@ -18,7 +18,7 @@ const PORT = env.PORT || 5000;
 
 // Start HTTP server
 server.listen(PORT, () => {
-  logger.info(`[AgriEtech] Server running on port ${PORT} [${env.NODE_ENV}]`);
+  logger.info(`[EthioFarm] Server running on port ${PORT} [${env.NODE_ENV}]`);
 });
 
 // Initialize background services
@@ -39,11 +39,11 @@ let isShuttingDown = false;
 async function gracefulShutdown(signal) {
   if (isShuttingDown) return;
   isShuttingDown = true;
-  logger.info(`[AgriEtech] Received ${signal}. Initiating graceful shutdown...`);
+  logger.info(`[EthioFarm] Received ${signal}. Initiating graceful shutdown...`);
 
   // Force shutdown after 15 seconds if drain hangs
   const forceTimeout = setTimeout(() => {
-    logger.error('[AgriEtech] Forcefully terminating process after shutdown timeout');
+    logger.error('[EthioFarm] Forcefully terminating process after shutdown timeout');
     process.exit(1);
   }, 15000);
   forceTimeout.unref();
@@ -56,26 +56,26 @@ async function gracefulShutdown(signal) {
         resolve();
       });
     });
-    logger.info('[AgriEtech] HTTP server closed');
+    logger.info('[EthioFarm] HTTP server closed');
 
     // 2. Close BullMQ queues & workers
     await closeQueue();
-    logger.info('[AgriEtech] Ingestion queues closed');
+    logger.info('[EthioFarm] Ingestion queues closed');
 
     // 3. Disconnect Redis
     if (redis && redis.status === 'ready') {
       await redis.quit().catch(() => {});
-      logger.info('[AgriEtech] Redis disconnected');
+      logger.info('[EthioFarm] Redis disconnected');
     }
 
     // 4. Disconnect Prisma DB
     await disconnectDB();
-    logger.info('[AgriEtech] Database disconnected');
+    logger.info('[EthioFarm] Database disconnected');
 
-    logger.info('[AgriEtech] Graceful shutdown completed cleanly');
+    logger.info('[EthioFarm] Graceful shutdown completed cleanly');
     process.exit(0);
   } catch (error) {
-    logger.error(`[AgriEtech] Error during graceful shutdown: ${error.message}`);
+    logger.error(`[EthioFarm] Error during graceful shutdown: ${error.message}`);
     process.exit(1);
   }
 }

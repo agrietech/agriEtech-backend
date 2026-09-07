@@ -20,6 +20,7 @@
         "varsIgnorePattern": "^_"
       }
     ],
+    "no-empty": ["error", { "allowEmptyCatch": true }],
     "no-console": "off"
   }
 }

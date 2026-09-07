@@ -2,7 +2,7 @@ require('dotenv').config();
 const { prisma } = require('../config/db');
 
 async function inspectAndClean() {
-  console.log('=== AGRIETECH DATABASE SANITIZATION & CLEANUP ===');
+  console.log('=== ETHIOFARM DATABASE SANITIZATION & CLEANUP ===');
   
   // 1. Inspect existing users
   const allUsers = await prisma.user.findMany({ select: { id: true, email: true, role: true, fullName: true } });
@@ -20,7 +20,7 @@ async function inspectAndClean() {
     u.email.startsWith('render_test_') ||
     u.email.startsWith('camera_farmer_') ||
     u.email.startsWith('form_user_') ||
-    (u.email.includes('test') && u.role !== 'ADMIN' && !u.email.includes('admin@agrietech.et'))
+    (u.email.includes('test') && u.role !== 'ADMIN' && !u.email.includes('admin@ethiofarm.et'))
   );
 
   const testUserIds = testUsers.map(u => u.id);
@@ -83,7 +83,7 @@ async function inspectAndClean() {
   }
 
   // 8. Verify / Ensure Default Production Admin exists
-  const adminEmail = 'admin@agrietech.et';
+  const adminEmail = 'admin@ethiofarm.et';
   let admin = await prisma.user.findUnique({ where: { email: adminEmail } });
   if (!admin) {
     const bcrypt = require('bcryptjs');
@@ -91,7 +91,7 @@ async function inspectAndClean() {
     admin = await prisma.user.create({
       data: {
         email: adminEmail,
-        fullName: 'AgriEtech System Administrator',
+        fullName: 'EthioFarm System Administrator',
         passwordHash: hashedPassword,
         role: 'ADMIN',
         isEmailVerified: true,

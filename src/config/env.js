@@ -33,6 +33,11 @@ const env = {
   ADMIN_API_KEYS: process.env.ADMIN_API_KEYS || '',
   SENSOR_API_KEYS: process.env.SENSOR_API_KEYS || '',
   IOT_API_KEYS: process.env.IOT_API_KEYS || '',
+  SMS_PROVIDER: process.env.SMS_PROVIDER || 'smsethiopia',
+  SMS_ETHIOPIA_API_KEY: process.env.SMS_ETHIOPIA_API_KEY || '6FWG35FDLC1FAC42U0MH04R3O2J5W9WC05G9UYQL',
+  SMS_ETHIOPIA_BASE_URL: process.env.SMS_ETHIOPIA_BASE_URL || 'https://smsethiopia.com/api',
+  SMS_ETHIOPIA_SENDER_ID: process.env.SMS_ETHIOPIA_SENDER_ID || 'EthioFarm',
+  USSD_SHORT_CODE: process.env.USSD_SHORT_CODE || '*804#',
   AFRICAS_TALKING_API_KEY: process.env.AFRICAS_TALKING_API_KEY,
   AFRICAS_TALKING_USERNAME: process.env.AFRICAS_TALKING_USERNAME || 'sandbox',
   AFRICAS_TALKING_SENDER_ID: process.env.AFRICAS_TALKING_SENDER_ID || 'EthioFarm',
@@ -44,9 +49,22 @@ const env = {
   EARTHDATA_BEARER_TOKEN: process.env.EARTHDATA_BEARER_TOKEN,
   PLANT_ID_API_KEY: process.env.PLANT_ID_API_KEY,
   PLANT_ID_API_URL: process.env.PLANT_ID_API_URL || process.env.PLANT_ID_BASE_URL || 'https://plant.id/api/v3',
+  PLANTNET_API_KEY: process.env.PLANTNET_API_KEY,
+  PLANTNET_API_URL: process.env.PLANTNET_API_URL || 'https://my-api.plantnet.org/v2',
+  PERENUAL_API_KEY: process.env.PERENUAL_API_KEY,
+  PERENUAL_API_URL: process.env.PERENUAL_API_URL || 'https://perenual.com/api',
   OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
-  OPENROUTER_MODEL: process.env.OPENROUTER_MODEL || 'google/gemini-2.5-flash',
+  OPENROUTER_API_KEYS: process.env.OPENROUTER_API_KEYS || process.env.OPENROUTER_API_KEY || '',
+  OPENROUTER_API_KEYS_LIST: Array.from(new Set(
+    (process.env.OPENROUTER_API_KEYS || process.env.OPENROUTER_API_KEY || '')
+      .split(',')
+      .map((k) => k.trim())
+      .filter((k) => k && k.length > 5)
+  )),
+  OPENROUTER_MODEL: process.env.OPENROUTER_MODEL || 'minimax/minimax-m3:free',
   OPENROUTER_BASE_URL: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
+  OPENROUTER_SITE_URL: process.env.OPENROUTER_SITE_URL || process.env.APP_URL || 'https://ethiofarm.et',
+  OPENROUTER_SITE_NAME: process.env.OPENROUTER_SITE_NAME || 'EthioFarm Smart Farming Platform',
   FIREBASE_DATABASE_URL:
     process.env.FIREBASE_DATABASE_URL || 'https://arduinomoisture-default-rtdb.firebaseio.com',
   FIREBASE_API_KEY: process.env.FIREBASE_API_KEY || '',
@@ -64,28 +82,34 @@ const env = {
 
 // Validate critical variables in production
 if (env.NODE_ENV === 'production') {
-  const missing = [];
-  if (!process.env.DATABASE_URL) missing.push('DATABASE_URL');
+  const fatal = [];
+  const warnings = [];
+
+  // Hard requirements — app cannot function without these
+  if (!process.env.DATABASE_URL) fatal.push('DATABASE_URL');
   if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'dev_secret_key_change_in_production') {
-    missing.push('JWT_SECRET (must be securely generated in production)');
+    fatal.push('JWT_SECRET (must be securely generated in production)');
   }
   if (!process.env.JWT_REFRESH_SECRET) {
-    missing.push('JWT_REFRESH_SECRET (must differ from JWT_SECRET)');
-  }
-  if (!process.env.REDIS_HOST || process.env.REDIS_HOST === 'localhost') {
-    missing.push('REDIS_HOST (production requires a configured Redis instance)');
-  }
-  if (!process.env.REDIS_PASSWORD) {
-    missing.push('REDIS_PASSWORD (required for production Redis)');
+    fatal.push('JWT_REFRESH_SECRET (must differ from JWT_SECRET)');
   }
   if (!process.env.CORS_ORIGIN || process.env.CORS_ORIGIN === '*') {
-    missing.push('CORS_ORIGIN (must be a specific domain list in production, not "*")');
+    fatal.push('CORS_ORIGIN (must be a specific domain list in production, not "*")');
+  }
+
+  // Soft requirements — app degrades gracefully without these
+  if (!process.env.REDIS_URL && (!process.env.REDIS_HOST || process.env.REDIS_HOST === 'localhost')) {
+    warnings.push('REDIS_HOST/REDIS_URL not set — rate limiting will use in-memory fallback');
   }
   if (!process.env.FIREBASE_API_KEY) {
-    missing.push('FIREBASE_API_KEY');
+    warnings.push('FIREBASE_API_KEY not set — push notifications disabled');
   }
-  if (missing.length > 0) {
-    throw new Error(`[FATAL] Missing required production environment variables: ${missing.join(', ')}`);
+
+  if (warnings.length > 0) {
+    console.warn(`[WARN] Missing optional production variables:\n  - ${warnings.join('\n  - ')}`);
+  }
+  if (fatal.length > 0) {
+    throw new Error(`[FATAL] Missing required production environment variables: ${fatal.join(', ')}`);
   }
 }
 

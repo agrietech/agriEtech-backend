@@ -1,5 +1,5 @@
 /**
- * Standardized API Response Helper for AgriEtech Platform
+ * Standardized API Response Helper for EthioFarm Platform
  * Formats all responses into consistent, predictable JSON structures.
  */
 

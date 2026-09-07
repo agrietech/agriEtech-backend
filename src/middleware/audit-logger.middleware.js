@@ -1,6 +1,6 @@
 ﻿/**
  * @file audit-logger.middleware.js
- * @description Enterprise Audit Logger Middleware for AgriEtech Platform.
+ * @description Enterprise Audit Logger Middleware for EthioFarm Platform.
  * Intercepts requests and asynchronously persists audit records to the
  * database AuditLog table when the DB is connected.
  */

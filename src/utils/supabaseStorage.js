@@ -260,7 +260,7 @@ async function uploadAgrEtechMedia({ buffer, localFilePath, fileName, mimeType }
 /**
  * Convenience helper: Upload confidential document/export to 'private' bucket (signed URL)
  */
-async function uploadPrivateDocument({ buffer, localFilePath, fileName, mimeType, expiresInSeconds = 60 * 60 * 24 * 7 }) {
+async function uploadPrivateDocument({ buffer, localFilePath, fileName, mimeType, _expiresInSeconds = 60 * 60 * 24 * 7 }) {
   if (buffer) {
     return uploadBufferToSupabase({
       bucketName: BUCKETS.PRIVATE,

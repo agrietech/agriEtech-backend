@@ -1,8 +1,6 @@
-// Geodesic distance in km via Haversine formula
-function getDistanceKm(point1, point2) {
-  const [lon1, lat1] = point1;
-  const [lon2, lat2] = point2;
-  const R = 6371;
+// Geodesic distance in km via Haversine formula (lat/lon coordinates)
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Earth radius in km
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLon = ((lon2 - lon1) * Math.PI) / 180;
   const a =
@@ -13,6 +11,11 @@ function getDistanceKm(point1, point2) {
       Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return Math.round(R * c * 100) / 100;
+}
+
+// Geodesic distance in km via Haversine formula for [lon, lat] point arrays
+function getDistanceKm(point1, point2) {
+  return calculateDistance(point1[1], point1[0], point2[1], point2[0]);
 }
 
 // Point-in-polygon test via ray-casting
@@ -111,6 +114,7 @@ function isWithinEthiopia(lat, lng) {
 }
 
 module.exports = {
+  calculateDistance,
   isPointInPolygon,
   getBBox,
   getCentroid,

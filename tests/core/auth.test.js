@@ -15,7 +15,6 @@ describe('Core Backend - Authentication & RBAC Suite', () => {
         password: 'SecurePassword123!',
         role: 'FARMER',
         preferredLang: 'am',
-        woredaId: 'woreda-test-01',
       });
 
       expect(res.status).toBe(201);

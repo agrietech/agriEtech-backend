@@ -2,6 +2,7 @@ services:
   - type: web
     name: agrietech-backend
     runtime: node
+    # Render Free tier sleeps after 15m inactivity. For 24/7 background queue processing and cron jobs, upgrade to 'starter'.
     plan: free
     region: frankfurt
     buildCommand: npm install && npx prisma generate
@@ -23,6 +24,11 @@ services:
         sync: false
       - key: JWT_SECRET
         generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: CORS_ORIGIN
+        # Allow web frontend domains and native apps (supports comma-separated list or wildcard)
+        value: https://agrietech.onrender.com,https://agrietech-web.onrender.com,*
       - key: OPENROUTER_API_KEY
         sync: false
       - key: OPENWEATHER_API_KEY
@@ -31,6 +37,10 @@ services:
         sync: false
       - key: EARTHDATA_BEARER_TOKEN
         sync: false
+      - key: PLANT_ID_API_KEY
+        sync: false
+      - key: AFRICAS_TALKING_API_KEY
+        sync: false
       - key: FIREBASE_DATABASE_URL
         sync: false
       - key: FIREBASE_API_KEY
@@ -38,6 +48,10 @@ services:
       - key: FIREBASE_PROJECT_ID
         sync: false
       - key: REDIS_URL
+        sync: false
+      - key: REDIS_HOST
+        sync: false
+      - key: REDIS_PASSWORD
         sync: false
       - key: SUPABASE_POOLER_HOST
         sync: false
