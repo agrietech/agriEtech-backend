@@ -53,6 +53,8 @@ services:
         sync: false
       - key: REDIS_PASSWORD
         sync: false
+      - key: REDIS_TLS
+        value: "true"
       - key: SUPABASE_POOLER_HOST
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
