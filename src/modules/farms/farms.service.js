@@ -1,6 +1,5 @@
 const { prisma, isConnected } = require('../../config/db');
 const { ServiceUnavailableError, NotFoundError, ForbiddenError, ConflictError } = require('../../utils/errors');
-const logger = require('../../utils/logger');
 
 const centroid = require('@turf/centroid').default || require('@turf/centroid');
 const { getCoord } = require('@turf/invariant');

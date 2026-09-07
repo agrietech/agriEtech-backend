@@ -114,7 +114,12 @@ async function deleteFarm(req, res, next) {
   try {
     const { id } = req.params;
     const result = await farmsService.deleteFarm({ id, user: req.user });
-    res.status(200).json(result);
+    res.status(200).json({
+      success: true,
+      data: { id: result.id, message: result.message },
+      id: result.id,
+      message: result.message,
+    });
   } catch (error) {
     next(error);
   }
