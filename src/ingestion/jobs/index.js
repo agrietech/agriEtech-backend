@@ -3,7 +3,7 @@
  * Exports all job queue related functionality
  */
 
-const { initScheduler, getScheduler } = require('./scheduler');
+const { initScheduler, getScheduler, stopScheduler, runScheduledJob } = require('./scheduler');
 const { createWorker } = require('./workers');
 const jobManager = require('./jobManager');
 const { ingestionQueue, addJob, addRecurringJob, getQueueStats, closeQueue } = require('./queue');
@@ -12,6 +12,8 @@ module.exports = {
   // Scheduler
   initScheduler,
   getScheduler,
+  stopScheduler,
+  runScheduledJob,
 
   // Worker
   createWorker,

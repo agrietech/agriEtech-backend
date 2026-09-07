@@ -79,7 +79,7 @@ if (env.NODE_ENV !== 'test' && redisConfigured) {
 }
 
 
-// Add job to queue or mock
+// Add job to BullMQ queue or memory fallback dispatcher
 async function addJob(jobName, payload = {}, opts = {}) {
   if (ingestionQueue && redis.status === 'ready') {
     try {

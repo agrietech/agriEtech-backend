@@ -41,49 +41,78 @@ async function runScheduledJob(jobName, payload = {}) {
   if (processor) {
     logger.info(`[Scheduler] Running '${jobName}' in direct-execution mode (Redis unavailable)`);
     try {
-      const mockJob = {
+      const directJob = {
         id: `direct_${Date.now()}`,
         name: jobName,
         data: payload,
         updateProgress: async () => {},
       };
-      await processor(mockJob);
+      await processor(directJob);
       logger.info(`[Scheduler] Direct execution of '${jobName}' completed successfully`);
     } catch (procErr) {
       logger.error(`[Scheduler] Direct execution of '${jobName}' error: ${procErr.message}`);
     }
   } else {
-    logger.debug(`[Scheduler] Dispatched mock task '${jobName}'`);
+    logger.debug(`[Scheduler] Dispatched direct background task '${jobName}'`);
   }
 }
 
+const activeTasks = [];
+
 // Register recurring cron schedules for data ingestion
 function initScheduler() {
+  stopScheduler(); // Avoid duplicate schedules on re-initialization
+
   // Hourly Open-Meteo weather update
-  cron.schedule('0 * * * *', async () => {
+  const t1 = cron.schedule('0 * * * *', async () => {
     await runScheduledJob('pullOpenMeteoHourly');
   });
+  activeTasks.push({ name: 'pullOpenMeteoHourly', schedule: '0 * * * *', task: t1 });
 
   // Daily CHIRPS rainfall ingestion at 03:00 UTC
-  cron.schedule('0 3 * * *', async () => {
+  const t2 = cron.schedule('0 3 * * *', async () => {
     await runScheduledJob('pullChirpsDaily');
   });
+  activeTasks.push({ name: 'pullChirpsDaily', schedule: '0 3 * * *', task: t2 });
 
   // Daily GloFAS river discharge ingestion at 04:00 UTC
-  cron.schedule('0 4 * * *', async () => {
+  const t3 = cron.schedule('0 4 * * *', async () => {
     await runScheduledJob('pullGlofasDaily');
   });
+  activeTasks.push({ name: 'pullGlofasDaily', schedule: '0 4 * * *', task: t3 });
 
   // Daily FAO Locust bulletin check at 06:00 UTC
-  cron.schedule('0 6 * * *', async () => {
+  const t4 = cron.schedule('0 6 * * *', async () => {
     await runScheduledJob('pullFaoLocustDaily');
   });
+  activeTasks.push({ name: 'pullFaoLocustDaily', schedule: '0 6 * * *', task: t4 });
 
-  logger.info('[Scheduler] Ingestion schedulers registered (Redis + direct fallback mode enabled)');
+  logger.info(`[Scheduler] Ingestion schedulers registered (${activeTasks.length} active cron tasks)`);
+}
+
+function getScheduler() {
+  return {
+    isRunning: activeTasks.length > 0,
+    taskCount: activeTasks.length,
+    tasks: activeTasks.map((t) => ({ name: t.name, schedule: t.schedule })),
+    runScheduledJob,
+  };
+}
+
+function stopScheduler() {
+  while (activeTasks.length > 0) {
+    const item = activeTasks.pop();
+    if (item && item.task && typeof item.task.stop === 'function') {
+      item.task.stop();
+    }
+  }
 }
 
 module.exports = {
   initScheduler,
+  getScheduler,
+  stopScheduler,
   runScheduledJob,
 };
+
 

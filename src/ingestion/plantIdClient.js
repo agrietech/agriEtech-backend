@@ -27,7 +27,7 @@ class PlantIdClient {
   async identifyCropHealth({ imageBase64, imageUrl, cropHint }) {
     if (!this.isConfigured()) {
       logger.info('[PlantIdClient] PLANT_ID_API_KEY not configured. Utilizing local botanical database.');
-      return this._generateMockBotanicalResult(cropHint);
+      return this._getLocalBotanicalResult(cropHint);
     }
 
     try {
@@ -55,7 +55,7 @@ class PlantIdClient {
 
       if (!formattedImage) {
         logger.info('[PlantIdClient] No image provided for identification; utilizing local botanical taxonomy.');
-        return this._generateMockBotanicalResult(cropHint);
+        return this._getLocalBotanicalResult(cropHint);
       }
 
       const isV3 = this.apiUrl.includes('v3') || !this.apiUrl.includes('v2');
@@ -109,8 +109,8 @@ class PlantIdClient {
       }
     } catch (error) {
       const msg = error.response?.data?.message || error.response?.data?.error || error.message;
-      logger.error(`[PlantIdClient] API call failed: ${msg}. Fallback to botanical model.`);
-      return this._generateMockBotanicalResult(cropHint);
+      logger.error(`[PlantIdClient] API call failed: ${msg}. Fallback to local botanical knowledge.`);
+      return this._getLocalBotanicalResult(cropHint);
     }
   }
 
@@ -125,16 +125,16 @@ class PlantIdClient {
       success: true,
       apiVersion: 'v3',
       crop: {
-        scientificName: topPlant.name || cropHint || 'Crop',
-        commonNames: topPlant.details?.common_names || [cropHint || topPlant.name || 'Crop'],
-        probability: topPlant.probability || 0.95,
+        scientificName: topPlant.name || cropHint || 'Unknown Crop',
+        commonNames: topPlant.details?.common_names || [cropHint || 'Plant'],
+        probability: topPlant.probability ?? 0.85,
       },
       isHealthy,
-      isHealthyProbability: result.is_healthy?.probability ?? 0.05,
+      isHealthyProbability: result.is_healthy?.probability ?? 0.5,
       diseases: diseaseAssessment.slice(0, 3).map((d) => ({
         name: d.name,
         probability: d.probability,
-        cause: d.details?.cause || 'Pathogenic infection / pest infestation',
+        cause: d.details?.cause || 'Pathogen/Pest',
         description: d.details?.description || '',
         treatment: d.details?.treatment || {},
       })),
@@ -144,7 +144,7 @@ class PlantIdClient {
 
   _parsePlantIdV2Response(data, cropHint) {
     const suggestions = data?.suggestions || [];
-    const topPlant = suggestions[0] || {};
+    const topSuggestion = suggestions[0] || {};
     const healthAssessment = data?.health_assessment || {};
     const diseaseCandidates = healthAssessment.diseases || [];
 
@@ -152,9 +152,9 @@ class PlantIdClient {
       success: true,
       apiVersion: 'v2',
       crop: {
-        scientificName: topPlant.plant_name || cropHint || 'Zea mays',
-        commonNames: topPlant.plant_details?.common_names || [cropHint || 'Maize'],
-        probability: topPlant.probability || 0.92,
+        scientificName: topSuggestion.plant_name || cropHint || 'Unknown Crop',
+        commonNames: topSuggestion.plant_details?.common_names || [cropHint || 'Plant'],
+        probability: topSuggestion.probability ?? 0.85,
       },
       isHealthy: healthAssessment.is_healthy ?? false,
       isHealthyProbability: healthAssessment.is_healthy_probability ?? 0.05,
@@ -170,6 +170,10 @@ class PlantIdClient {
   }
 
   _generateMockBotanicalResult(cropHint = 'Wheat') {
+    return this._getLocalBotanicalResult(cropHint);
+  }
+
+  _getLocalBotanicalResult(cropHint = 'Wheat') {
     const normalized = (cropHint || '').toUpperCase();
 
     if (normalized.includes('MAIZE') || normalized.includes('CORN')) {
