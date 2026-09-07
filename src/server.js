@@ -13,8 +13,30 @@ const { initScheduler } = require('./ingestion/jobs/scheduler');
 const { closeQueue } = require('./ingestion/jobs/queue');
 const redis = require('./config/redis');
 
+const { warmBoundariesCache } = require('./modules/boundaries/boundaries.service');
+
 const server = http.createServer(app);
 const PORT = env.PORT || 5000;
+
+// Render Keep-Alive Pinger to eliminate free-tier sleep / cold starts
+function initRenderKeepAlive() {
+  const targetUrl = process.env.RENDER_EXTERNAL_URL || env.APP_URL || 'https://agrietech.onrender.com';
+  if (!targetUrl || !targetUrl.includes('onrender.com')) return;
+
+  const pingIntervalMs = 10 * 60 * 1000; // 10 minutes (Render sleeps after 15 mins)
+  setInterval(() => {
+    try {
+      const https = require('https');
+      https.get(`${targetUrl}/health`, (res) => {
+        logger.debug(`[Render Keep-Alive] Ping ${targetUrl}/health -> HTTP ${res.statusCode}`);
+      }).on('error', (err) => {
+        logger.debug(`[Render Keep-Alive] Ping notice: ${err.message}`);
+      });
+    } catch (_e) {}
+  }, pingIntervalMs).unref();
+
+  logger.info(`[Render Keep-Alive] Keep-alive pinger scheduled for ${targetUrl} (every 10 min)`);
+}
 
 // Start HTTP server
 server.listen(PORT, () => {
@@ -26,8 +48,13 @@ server.listen(PORT, () => {
   try {
     initSocket(server);
     await connectDB();
+
+    // Warm boundaries in memory for sub-millisecond response times
+    warmBoundariesCache().catch((e) => logger.warn(`Cache warming notice: ${e.message}`));
+
     if (env.NODE_ENV !== 'test') {
       initScheduler();
+      initRenderKeepAlive();
     }
   } catch (err) {
     logger.warn(`Service startup notice: ${err.message}`);
