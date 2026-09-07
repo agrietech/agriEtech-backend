@@ -82,7 +82,7 @@ async function saveUssdSession(sessionKey, session, ttlSeconds = 300) {
 
 const TRANSLATIONS = {
   en: {
-    welcome: 'CON Welcome to AgriEtech Early Warning (*212#)\n1. Weather Forecast\n2. Drought & Rain Status\n3. Flood Alert Status\n4. Soil & Earthquake Hazard\n5. Report Threat (Pest/Locust/Flood)\n6. Change Language',
+    welcome: 'CON Welcome to EthioFarm Smart Farming (*212#)\n1. Weather Forecast\n2. Drought & Rain Status\n3. Flood Alert Status\n4. Soil & Earthquake Hazard\n5. Report Threat (Pest/Locust/Flood)\n6. Change Language',
     weatherHeader: 'END Weather Forecast',
     droughtHeader: 'END Drought & Moisture Status',
     floodHeader: 'END Flood Alert Status',
@@ -110,7 +110,7 @@ const TRANSLATIONS = {
     noData: 'ሁኔታ፡ መደበኛ። በአካባቢዎ ምንም አይነት ከፍተኛ አደጋ አልተመዘገበም።',
   },
   om: {
-    welcome: 'CON Baga gara Tajaajila Akeekkachiisa Duraa AgriEtech dhuftan (*212#)\n1. Raaga Qilleensaa\n2. Haala Hongee fi Roobaa\n3. Haala Balaa Lolaa\n4. Dhiqama Biyyoo fi Sochii Lafaa\n5. Balaa Hawaannisa/Ilbiisa Gabaasaa\n6. Afaan Jijjiiraa',
+    welcome: 'CON Baga gara Tajaajila Akeekkachiisa Duraa EthioFarm dhuftan (*212#)\n1. Raaga Qilleensaa\n2. Haala Hongee fi Roobaa\n3. Haala Balaa Lolaa\n4. Dhiqama Biyyoo fi Sochii Lafaa\n5. Balaa Hawaannisa/Ilbiisa Gabaasaa\n6. Afaan Jijjiiraa',
     weatherHeader: 'END Raaga Qilleensaa',
     droughtHeader: 'END Haala Hongee fi Jiidhinsa Biyyoo',
     floodHeader: 'END Haala Balaa Lolaa',
@@ -138,14 +138,20 @@ function normalizePhoneNumber(raw) {
 }
 
 /**
- * Handle interactive USSD session (*804#)
- * Supports standard Telco / Africa's Talking USSD protocol
+ * Handle interactive USSD session (*804# / *212#)
+ * Supports standard Ethiopian Telco / SMSEthiopia / Africa's Talking USSD protocols
  */
 async function handleUssdSession(req, res, _next) {
   try {
-    const { sessionId, serviceCode: _serviceCode, phoneNumber, text } = req.body || {};
-    const cleanPhone = normalizePhoneNumber(phoneNumber);
-    const sessionKey = sessionId || cleanPhone || 'global_session';
+    const body = req.body || {};
+    const query = req.query || {};
+
+    const rawSessionId = body.sessionId || body.session_id || query.sessionId || query.session_id;
+    const rawPhone = body.phoneNumber || body.msisdn || body.phone || query.phoneNumber || query.msisdn || query.phone;
+    const text = String(body.text !== undefined ? body.text : (body.ussdText !== undefined ? body.ussdText : (body.input !== undefined ? body.input : (query.text !== undefined ? query.text : ''))));
+
+    const cleanPhone = normalizePhoneNumber(rawPhone);
+    const sessionKey = rawSessionId || cleanPhone || 'global_session';
 
     // Retrieve or initialize session from Redis / memory
     let session = await getUssdSession(sessionKey);
@@ -338,16 +344,40 @@ async function handleUssdSession(req, res, _next) {
       }
 
       response = t.reportSuccess;
+
+      // Send SMS acknowledgment to farmer via SMSEthiopia
+      if (session.phone) {
+        setImmediate(async () => {
+          try {
+            const { sendSms } = require('../sms/smsEthiopiaClient');
+            const confirmMsg = session.lang === 'om'
+              ? `[EthioFarm] Gabaasni keessan (${hazardType}) galmaa'eera. Galatoomaa!`
+              : (session.lang === 'en'
+                ? `[EthioFarm] Your hazard report (${hazardType}) has been logged. Thank you!`
+                : `[አግሪኢቴክ] የአደጋ ሪፖርትዎ (${hazardType}) በተሳካ ሁኔታ ተመዝግቧል። እናመሰግናለን!`);
+            await sendSms([session.phone], confirmMsg);
+          } catch (smsErr) {
+            logger.warn(`[USSD SMS Confirmation Notice] ${smsErr.message}`);
+          }
+        });
+      }
     } else {
       response = t.invalidOption;
     }
 
+    if (req.headers.accept && req.headers.accept.includes('application/json')) {
+      return res.json({
+        response,
+        message: response.replace(/^(CON|END)\s+/, ''),
+        shouldClose: response.startsWith('END'),
+      });
+    }
 
-    res.set('Content-Type', 'text/plain');
+    res.set('Content-Type', 'text/plain; charset=utf-8');
     res.send(response);
   } catch (error) {
     logger.error(`[USSD Exception] ${error.message}`);
-    res.set('Content-Type', 'text/plain');
+    res.set('Content-Type', 'text/plain; charset=utf-8');
     res.send('END An error occurred. Please dial *804# again later.');
   }
 }

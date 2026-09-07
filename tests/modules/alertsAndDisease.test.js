@@ -7,10 +7,16 @@ describe('Alerts & Disease Diagnosis API Suite', () => {
     id: 'usr_officer_01',
     phoneNumber: '+251911998877',
     role: 'WOREDA_OFFICER',
+    woredaId: 'woreda_adama_01',
   };
   const officerToken = generateAccessToken(officerUser);
 
-  const farmerUser = { id: 'usr_farmer_01', phoneNumber: '+251911223344', role: 'FARMER' };
+  const farmerUser = {
+    id: 'usr_farmer_01',
+    phoneNumber: '+251911223344',
+    role: 'FARMER',
+    woredaId: 'woreda_adama_01',
+  };
   const farmerToken = generateAccessToken(farmerUser);
 
   describe('Alerts Module', () => {
@@ -67,7 +73,7 @@ describe('Alerts & Disease Diagnosis API Suite', () => {
     });
 
     it('POST /api/v1/disease-diagnosis/diagnose - should handle multipart camera photo / file upload', async () => {
-      const fakeImageBuffer = Buffer.from('fake-image-bytes-from-camera');
+      const fakeImageBuffer = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01]);
 
       const res = await request(app)
         .post('/api/v1/disease-diagnosis/diagnose')
@@ -80,7 +86,7 @@ describe('Alerts & Disease Diagnosis API Suite', () => {
       expect(res.body.success).toBe(true);
       expect(res.body.data.cropIdentified).toBe('Maize (Zea mays)');
       expect(res.body.data.diseaseName).toBeDefined();
-      expect(res.body.data.imageUrl).toContain('/uploads/diagnoses/');
+      expect(res.body.data.imageUrl).toMatch(/(?:\/uploads\/diagnoses\/|supabase\.co)/);
     });
 
     it('GET /api/v1/disease-diagnosis/farm/:farmId - should retrieve farm diagnosis history', async () => {

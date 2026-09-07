@@ -3,10 +3,46 @@ const app = require('../../src/app');
 const { generateAccessToken } = require('../../src/modules/auth/auth.service');
 
 describe('Satellite Observations & Risk Assessments Suite', () => {
+  beforeAll(async () => {
+    const { prisma } = require('../../src/config/db');
+    await prisma.region.upsert({
+      where: { id: 'reg_oromia_01' },
+      update: {},
+      create: { id: 'reg_oromia_01', nameEn: 'Oromia', nameAm: 'ኦሮሚያ', code: 'ET-OR' },
+    });
+    await prisma.zone.upsert({
+      where: { id: 'zone_east_shewa_01' },
+      update: {},
+      create: { id: 'zone_east_shewa_01', nameEn: 'East Shewa', nameAm: 'ምስራቅ ሸዋ', regionId: 'reg_oromia_01' },
+    });
+    await prisma.woreda.upsert({
+      where: { id: 'woreda_adama_01' },
+      update: {},
+      create: { id: 'woreda_adama_01', nameEn: 'Adama Zuria', nameAm: 'አዳማ ዙሪያ', zoneId: 'zone_east_shewa_01', centerLat: 8.54, centerLng: 39.27 },
+    });
+    await prisma.satelliteObservation.upsert({
+      where: {
+        woredaId_observationDate_source: {
+          woredaId: 'woreda_adama_01',
+          observationDate: new Date('2026-08-01'),
+          source: 'CHIRPS',
+        },
+      },
+      update: {},
+      create: {
+        woredaId: 'woreda_adama_01',
+        observationDate: new Date('2026-08-01'),
+        source: 'CHIRPS',
+        chirpsRainfallMm: 45.2,
+      },
+    });
+  });
+
   const officerUser = {
     id: 'usr_officer_01',
     phoneNumber: '+251911998877',
     role: 'WOREDA_OFFICER',
+    woredaId: 'woreda_adama_01',
   };
   const token = generateAccessToken(officerUser);
 

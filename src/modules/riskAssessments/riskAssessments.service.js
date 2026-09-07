@@ -1,10 +1,9 @@
-const { prisma, isConnected } = require('../../config/db');
+const { prisma } = require('../../config/db');
 const { calculateCompositeRisk } = require('../../processing/riskAggregator');
 const { broadcastRiskUpdate } = require('../../delivery/websocket/riskAssessmentChannel');
 const { getWoredaCoordinates } = require('../boundaries/boundaries.service');
 const redis = require('../../config/redis');
 const logger = require('../../utils/logger');
-const { NotFoundError } = require('../../utils/errors');
 
 const RISK_CACHE_TTL = 30 * 60; // 30 minutes
 function riskCacheKey(woredaId) { return `risk:latest:${woredaId}`; }
@@ -30,7 +29,7 @@ function generateRecommendations(alertLevel, _primaryThreat) {
   ];
 }
 
-// Compute multi-hazard risk and persist assessment directly to PostgreSQL
+// Compute integrated risk risk and persist assessment directly to PostgreSQL
 async function evaluateWoredaRisk(woredaId, hazardScores = {}) {
   const coords = await getWoredaCoordinates(woredaId);
   const normalizedScores = {

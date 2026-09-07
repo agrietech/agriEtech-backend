@@ -1,5 +1,5 @@
 const alertsService = require('./alerts.service');
-const { ForbiddenError } = require('../../utils/errors');
+const { ForbiddenError, BadRequestError } = require('../../utils/errors');
 const { prisma } = require('../../config/db');
 
 async function createAlert(req, res, next) {
@@ -27,10 +27,7 @@ async function createAlert(req, res, next) {
     const resolvedMessage = message || messageEn || messageAm || messageOm;
 
     if (!woredaId || !hazardType || !resolvedHeadline) {
-      return res.status(400).json({
-        success: false,
-        error: 'woredaId, hazardType, and a title/headline are required',
-      });
+      throw new BadRequestError('woredaId, hazardType, and a title/headline are required');
     }
 
     const alert = await alertsService.createAlert({

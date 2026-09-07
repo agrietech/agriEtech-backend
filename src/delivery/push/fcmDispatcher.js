@@ -42,7 +42,7 @@ async function sendPushNotification({ token, topic, title, body, data = {} }) {
 
     const message = {
       notification: {
-        title: title || 'AgriEtech Alert',
+        title: title || 'EthioFarm Alert',
         body: body || 'New agricultural advisory alert available.',
       },
       data: Object.fromEntries(

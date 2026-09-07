@@ -8,6 +8,8 @@ const sentEmailsLog = [];
 // Reserved / dummy / placeholder domains that do not have real public MX records
 // Real SMTP dispatch to these domains is suppressed to prevent "Mail Delivery Subsystem / Address Not Found" bounces.
 const DUMMY_DOMAINS = new Set([
+  'ethiofarm.et',
+  'phone.ethiofarm.et',
   'agrietech.et',
   'phone.agrietech.et',
   'example.com',
@@ -40,7 +42,7 @@ function isDummyOrTestEmail(email) {
 
   // Check known placeholder domains
   if (DUMMY_DOMAINS.has(domain)) return true;
-  if (domain.endsWith('.agrietech.et') || domain.endsWith('.invalid') || domain.endsWith('.test') || domain.endsWith('.local') || domain.endsWith('.localhost')) {
+  if (domain.endsWith('.ethiofarm.et') || domain.endsWith('.agrietech.et') || domain.endsWith('.invalid') || domain.endsWith('.test') || domain.endsWith('.local') || domain.endsWith('.localhost')) {
     return true;
   }
 
@@ -90,8 +92,8 @@ async function sendEmail({ to, subject, text, html }) {
   const cleanTo = to.trim().toLowerCase();
   // Ensure the From header matches the authenticated SMTP user to prevent Gmail SPF/DMARC bouncebacks
   const from = env.SMTP_USER
-    ? `"AgriEtech Platform" <${env.SMTP_USER}>`
-    : (env.EMAIL_FROM || '"AgriEtech" <no-reply@agrietech.et>');
+    ? `"EthioFarm Platform" <${env.SMTP_USER}>`
+    : (env.EMAIL_FROM || '"EthioFarm" <no-reply@ethiofarm.et>');
   
   let messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
   const isDummy = isDummyOrTestEmail(cleanTo);
@@ -104,7 +106,7 @@ async function sendEmail({ to, subject, text, html }) {
       const info = await transporter.sendMail({
         from,
         to: cleanTo,
-        replyTo: env.SMTP_USER || 'no-reply@agrietech.et',
+        replyTo: env.SMTP_USER || 'no-reply@ethiofarm.et',
         subject,
         text,
         html: html || text,
@@ -201,7 +203,7 @@ function buildEmailShell({ title, badge, preheader, contentHtml, footerAmharic }
                       <td>
                         <div style="display: inline-block; background-color: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.3); border-radius: 20px; padding: 5px 14px; margin-bottom: 12px;">
                           <span style="color: #bbf7d0; font-weight: 700; font-size: 11px; letter-spacing: 0.8px; text-transform: uppercase;">
-                            ${badge || '🌱 AgriEtech Early Warning'}
+                            ${badge || '🌱 EthioFarm Smart Farming'}
                           </span>
                         </div>
                         <h1 style="margin: 0; color: #ffffff; font-size: 23px; font-weight: 800; letter-spacing: -0.4px; line-height: 1.3;">
@@ -235,13 +237,13 @@ function buildEmailShell({ title, badge, preheader, contentHtml, footerAmharic }
               <tr>
                 <td class="footer-pad" style="background-color: #f8fafc; padding: 28px 40px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 12px; color: #64748b; line-height: 1.6;">
                   <p style="margin: 0 0 6px 0; font-weight: 700; color: #1e293b; font-size: 13px;">
-                    AgriEtech Multi-Hazard Early Warning & Advisory Platform
+                    EthioFarm Smart Farming & Advisory Platform
                   </p>
                   <p style="margin: 0 0 8px 0;">
                     Addis Ababa, Ethiopia &bull; <a href="${appUrl}" style="color: #15803d; text-decoration: none; font-weight: 600;">${appUrl}</a>
                   </p>
                   <p style="margin: 0; font-size: 11px; color: #94a3b8;">
-                    &copy; ${currentYear} AgriEtech. This is an automated notification. Please do not reply directly.
+                    &copy; ${currentYear} EthioFarm. This is an automated notification. Please do not reply directly.
                   </p>
                 </td>
               </tr>
@@ -259,10 +261,10 @@ function buildEmailShell({ title, badge, preheader, contentHtml, footerAmharic }
  * Dispatch a Password Reset Email with 6-digit code and direct action link
  */
 async function sendPasswordResetEmail(email, resetToken, resetLink) {
-  const subject = '🔒 Reset Your AgriEtech Account Password';
+  const subject = '🔒 Reset Your EthioFarm Account Password';
   const resolvedLink = resetLink || `${env.APP_URL}/reset-password?token=${resetToken}&email=${encodeURIComponent(email)}`;
   
-  const text = `AgriEtech Multi-Hazard Early Warning Platform\n\nPassword Reset Request\n\nHello,\n\nWe received a request to reset the password for your AgriEtech account associated with ${email}.\n\nYour 6-Digit Verification Code:\n>>> ${resetToken} <<<\n\nPlease click the link below or enter the 6-digit code on the reset page:\n${resolvedLink}\n\nThis code and link are valid for 5 minutes.\n\nIf you did not request a password reset, you can safely ignore this email. Your password will remain unchanged.\n\nBest regards,\nAgriEtech Platform Team\nAddis Ababa, Ethiopia\n${env.APP_URL}`;
+  const text = `EthioFarm Smart Farming Platform\n\nPassword Reset Request\n\nHello,\n\nWe received a request to reset the password for your EthioFarm account associated with ${email}.\n\nYour 6-Digit Verification Code:\n>>> ${resetToken} <<<\n\nPlease click the link below or enter the 6-digit code on the reset page:\n${resolvedLink}\n\nThis code and link are valid for 5 minutes.\n\nIf you did not request a password reset, you can safely ignore this email. Your password will remain unchanged.\n\nBest regards,\nEthioFarm Platform Team\nAddis Ababa, Ethiopia\n${env.APP_URL}`;
 
   const contentHtml = `
     <p style="margin-top: 0; font-size: 16px; font-weight: 600; color: #0f172a;">
@@ -327,7 +329,7 @@ async function sendPasswordResetEmail(email, resetToken, resetLink) {
   const html = buildEmailShell({
     title: 'Password Reset Request',
     badge: '🔒 Security Verification',
-    preheader: `Your AgriEtech password reset code is ${resetToken}. Valid for 5 minutes.`,
+    preheader: `Your EthioFarm password reset code is ${resetToken}. Valid for 5 minutes.`,
     contentHtml,
     footerAmharic: 'የይለፍ ቃልዎን ለመቀየር ከላይ ያለውን ባለ 6-አሃዝ ኮድ ይጠቀሙ (ለ 5 ደቂቃዎች ብቻ ያገለግላል) ወይም አረንጓዴውን ማስፈንጠሪያ ይጫኑ።',
   });
@@ -340,14 +342,14 @@ async function sendPasswordResetEmail(email, resetToken, resetLink) {
  * Dispatch an Email Verification Link for New Registrations
  */
 async function sendVerificationEmail(email, verificationToken, verificationLink) {
-  const subject = '🌿 Verify Your AgriEtech Account';
+  const subject = '🌿 Verify Your EthioFarm Account';
   const resolvedLink = verificationLink || `${env.APP_URL}/api/v1/auth/verify-email?token=${verificationToken}&email=${encodeURIComponent(email)}`;
 
-  const text = `Welcome to AgriEtech Multi-Hazard Early Warning Platform!\n\nHello,\n\nThank you for registering. Please verify your email address by clicking the link below:\n${resolvedLink}\n\nThis verification link is valid for 24 hours.\n\nOnce verified, you will unlock full access to:\n- Woreda-level climate & drought early warnings\n- AI crop disease diagnosis & treatments\n- Satellite vegetation vigor (NDVI) monitoring\n\nThank you,\nAgriEtech Platform Team\nAddis Ababa, Ethiopia\n${env.APP_URL}`;
+  const text = `Welcome to EthioFarm Smart Farming Platform!\n\nHello,\n\nThank you for registering. Please verify your email address by clicking the link below:\n${resolvedLink}\n\nThis verification link is valid for 24 hours.\n\nOnce verified, you will unlock full access to:\n- Woreda-level climate & drought early warnings\n- AI crop disease diagnosis & treatments\n- Satellite vegetation vigor (NDVI) monitoring\n\nThank you,\nEthioFarm Platform Team\nAddis Ababa, Ethiopia\n${env.APP_URL}`;
 
   const contentHtml = `
     <p style="margin-top: 0; font-size: 16px; font-weight: 600; color: #0f172a;">
-      Welcome to the AgriEtech platform!
+      Welcome to the EthioFarm platform!
     </p>
     <p style="margin: 0 0 16px 0;">
       Thank you for registering an account with <strong style="color: #0f172a;">${email}</strong>. Please confirm your email address to unlock full early warning and precision advisory tools.
@@ -412,11 +414,11 @@ async function sendVerificationEmail(email, verificationToken, verificationLink)
   `;
 
   const html = buildEmailShell({
-    title: 'Welcome to AgriEtech Platform',
+    title: 'Welcome to EthioFarm Platform',
     badge: '🌱 Account Activation',
-    preheader: 'Welcome to AgriEtech! Please verify your email address to activate your account.',
+    preheader: 'Welcome to EthioFarm! Please verify your email address to activate your account.',
     contentHtml,
-    footerAmharic: 'የአግሪኢቴክ መለያዎን ለማረጋገጥ እና አገልግሎቶችን ለመጀመር ከላይ ያለውን አረንጓዴ ማስፈንጠሪያ ይጫኑ።',
+    footerAmharic: 'የኢትዮፋርም መለያዎን ለማረጋገጥ እና አገልግሎቶችን ለመጀመር ከላይ ያለውን አረንጓዴ ማስፈንጠሪያ ይጫኑ።',
   });
 
   return sendEmail({ to: email, subject, text, html });
@@ -431,7 +433,7 @@ async function sendEmergencyHazardAlertEmail({ email, woredaName, hazardType, se
   const badgeColor = isCritical ? '#ef4444' : '#f59e0b';
   const appUrl = env.APP_URL || 'https://agrietech.onrender.com';
 
-  const text = `EMERGENCY HAZARD ALERT - AgriEtech Platform\n\nSeverity: ${severity}\nHazard: ${hazardType}\nWoreda: ${woredaName}\nHeadline: ${headline}\n\nMessage:\n${message}\n\nRecommended Actions:\n${actionSteps.map((s, i) => `${i + 1}. ${s}`).join('\n')}\n\nView live map: ${appUrl}/risk-map`;
+  const text = `EMERGENCY HAZARD ALERT - EthioFarm Platform\n\nSeverity: ${severity}\nHazard: ${hazardType}\nWoreda: ${woredaName}\nHeadline: ${headline}\n\nMessage:\n${message}\n\nRecommended Actions:\n${actionSteps.map((s, i) => `${i + 1}. ${s}`).join('\n')}\n\nView live map: ${appUrl}/risk-map`;
 
   const contentHtml = `
     <div style="background-color: ${isCritical ? '#fef2f2' : '#fffbeb'}; border-left: 5px solid ${badgeColor}; border-radius: 8px; padding: 18px 20px; margin-bottom: 24px;">

@@ -19,9 +19,9 @@ describe("Professional Email Dispatcher Suite", () => {
 
       const log = getSentEmailsLog();
       expect(log.length).toBe(1);
-      expect(log[0].subject).toContain("Verify Your AgriEtech Account");
+      expect(log[0].subject).toContain("Verify Your EthioFarm Account");
       expect(log[0].html).toContain("tok_verify_123");
-      expect(log[0].html).toContain("AgriEtech Multi-Hazard Early Warning");
+      expect(log[0].html).toContain("EthioFarm Smart Farming & Advisory Platform");
       expect(log[0].html).toContain("Drought & Flood Forecasts");
       expect(log[0].html).toContain("Dual-AI Crop Diagnosis");
     });
@@ -34,7 +34,7 @@ describe("Professional Email Dispatcher Suite", () => {
 
       const log = getSentEmailsLog();
       expect(log.length).toBe(1);
-      expect(log[0].subject).toContain("Reset Your AgriEtech Account Password");
+      expect(log[0].subject).toContain("Reset Your EthioFarm Account Password");
       expect(log[0].html).toContain("849201");
       expect(log[0].html).toContain("Valid for 5 minutes");
       expect(log[0].html).toContain("Security Notice");
