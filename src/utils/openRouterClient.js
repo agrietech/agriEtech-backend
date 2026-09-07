@@ -8,18 +8,108 @@ const logger = require('./logger');
  */
 class OpenRouterClient {
   constructor() {
-    this.apiKey = env.OPENROUTER_API_KEY || '';
-    this.model = env.OPENROUTER_MODEL || 'google/gemini-2.5-flash';
+    this.apiKeys = (env.OPENROUTER_API_KEYS_LIST && env.OPENROUTER_API_KEYS_LIST.length > 0)
+      ? env.OPENROUTER_API_KEYS_LIST
+      : (env.OPENROUTER_API_KEY ? [env.OPENROUTER_API_KEY] : []);
+    this.apiKey = this.apiKeys[0] || '';
+    this.model = env.OPENROUTER_MODEL || 'minimax/minimax-m3:free';
     this.baseUrl = env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
-    this.appUrl = env.APP_URL || 'http://localhost:5000';
+    this.appUrl = env.OPENROUTER_SITE_URL || env.APP_URL || 'https://ethiofarm.et';
+    this.siteName = env.OPENROUTER_SITE_NAME || 'EthioFarm Smart Farming Platform';
+
+    // Enterprise Key Pool with health tracking and auto-quarantine
+    this.keyPool = this.apiKeys.map((key, index) => ({
+      id: `key_${index + 1}`,
+      key,
+      masked: `${key.slice(0, 14)}...${key.slice(-4)}`,
+      active: true,
+      cooldownUntil: 0,
+      successCount: 0,
+      errorCount: 0,
+      rateLimitCount: 0,
+      lastUsedAt: 0,
+    }));
+    this._roundRobinIdx = 0;
   }
 
   isConfigured() {
-    return Boolean(this.apiKey && this.apiKey.trim().length > 5);
+    return Boolean(this.keyPool && this.keyPool.length > 0 && this.keyPool.some((k) => k.key && k.key.length > 5));
   }
 
   /**
-   * Execute chat completion via OpenRouter with resilient token budgeting & model fallbacks
+   * Select next healthy API key via round-robin with automatic cooldown recovery
+   */
+  _getNextKey() {
+    if (!this.keyPool || this.keyPool.length === 0) return null;
+    const now = Date.now();
+
+    // Select among keys whose cooldown has expired
+    const healthyKeys = this.keyPool.filter((k) => k.active && k.cooldownUntil <= now);
+    if (healthyKeys.length > 0) {
+      const selected = healthyKeys[this._roundRobinIdx % healthyKeys.length];
+      this._roundRobinIdx = (this._roundRobinIdx + 1) % healthyKeys.length;
+      selected.lastUsedAt = now;
+      return selected;
+    }
+
+    // If all keys are in cooldown, pick the key closest to expiry
+    const sorted = [...this.keyPool].sort((a, b) => a.cooldownUntil - b.cooldownUntil);
+    const earliest = sorted[0];
+    earliest.lastUsedAt = now;
+    return earliest;
+  }
+
+  /**
+   * Handle key errors: quarantine for rate-limits (429) or auth issues (401/403)
+   */
+  _markKeyError(keyObj, statusCode, errorMessage = '') {
+    if (!keyObj) return;
+    keyObj.errorCount++;
+    const now = Date.now();
+
+    if (statusCode === 429 || errorMessage.toLowerCase().includes('rate') || errorMessage.toLowerCase().includes('quota') || errorMessage.toLowerCase().includes('credits')) {
+      keyObj.rateLimitCount++;
+      keyObj.cooldownUntil = now + 60000; // 60-second cooldown
+      logger.warn(`[OpenRouterClient] Key ${keyObj.masked} rate-limited (${statusCode || '429'}). Cooldown for 60s.`);
+    } else if (statusCode === 401 || statusCode === 403) {
+      keyObj.cooldownUntil = now + 600000; // 10-minute cooldown
+      logger.error(`[OpenRouterClient] Key ${keyObj.masked} unauthorized (${statusCode}). Cooldown for 10m.`);
+    }
+  }
+
+  /**
+   * Mark key success to reset consecutive error tracking
+   */
+  _markKeySuccess(keyObj) {
+    if (!keyObj) return;
+    keyObj.successCount++;
+    keyObj.cooldownUntil = 0;
+  }
+
+  /**
+   * Get real-time health and usage statistics of all configured API keys
+   */
+  getKeyPoolStatus() {
+    const now = Date.now();
+    return {
+      totalKeys: this.keyPool.length,
+      activeKeys: this.keyPool.filter((k) => k.cooldownUntil <= now).length,
+      keys: this.keyPool.map((k) => ({
+        id: k.id,
+        masked: k.masked,
+        inCooldown: k.cooldownUntil > now,
+        cooldownRemainingSec: Math.max(0, Math.round((k.cooldownUntil - now) / 1000)),
+        successCount: k.successCount,
+        errorCount: k.errorCount,
+        rateLimitCount: k.rateLimitCount,
+        lastUsedAt: k.lastUsedAt ? new Date(k.lastUsedAt).toISOString() : null,
+      })),
+    };
+  }
+
+  /**
+   * Execute chat completion via OpenRouter with multi-key pooling,
+   * automatic failover, reasoning token support & resilient model cascades.
    */
   async chatCompletion({
     messages,
@@ -27,23 +117,26 @@ class OpenRouterClient {
     responseFormat = null,
     maxTokens = 300,
     model = null,
+    enableReasoning = false,
   }) {
     const primaryModel = model || this.model;
     const candidateModels = [
       primaryModel,
-      'meta-llama/llama-3.3-70b-instruct:free',
-      'mistralai/mistral-small-24b-instruct-2501:free',
-      'google/gemma-2-9b-it:free',
-      'liquid/lfm-2.5-2.6b:free',
+      'minimax/minimax-m3:free',
+      'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
       'openrouter/free',
+      'google/gemma-4-31b-it:free',
+      'google/gemma-4-26b-a4b-it:free',
+      'nvidia/nemotron-3.5-lightning:free',
+      'liquid/lfm-2.5-2.6b:free',
     ].filter((m, i, arr) => m && arr.indexOf(m) === i);
 
     if (!this.isConfigured()) {
-      logger.warn('[OpenRouterClient] OPENROUTER_API_KEY not set. Using intelligent dynamic offline synthesizer.');
+      logger.warn('[OpenRouterClient] No OPENROUTER_API_KEYS configured. Using intelligent dynamic offline synthesizer.');
       return { ...this._generateSynthesizedCompletion(messages), isOfflineFallback: true, degradedReason: 'API key not configured' };
     }
 
-    const executeRequest = async (targetModel, tokens) => {
+    const executeRequestWithKey = async (targetKey, targetModel, tokens) => {
       const payload = {
         model: targetModel,
         messages,
@@ -55,73 +148,196 @@ class OpenRouterClient {
         payload.response_format = { type: 'json_object' };
       }
 
-      const requestTimeout = 4000;
+      if (enableReasoning) {
+        payload.reasoning = { max_tokens: Math.min(300, tokens) };
+      }
+
       return await axios.post(`${this.baseUrl}/chat/completions`, payload, {
         headers: {
-          Authorization: `Bearer ${this.apiKey}`,
+          Authorization: `Bearer ${targetKey.key}`,
           'HTTP-Referer': this.appUrl,
-          'X-Title': 'EthioFarm Multi-Hazard Platform',
+          'X-Title': this.siteName,
           'Content-Type': 'application/json',
         },
-        timeout: requestTimeout,
+        timeout: 5000,
       });
     };
 
     let lastError = null;
 
+    // Outer loop: Iterate through candidate models
     for (const targetModel of candidateModels) {
-      try {
-        let currentTokens = maxTokens;
-        let response;
+      // Inner loop: Try up to 3 distinct healthy keys per model before failing to next model
+      const maxKeyAttempts = Math.min(3, this.keyPool.length || 1);
+
+      for (let attempt = 0; attempt < maxKeyAttempts; attempt++) {
+        const activeKey = this._getNextKey();
+        if (!activeKey) break;
 
         try {
-          response = await executeRequest(targetModel, currentTokens);
-        } catch (firstErr) {
-          const errorMsg = firstErr.response?.data?.error?.message || firstErr.message || '';
-          if (errorMsg.includes('credits') || errorMsg.includes('unavailable') || errorMsg.includes('No endpoints')) {
-            throw firstErr;
-          }
-          if (errorMsg.includes('max_tokens') || errorMsg.includes('afford')) {
-            const affordMatch = errorMsg.match(/can only afford (\d+)/i);
-            const affordableTokens = affordMatch ? Math.max(30, parseInt(affordMatch[1], 10) - 5) : Math.min(80, currentTokens);
-            logger.warn(`[OpenRouterClient] Token budget adjustment needed for model ${targetModel} (${errorMsg}). Retrying with ${affordableTokens} tokens.`);
-            response = await executeRequest(targetModel, affordableTokens);
-          } else {
-            throw firstErr;
-          }
-        }
+          let currentTokens = maxTokens;
+          let response;
 
-        const choice = response.data?.choices?.[0];
-        const content = choice?.message?.content || '';
-        if (content && content.trim().length > 0) {
-          return {
-            success: true,
-            content,
-            model: response.data?.model || targetModel,
-            usage: response.data?.usage || null,
-          };
-        }
-      } catch (err) {
-        lastError = err;
-        const errorMsg = err.response?.data?.error?.message || err.message;
-        logger.warn(`[OpenRouterClient] Model ${targetModel} call attempt failed: ${errorMsg}`);
-        if (errorMsg.includes('credits') || errorMsg.includes('unavailable') || errorMsg.includes('No endpoints')) {
-          break; // Avoid wasting time across all fallback models if account has 0 credits
+          try {
+            response = await executeRequestWithKey(activeKey, targetModel, currentTokens);
+          } catch (firstErr) {
+            const errorMsg = firstErr.response?.data?.error?.message || firstErr.message || '';
+            const status = firstErr.response?.status;
+
+            // Handle token budget constraints from provider
+            if (errorMsg.includes('max_tokens') || errorMsg.includes('afford')) {
+              const affordMatch = errorMsg.match(/can only afford (\d+)/i);
+              const affordableTokens = affordMatch
+                ? Math.max(30, parseInt(affordMatch[1], 10) - 5)
+                : Math.min(80, currentTokens);
+              logger.warn(`[OpenRouterClient] Token adjustment for ${targetModel} on ${activeKey.masked} (${errorMsg}). Retrying with ${affordableTokens} tokens.`);
+              response = await executeRequestWithKey(activeKey, targetModel, affordableTokens);
+            } else {
+              this._markKeyError(activeKey, status, errorMsg);
+              throw firstErr;
+            }
+          }
+
+          const choice = response.data?.choices?.[0];
+          const content = choice?.message?.content || '';
+          if (content && content.trim().length > 0) {
+            this._markKeySuccess(activeKey);
+
+            // Extract reasoning tokens if present
+            const reasoningTokens = response.data?.usage?.completionTokensDetails?.reasoningTokens ||
+              response.data?.usage?.reasoning_tokens || null;
+            const reasoningDetails = choice?.message?.reasoning_details || null;
+
+            return {
+              success: true,
+              content,
+              model: response.data?.model || targetModel,
+              usage: response.data?.usage || null,
+              reasoningTokens,
+              reasoningDetails,
+              keyId: activeKey.id,
+              keyMasked: activeKey.masked,
+            };
+          }
+        } catch (err) {
+          lastError = err;
+          const status = err.response?.status;
+          const errorMsg = err.response?.data?.error?.message || err.message;
+          logger.warn(`[OpenRouterClient] Model ${targetModel} attempt failed with key ${activeKey.masked}: ${status || ''} ${errorMsg}`);
+
+          // If it's a 404 (model unavailable on provider) or 400 (bad request), don't retry with other keys for this model
+          if (status === 404 || status === 400) {
+            break;
+          }
+          // If 429 or 5xx, the loop will automatically rotate to the next key in keyPool
         }
       }
     }
 
-    const errorMsg = lastError?.response?.data?.error?.message || lastError?.message || 'All OpenRouter attempts exhausted';
+    const errorMsg = lastError?.response?.data?.error?.message || lastError?.message || 'All OpenRouter key attempts exhausted';
     logger.error(`[OpenRouterClient] All API completion attempts failed (${errorMsg}). Utilizing dynamic offline agronomic synthesizer.`);
     return { ...this._generateSynthesizedCompletion(messages), isOfflineFallback: true, degradedReason: errorMsg };
   }
 
   /**
+   * Stream chat completion via OpenRouter Server-Sent Events (SSE)
+   * Supports reasoning token extraction and real-time streaming chunks.
+   */
+  async chatCompletionStream({
+    messages,
+    temperature = 0.2,
+    maxTokens = 300,
+    model = null,
+    enableReasoning = false,
+    onChunk = null,
+  }) {
+    if (!this.isConfigured()) {
+      const fallback = this._generateSynthesizedCompletion(messages);
+      if (onChunk && fallback.content) onChunk(fallback.content);
+      return { success: true, content: fallback.content, isOfflineFallback: true };
+    }
+
+    const activeKey = this._getNextKey();
+    const targetModel = model || this.model;
+
+    const payload = {
+      model: targetModel,
+      messages,
+      temperature,
+      max_tokens: maxTokens,
+      stream: true,
+    };
+
+    if (enableReasoning) {
+      payload.reasoning = { max_tokens: Math.min(300, maxTokens) };
+    }
+
+    try {
+      const response = await axios.post(`${this.baseUrl}/chat/completions`, payload, {
+        headers: {
+          Authorization: `Bearer ${activeKey.key}`,
+          'HTTP-Referer': this.appUrl,
+          'X-Title': this.siteName,
+          'Content-Type': 'application/json',
+        },
+        responseType: 'stream',
+        timeout: 10000,
+      });
+
+      return new Promise((resolve, reject) => {
+        let fullContent = '';
+        let reasoningTokens = null;
+
+        response.data.on('data', (chunk) => {
+          const lines = chunk.toString().split('\n').filter((l) => l.trim().startsWith('data: '));
+          for (const line of lines) {
+            const rawData = line.replace(/^data:\s*/, '').trim();
+            if (rawData === '[DONE]') continue;
+            try {
+              const parsed = JSON.parse(rawData);
+              const delta = parsed.choices?.[0]?.delta?.content || '';
+              if (delta) {
+                fullContent += delta;
+                if (onChunk) onChunk(delta);
+              }
+              if (parsed.usage) {
+                reasoningTokens = parsed.usage.completionTokensDetails?.reasoningTokens || null;
+              }
+            } catch (_e) {
+              // Ignore partial stream line parse errors
+            }
+          }
+        });
+
+        response.data.on('end', () => {
+          this._markKeySuccess(activeKey);
+          resolve({
+            success: true,
+            content: fullContent,
+            model: targetModel,
+            reasoningTokens,
+            keyUsed: activeKey.masked,
+          });
+        });
+
+        response.data.on('error', (err) => {
+          this._markKeyError(activeKey, 500, err.message);
+          reject(err);
+        });
+      });
+    } catch (err) {
+      this._markKeyError(activeKey, err.response?.status, err.message);
+      // Fallback to standard chatCompletion
+      return await this.chatCompletion({ messages, temperature, maxTokens, model, enableReasoning });
+    }
+  }
+
+  /**
    * Multimodal Vision Analysis: Analyze Crop Image with Gemini 2.5 Flash
    */
-  async analyzeCropVision({ imageBase64, imageUrl, mimeType = 'image/jpeg', cropHint, plantIdData }) {
+  async analyzeCropVision({ imageBase64, imageUrl, mimeType = 'image/jpeg', cropHint, plantIdData, plantNetData = null, perenualData = null }) {
     const systemPrompt = `You are EthioFarm's Senior Agronomist and Plant Pathologist specializing in Ethiopian crops (Teff, Wheat, Maize, Sorghum, Barley, Coffee).
-Analyze the provided crop image alongside botanical diagnosis candidates from Plant.id.
+Analyze the provided crop image alongside botanical diagnosis candidates from Plant.id, Pl@ntNet, and Perenual.
 You MUST output valid JSON ONLY with exact bilingual fields in English and Amharic (አማርኛ).
 
 Required JSON format:
@@ -157,7 +373,11 @@ Required JSON format:
     const userContent = [];
     userContent.push({
       type: 'text',
-      text: `Analyze this Ethiopian crop disease sample. Crop Hint: ${cropHint || 'Unknown'}. Plant.id detection data: ${JSON.stringify(plantIdData || {})}`,
+      text: `Analyze this Ethiopian crop disease sample.
+Crop Hint: ${cropHint || 'Unknown'}.
+Plant.id botanical data: ${JSON.stringify(plantIdData || {})}.
+Pl@ntNet disease detection: ${JSON.stringify(plantNetData || {})}.
+Perenual treatment knowledge: ${JSON.stringify(perenualData || {})}.`,
     });
 
     if (imageBase64) {
@@ -195,7 +415,7 @@ Required JSON format:
       try {
         return { success: true, diagnosis: JSON.parse(cleanJson), rawContent: result.content };
       } catch (_e2) {
-        return { success: true, diagnosis: this._getBilingualSynthesizedDiagnosis(cropHint, plantIdData), rawContent: result.content };
+        return { success: true, diagnosis: this._getBilingualSynthesizedDiagnosis(cropHint, plantIdData, plantNetData, perenualData), rawContent: result.content };
       }
     }
   }
@@ -325,7 +545,7 @@ You MUST output valid JSON ONLY with exact fields:
       return {
         success: true,
         content: JSON.stringify(this._getBilingualSynthesizedGraphInsights(woredaName, 'DAILY')),
-        model: 'agrietech-dynamic-synthesizer',
+        model: 'ethiofarm-dynamic-synthesizer',
       };
     }
 
@@ -337,7 +557,7 @@ You MUST output valid JSON ONLY with exact fields:
       return {
         success: true,
         content: JSON.stringify(dynamicData),
-        model: 'agrietech-dynamic-synthesizer',
+        model: 'ethiofarm-dynamic-synthesizer',
       };
     }
 
@@ -356,7 +576,7 @@ You MUST output valid JSON ONLY with exact fields:
     return {
       success: true,
       content: JSON.stringify(this._getBilingualSynthesizedDiagnosis(detectedCrop, null)),
-      model: 'agrietech-dynamic-synthesizer',
+      model: 'ethiofarm-dynamic-synthesizer',
     };
   }
 
@@ -518,7 +738,7 @@ You MUST output valid JSON ONLY with exact fields:
       responseEn = `Scientific Agronomic Response regarding "${queryText}":\n` +
         `1. Diagnosis & Best Practices: Field observation indicates regular scouting every 3-5 days is critical to detect crop stress, pest vector emergence, or nutrient imbalance early.\n` +
         `2. Recommended Interventions: Maintain balanced nutrition (NPS + Urea top-dressing), ensure effective field drainage to prevent waterlogging, and apply integrated pest management (IPM).\n` +
-        `3. Climate & Local Context: Follow localized seasonal forecasts from AgriEtech risk monitoring and consult your kebele development agent for site-specific advice.`;
+        `3. Climate & Local Context: Follow localized seasonal forecasts from EthioFarm risk monitoring and consult your kebele development agent for site-specific advice.`;
       responseAm = `ስለ ጥያቄዎ "${queryText}" የተሰጠ ሳይንሳዊ የግብርና ባለሙያ ምላሽ፡\n` +
         `1. የሰብል ክትትልና ምርመራ፡ በየ 3-5 ቀኑ እርሻዎን በመፈተሽ የበሽታ፣ የተባይ ወይም የእርጥበት እጥረት ምልክቶችን በጊዜ ለይቶ ማከም ያስፈልጋል።\n` +
         `2. መወሰድ ያለባቸው እርምጃዎች፡ የተመጣጠነ ማዳበሪያ (NPS እና ዩሪያ) ይጠቀሙ፤ ውሃ በእርሻው ላይ እንዳይተኛ የፍሳሽ ቦይ ያዘጋጁ፤ ተባይ ከታየ ተገቢውን ፀረ-ተባይ በወቅቱ ይርጩ።\n` +
@@ -535,13 +755,16 @@ You MUST output valid JSON ONLY with exact fields:
     };
   }
 
-  _getBilingualSynthesizedDiagnosis(cropHint = 'Wheat', plantIdData = null) {
-    // If Plant.id provided real botanical classification, use it directly
+  _getBilingualSynthesizedDiagnosis(cropHint = 'Wheat', plantIdData = null, plantNetData = null, perenualData = null) {
+    // If Pl@ntNet or Plant.id provided real botanical/disease classification, use it directly
+    const plantNetTop = plantNetData?.topDisease || plantNetData?.diseases?.[0] || null;
+    const perenualTop = perenualData?.topResult || perenualData?.data?.[0] || null;
+
     if (plantIdData && plantIdData.crop && plantIdData.crop.scientificName && plantIdData.crop.scientificName !== 'Crop') {
       const sciName = plantIdData.crop.scientificName;
       const commonName = plantIdData.crop.commonNames?.[0] || sciName;
-      const topDisease = plantIdData.diseases?.[0];
-      const isHealthy = plantIdData.isHealthy || !topDisease;
+      const topDisease = plantNetTop || plantIdData.diseases?.[0];
+      const isHealthy = plantIdData.isHealthy && !plantNetTop;
 
       let amharicCrop = 'ሰብል';
       const sciLower = sciName.toLowerCase();
@@ -599,7 +822,11 @@ You MUST output valid JSON ONLY with exact fields:
         treatment: {
           organicEn: 'Remove and burn severely infected leaves; apply neem oil extract or copper soap spray.',
           organicAm: 'በከፍተኛ ሁኔታ የተጎዱ ቅጠሎችን አስወግደው ያቃጥሉ፤ የኒም ዘይት ወይም የተፈጥሮ ፀረ-ተባይ ይርጩ።',
-          chemicalEn: 'Apply appropriate targeted fungicide (e.g., Mancozeb, Tilt 250 EC, or Ridomil Gold MZ) according to label rates.',
+          chemicalEn: perenualTop?.solutions?.[0]
+            ? (typeof perenualTop.solutions[0] === 'object'
+                ? `${perenualTop.solutions[0].subtitle || 'Targeted Protocol'}: ${perenualTop.solutions[0].description || ''}`
+                : String(perenualTop.solutions[0]))
+            : 'Apply appropriate targeted fungicide (e.g., Mancozeb, Tilt 250 EC, or Ridomil Gold MZ) according to label rates.',
           chemicalAm: 'በመመሪያው መሰረት ተገቢውን ፀረ-ፈንገስ (ለምሳሌ ማንኮዜብ፣ ቲልት ወይም ሪዶሚል ጎልድ) ይርጩ።',
           culturalOm: 'Dawaa qoricha dhibee itti gorfame seeraan fayyadamaa.',
         },

@@ -3,12 +3,14 @@ const path = require('path');
 const { prisma, isConnected } = require('../../config/db');
 const openRouterClient = require('../../utils/openRouterClient');
 const plantIdClient = require('../../ingestion/plantIdClient');
+const plantNetClient = require('../../ingestion/plantNetClient');
+const perenualClient = require('../../ingestion/perenualClient');
 const logger = require('../../utils/logger');
 const { NotFoundError, ForbiddenError } = require('../../utils/errors');
 
 /**
- * Perform Dual-AI Crop Disease Diagnosis:
- * Combines Plant.id Botanical Taxonomy + Google Gemini 2.5 Flash Vision & Bilingual Agronomic Reasoning
+ * Perform Multi-Engine AI Crop Disease Diagnosis:
+ * Combines Plant.id v3 Botanical Health + Pl@ntNet v2 Disease Classifier + Perenual Agronomic Knowledge + OpenRouter Reasoning
  */
 async function diagnoseCropImage({ farmId, cropType, imageUrl, imageFile, imageBase64: rawBase64, language = 'en', user }) {
   if (farmId && user && isConnected()) {
@@ -40,21 +42,48 @@ async function diagnoseCropImage({ farmId, cropType, imageUrl, imageFile, imageB
     }
   }
 
-  // Step 1: Query Plant.id for specialized botanical identification & disease probabilities
-  logger.info(`[DiseaseDiagnosis] Querying Plant.id Botanical Classifier for cropHint="${cropType || 'general'}"`);
+  // Step 1: Run Plant.id (Kindwise v3) & Pl@ntNet (v2) in parallel for dual-vision verification
+  logger.info(`[DiseaseDiagnosis] Querying Plant.id and Pl@ntNet Vision Classifiers for cropHint="${cropType || 'general'}"`);
   let plantIdResult = { isHealthy: false, diseases: [] };
-  try {
-    plantIdResult = await plantIdClient.identifyCropHealth({
+  let plantNetResult = { success: false, diseases: [] };
+
+  const [plantIdSettled, plantNetSettled] = await Promise.allSettled([
+    plantIdClient.identifyCropHealth({
       imageBase64,
       imageUrl,
       cropHint: cropType,
-    });
-  } catch (pErr) {
-    logger.warn(`[DiseaseDiagnosis] Plant.id query notice: ${pErr.message}`);
+    }),
+    plantNetClient.identifyDisease({
+      imageBase64,
+      imageUrl,
+      organ: 'leaf',
+    }),
+  ]);
+
+  if (plantIdSettled.status === 'fulfilled') {
+    plantIdResult = plantIdSettled.value;
+  } else {
+    logger.warn(`[DiseaseDiagnosis] Plant.id query notice: ${plantIdSettled.reason?.message}`);
   }
 
-  // Step 2: Feed image + Plant.id findings into Gemini 2.5 Flash on OpenRouter
-  logger.info('[DiseaseDiagnosis] Submitting to Gemini 2.5 Flash on OpenRouter for Multimodal Bilingual Diagnosis');
+  if (plantNetSettled.status === 'fulfilled' && plantNetSettled.value?.success) {
+    plantNetResult = plantNetSettled.value;
+  } else if (plantNetSettled.status === 'rejected') {
+    logger.warn(`[DiseaseDiagnosis] Pl@ntNet query notice: ${plantNetSettled.reason?.message}`);
+  }
+
+  // Step 2: Query Perenual for authoritative pest/disease management protocols
+  const candidateDiseaseName = plantNetResult.topDisease?.name || plantIdResult.diseases?.[0]?.name || cropType || 'rust';
+  let perenualResult = { success: false, data: [] };
+  try {
+    const searchTerms = candidateDiseaseName.split(/[-–—/]/)[0].trim().split(' ').slice(0, 2).join(' ');
+    perenualResult = await perenualClient.searchPestDisease(searchTerms);
+  } catch (perr) {
+    logger.warn(`[DiseaseDiagnosis] Perenual query notice: ${perr.message}`);
+  }
+
+  // Step 3: Feed multi-engine findings into OpenRouter Multi-Key Vision & Reasoning
+  logger.info('[DiseaseDiagnosis] Submitting to OpenRouter for Multimodal Bilingual Diagnosis & Synthesis');
   let geminiVisionResult = {};
   try {
     geminiVisionResult = await openRouterClient.analyzeCropVision({
@@ -62,10 +91,12 @@ async function diagnoseCropImage({ farmId, cropType, imageUrl, imageFile, imageB
       imageUrl,
       cropHint: cropType || plantIdResult.crop?.commonNames?.[0] || plantIdResult.crop?.scientificName || 'Crop',
       plantIdData: plantIdResult,
+      plantNetData: plantNetResult,
+      perenualData: perenualResult,
       language,
     });
   } catch (gErr) {
-    logger.warn(`[DiseaseDiagnosis] Gemini vision notice: ${gErr.message}`);
+    logger.warn(`[DiseaseDiagnosis] OpenRouter vision notice: ${gErr.message}`);
   }
 
   const diagnosis = geminiVisionResult.diagnosis || {};
@@ -145,13 +176,20 @@ async function diagnoseCropImage({ farmId, cropType, imageUrl, imageFile, imageB
   const resolvedCropAm = diagnosis.cropIdentified?.nameAm || (matchedTaxonomy && matchedTaxonomy.cropAm) || 'የእርሻ ሰብል';
   const resolvedCropOm = (matchedTaxonomy && matchedTaxonomy.cropOm) || 'Midhaan Qonnaa';
 
-  const resolvedDiseaseEn = diagnosis.diseaseName?.nameEn || plantIdResult.diseases?.[0]?.name || (matchedTaxonomy && matchedTaxonomy.diseaseEn) || 'Botanical Condition Analysis';
+  const resolvedDiseaseEn = diagnosis.diseaseName?.nameEn || plantNetResult.topDisease?.name || plantIdResult.diseases?.[0]?.name || (matchedTaxonomy && matchedTaxonomy.diseaseEn) || 'Botanical Condition Analysis';
   const resolvedDiseaseAm = diagnosis.diseaseName?.nameAm || (matchedTaxonomy && matchedTaxonomy.diseaseAm) || 'የሰብል በሽታ ምርመራ';
   const resolvedDiseaseOm = (matchedTaxonomy && matchedTaxonomy.diseaseOm) || 'Qorannoo Dhibee Midhaanii';
 
-  const resolvedPathogen = diagnosis.pathogen || plantIdResult.diseases?.[0]?.cause || (matchedTaxonomy && matchedTaxonomy.pathogen) || 'Fungal/Viral/Pest Pathogen';
-  const resolvedSeverity = diagnosis.severity || 'MODERATE';
-  const resolvedConfidence = diagnosis.confidenceScore || plantIdResult.diseases?.[0]?.probability || 0.88;
+  const resolvedPathogen = diagnosis.pathogen || plantNetResult.topDisease?.eppoCode || plantIdResult.diseases?.[0]?.cause || (matchedTaxonomy && matchedTaxonomy.pathogen) || 'Fungal/Viral/Pest Pathogen';
+  const resolvedSeverity = diagnosis.severity || (plantNetResult.topDisease?.score > 0.6 ? 'HIGH' : 'MODERATE');
+  const resolvedConfidence = diagnosis.confidenceScore || plantNetResult.topDisease?.score || plantIdResult.diseases?.[0]?.probability || 0.88;
+
+  // Extract authoritative solution protocols from Perenual if available
+  const perenualSolutionText = perenualResult.topResult?.solutions?.[0]
+    ? (typeof perenualResult.topResult.solutions[0] === 'object'
+        ? `${perenualResult.topResult.solutions[0].subtitle || 'Protocol'}: ${perenualResult.topResult.solutions[0].description || ''}`
+        : String(perenualResult.topResult.solutions[0]))
+    : null;
 
   // Triaging: Flag low confidence scans for local Woreda Development Agent review
   const needsExpertReview = resolvedConfidence < 0.75;
@@ -160,6 +198,7 @@ async function diagnoseCropImage({ farmId, cropType, imageUrl, imageFile, imageB
   const treatmentEn = [
     diagnosis.treatment?.chemicalEn ? `Chemical: ${diagnosis.treatment.chemicalEn}` : (matchedTaxonomy ? matchedTaxonomy.treatmentEn : null),
     diagnosis.treatment?.organicEn ? `Organic/Cultural: ${diagnosis.treatment.organicEn}` : null,
+    perenualSolutionText ? `Perenual Protocol: ${perenualSolutionText}` : null,
   ].filter(Boolean).join(' | ') || 'Apply targeted agronomic treatment and remove diseased foliage.';
 
   const treatmentAm = [
@@ -181,89 +220,125 @@ async function diagnoseCropImage({ farmId, cropType, imageUrl, imageFile, imageB
       isHealthy: plantIdResult.isHealthy,
       topDiseases: plantIdResult.diseases,
     },
+    plantNet: {
+      success: plantNetResult.success,
+      version: plantNetResult.version,
+      topDisease: plantNetResult.topDisease,
+      diseases: plantNetResult.diseases,
+    },
+    perenual: {
+      success: perenualResult.success,
+      topResult: perenualResult.topResult,
+      solution: perenualSolutionText,
+    },
+    engines: ['Plant.id v3', 'Pl@ntNet v2', 'Perenual Agronomy', 'OpenRouter AI'],
     taxonomyMatched: Boolean(matchedTaxonomy),
     triageStatus,
   };
 
-  if (isConnected()) {
-    try {
-      let validFarmId = null;
-      if (farmId) {
-        const existingFarm = await prisma.farm.findUnique({ where: { id: farmId } });
-        if (existingFarm) validFarmId = farmId;
-      }
+  try {
+    let validFarmId = null;
+    if (farmId) {
+      const existingFarm = await prisma.farm.findUnique({ where: { id: farmId } });
+      if (existingFarm) validFarmId = farmId;
+    }
 
-      const saved = await prisma.diseaseDiagnosis.create({
+    const saved = await prisma.diseaseDiagnosis.create({
+      data: {
+        farmId: validFarmId,
+        cropType: cropType || resolvedCropEn,
+        cropIdentified: resolvedCropEn,
+        imageUrl: uploadPath || '/uploads/diagnoses/crop_sample.jpg',
+        diseaseName: resolvedDiseaseEn,
+        pathogen: resolvedPathogen,
+        severity: resolvedSeverity,
+        confidenceScore: Math.round(resolvedConfidence * 100) / 100,
+        symptomsEn,
+        symptomsAm,
+        treatmentEn,
+        treatmentAm,
+        treatmentOm,
+        preventionEn,
+        preventionAm,
+        rawResponse,
+      },
+    });
+
+    // Also persist raw Gemini reasoning into AIInsight table
+    try {
+      await prisma.aIInsight.create({
         data: {
-          farmId: validFarmId,
-          cropType: cropType || resolvedCropEn,
-          cropIdentified: resolvedCropEn,
-          imageUrl: uploadPath || '/uploads/diagnoses/crop_sample.jpg',
-          diseaseName: resolvedDiseaseEn,
-          pathogen: resolvedPathogen,
-          severity: resolvedSeverity,
+          prompt: `Dual AI crop diagnosis for crop=${cropType || resolvedCropEn}`,
+          model: 'Plant.id + Google Gemini 2.5 Flash',
+          feature: 'DISEASE_DIAGNOSIS',
+          rawResponse: rawResponse || {},
           confidenceScore: Math.round(resolvedConfidence * 100) / 100,
-          symptomsEn,
-          symptomsAm,
-          treatmentEn,
-          treatmentAm,
-          treatmentOm,
-          preventionEn,
-          preventionAm,
-          rawResponse,
+          farmId: validFarmId,
         },
       });
-
-      // Also persist raw Gemini reasoning into AIInsight table
-      try {
-        await prisma.aIInsight.create({
-          data: {
-            prompt: `Dual AI crop diagnosis for crop=${cropType || resolvedCropEn}`,
-            model: 'Plant.id + Google Gemini 2.5 Flash',
-            feature: 'DISEASE_DIAGNOSIS',
-            rawResponse: rawResponse || {},
-            confidenceScore: Math.round(resolvedConfidence * 100) / 100,
-            farmId: farmId || null,
-          },
-        });
-      } catch (aiLogErr) {
-        logger.warn(`[DiseaseDiagnosis] AIInsight logging notice: ${aiLogErr.message}`);
-      }
-
-      return {
-        id: saved.id,
-        farmId: saved.farmId,
-        cropType: saved.cropType,
-        cropIdentified: saved.cropIdentified,
-        cropIdentifiedAm: resolvedCropAm,
-        cropIdentifiedOm: resolvedCropOm,
-        imageUrl: saved.imageUrl,
-        diseaseName: saved.diseaseName,
-        diseaseNameAm: resolvedDiseaseAm,
-        diseaseNameOm: resolvedDiseaseOm,
-        pathogen: saved.pathogen,
-        severity: saved.severity,
-        confidenceScore: saved.confidenceScore,
-        needsExpertReview,
-        triageStatus,
-        symptomsEn: saved.symptomsEn,
-        symptomsAm: saved.symptomsAm,
-        treatmentEn: saved.treatmentEn,
-        treatmentAm: saved.treatmentAm,
-        treatmentOm: saved.treatmentOm,
-        preventionEn: saved.preventionEn,
-        preventionAm: saved.preventionAm,
-        aiModel: 'Plant.id Botanical + Google Gemini 2.5 Flash + EthioAgriTaxonomy',
-        rawResponse: saved.rawResponse,
-        createdAt: saved.createdAt,
-      };
-    } catch (saveErr) {
-      logger.error(`[DiseaseDiagnosis] DB save error: ${saveErr.message}`);
-      throw saveErr;
+    } catch (aiLogErr) {
+      logger.warn(`[DiseaseDiagnosis] AIInsight logging notice: ${aiLogErr.message}`);
     }
-  }
 
-  throw new Error('Database is required for disease diagnosis persistence');
+    return {
+      id: saved.id,
+      farmId: saved.farmId,
+      cropType: saved.cropType,
+      cropIdentified: saved.cropIdentified,
+      cropIdentifiedAm: resolvedCropAm,
+      cropIdentifiedOm: resolvedCropOm,
+      imageUrl: saved.imageUrl,
+      diseaseName: saved.diseaseName,
+      diseaseNameAm: resolvedDiseaseAm,
+      diseaseNameOm: resolvedDiseaseOm,
+      pathogen: saved.pathogen,
+      severity: saved.severity,
+      confidenceScore: saved.confidenceScore,
+      needsExpertReview,
+      triageStatus,
+      symptomsEn: saved.symptomsEn,
+      symptomsAm: saved.symptomsAm,
+      treatmentEn: saved.treatmentEn,
+      treatmentAm: saved.treatmentAm,
+      treatmentOm: saved.treatmentOm,
+      preventionEn: saved.preventionEn,
+      preventionAm: saved.preventionAm,
+      aiModel: 'Multi-Engine (Plant.id v3 + Pl@ntNet v2 + Perenual + Gemini & OpenRouter AI)',
+      enginesUsed: ['Plant.id v3', 'Pl@ntNet v2', 'Perenual Agronomy', 'OpenRouter AI'],
+      rawResponse: saved.rawResponse,
+      createdAt: saved.createdAt,
+    };
+  } catch (saveErr) {
+    logger.warn(`[DiseaseDiagnosis] DB save notice: ${saveErr.message}. Gracefully returning computed AI diagnosis.`);
+    return {
+      id: `diag_ai_${Date.now()}`,
+      farmId: farmId || null,
+      cropType: cropType || resolvedCropEn,
+      cropIdentified: resolvedCropEn,
+      cropIdentifiedAm: resolvedCropAm,
+      cropIdentifiedOm: resolvedCropOm,
+      imageUrl: uploadPath || '/uploads/diagnoses/crop_sample.jpg',
+      diseaseName: resolvedDiseaseEn,
+      diseaseNameAm: resolvedDiseaseAm,
+      diseaseNameOm: resolvedDiseaseOm,
+      pathogen: resolvedPathogen,
+      severity: resolvedSeverity,
+      confidenceScore: Math.round(resolvedConfidence * 100) / 100,
+      needsExpertReview,
+      triageStatus,
+      symptomsEn,
+      symptomsAm,
+      treatmentEn,
+      treatmentAm,
+      treatmentOm,
+      preventionEn,
+      preventionAm,
+      aiModel: 'Multi-Engine (Plant.id v3 + Pl@ntNet v2 + Perenual + Gemini & OpenRouter AI)',
+      enginesUsed: ['Plant.id v3', 'Pl@ntNet v2', 'Perenual Agronomy', 'OpenRouter AI'],
+      rawResponse,
+      createdAt: new Date().toISOString(),
+    };
+  }
 }
 
 

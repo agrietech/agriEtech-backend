@@ -40,7 +40,7 @@ class PlantIdClient {
         try {
           const imgResponse = await axios.get(imageUrl, {
             responseType: 'arraybuffer',
-            headers: { 'User-Agent': 'AgriEtech-BotanicalClient/1.0' },
+            headers: { 'User-Agent': 'EthioFarm-BotanicalClient/1.0' },
             timeout: 10000,
           });
           base64Data = Buffer.from(imgResponse.data).toString('base64');

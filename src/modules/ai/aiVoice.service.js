@@ -1,4 +1,5 @@
 const fs = require('fs');
+const path = require('path');
 const axios = require('axios');
 const openRouterClient = require('../../utils/openRouterClient');
 const logger = require('../../utils/logger');
@@ -80,7 +81,7 @@ async function processVoiceInquiry({ userQuestion, audioTranscript, audioFile, l
     await prisma.aIInsight.create({
       data: {
         prompt: query || 'Voice inquiry',
-        model: isAiOffline ? 'agrietech-offline-synthesizer' : (data.aiModel || 'google/gemini-2.5-flash'),
+        model: isAiOffline ? 'ethiofarm-offline-synthesizer' : (data.aiModel || 'google/gemini-2.5-flash'),
         feature: 'VOICE_ASSISTANT',
         rawResponse: data,
         userId: validUserId,
@@ -122,7 +123,7 @@ async function processVoiceInquiry({ userQuestion, audioTranscript, audioFile, l
     audioUrl: proxyAudioUrl,
     audioUrlAm: `${backendBaseUrl}/api/v1/ai/tts-stream?text=${encodeURIComponent(cleanTextForSpeech(data.responseAm).substring(0, 300))}&lang=am`,
     audioUrlEn: `${backendBaseUrl}/api/v1/ai/tts-stream?text=${encodeURIComponent(cleanTextForSpeech(data.responseEn).substring(0, 300))}&lang=en`,
-    aiModel: isAiOffline ? 'agrietech-offline-synthesizer' : (data.aiModel || 'Google Gemini 2.5 Flash (OpenRouter Voice Intelligence)'),
+    aiModel: isAiOffline ? 'ethiofarm-offline-synthesizer' : (data.aiModel || 'Google Gemini 2.5 Flash (OpenRouter Voice Intelligence)'),
     timestamp: new Date().toISOString(),
   };
 }
@@ -163,7 +164,7 @@ async function synthesizeSpeech({ text, language = 'am' }) {
  * Stream audio MP3 directly from TTS upstream proxy to bypass browser/mobile CORS blocks
  */
 async function streamTtsAudio({ text, lang = 'am' }, res) {
-  const clean = cleanTextForSpeech(text || 'AgriEtech').substring(0, 300);
+  const clean = cleanTextForSpeech(text || 'EthioFarm').substring(0, 300);
   const targetLang = lang === 'en' ? 'en' : 'am';
   const googleTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(clean)}&tl=${targetLang}&client=tw-ob`;
 
