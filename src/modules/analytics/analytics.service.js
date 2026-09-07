@@ -1,6 +1,5 @@
 
 const {
-  ETHIOPIA_REGIONAL_CENTROIDS,
   getLiveRegionalWeatherData,
 } = require('./services/regionalWeather.service');
 const { prisma, isConnected } = require('../../config/db');
@@ -290,7 +289,7 @@ async function getTemporalTrends({ timeframe = 'DAILY', woredaId, includeAi = fa
   const axios = require('axios');
   const { getWoredaCoordinates } = require('../boundaries/boundaries.service');
   const normTimeframe = (timeframe || 'DAILY').toUpperCase();
-  const coords = getWoredaCoordinates(woredaId);
+  const coords = await getWoredaCoordinates(woredaId);
 
   let metrics = [];
   let summary = null;
@@ -298,7 +297,7 @@ async function getTemporalTrends({ timeframe = 'DAILY', woredaId, includeAi = fa
 
   if (normTimeframe === 'DAILY') {
     try {
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${coords.lat}&longitude=${coords.lng}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,soil_moisture_0_to_1cm_mean&timezone=Africa%2FAddis_Ababa&past_days=14&forecast_days=7`;
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${coords.lat}&longitude=${coords.lng}&daily=temperature_2m_max,temperature_2m_min,apparent_temperature_max,apparent_temperature_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max,wind_direction_10m_dominant,uv_index_max,weather_code,relative_humidity_2m_mean,surface_pressure_mean,soil_moisture_0_to_1cm_mean&timezone=Africa%2FAddis_Ababa&past_days=14&forecast_days=7`;
       const response = await axios.get(url, { timeout: 8000 });
       const daily = response.data?.daily;
 
@@ -307,6 +306,15 @@ async function getTemporalTrends({ timeframe = 'DAILY', woredaId, includeAi = fa
           const rain = daily.precipitation_sum?.[idx] ?? 0;
           const tempMax = daily.temperature_2m_max?.[idx] ?? 24.0;
           const tempMin = daily.temperature_2m_min?.[idx] ?? 14.0;
+          const apparentMax = daily.apparent_temperature_max?.[idx] ?? tempMax - 0.5;
+          const apparentMin = daily.apparent_temperature_min?.[idx] ?? tempMin - 1.0;
+          const precipProb = daily.precipitation_probability_max?.[idx] ?? (rain > 2 ? 75 : 10);
+          const windSpeed = daily.wind_speed_10m_max?.[idx] ?? 12.5;
+          const windDir = daily.wind_direction_10m_dominant?.[idx] ?? 130;
+          const uv = daily.uv_index_max?.[idx] ?? (rain > 2 ? 3.0 : 7.0);
+          const weatherCode = daily.weather_code?.[idx] ?? (rain > 10 ? 65 : (rain > 1 ? 61 : 0));
+          const humidity = daily.relative_humidity_2m_mean?.[idx] ?? (rain > 2 ? 80 : 55);
+          const pressure = daily.surface_pressure_mean?.[idx] ?? 1014.0;
           const soilRaw = daily.soil_moisture_0_to_1cm_mean?.[idx] ?? 0.32;
           const soilMoisturePercent = Math.round(soilRaw * 100 * 10) / 10;
           const estimatedNdvi = Math.min(0.85, Math.max(0.25, 0.45 + (rain > 2 ? 0.15 : 0) + (tempMax < 28 ? 0.05 : -0.05)));
@@ -316,6 +324,15 @@ async function getTemporalTrends({ timeframe = 'DAILY', woredaId, includeAi = fa
             rainfallMm: Math.round(rain * 10) / 10,
             tempMaxC: Math.round(tempMax * 10) / 10,
             tempMinC: Math.round(tempMin * 10) / 10,
+            apparentTempMaxC: Math.round(apparentMax * 10) / 10,
+            apparentTempMinC: Math.round(apparentMin * 10) / 10,
+            precipitationProbability: precipProb,
+            windSpeedKmh: Math.round(windSpeed * 10) / 10,
+            windDirectionDeg: windDir,
+            uvIndex: Math.round(uv * 10) / 10,
+            weatherCode: String(weatherCode),
+            humidity: Math.round(humidity * 10) / 10,
+            surfacePressureHpa: Math.round(pressure * 10) / 10,
             ndvi: Math.round(estimatedNdvi * 100) / 100,
             soilMoisturePercent: soilMoisturePercent,
           };
@@ -1307,7 +1324,7 @@ async function getSoilDegradationAssessment(lat, lng, woredaName = null, slopePc
 }
 
 /**
- * Get Unified Multi-Hazard Natural Disaster Predictions for Woreda
+ * Get Unified Integrated Risk Natural Disaster Predictions for Woreda
  */
 async function getNaturalDisastersPrediction(lat, lng, woredaName = null) {
   return await naturalDisasterPredictor.predictMultiHazardDisasters({

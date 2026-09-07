@@ -262,7 +262,7 @@ async function exportData(req, res, next) {
 
     if (format === 'csv') {
       res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', `attachment; filename="agrietech_analytics_${Date.now()}.csv"`);
+      res.setHeader('Content-Disposition', `attachment; filename="ethiofarm_analytics_${Date.now()}.csv"`);
       return res.status(200).send(`Export Timestamp,User Role,Jurisdiction\n${new Date().toISOString()},${user?.role || 'OFFICER'},${user?.woredaId || user?.zoneId || user?.regionId || 'NATIONAL'}`);
     }
 

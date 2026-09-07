@@ -1,7 +1,7 @@
 /**
  * @file hyperLocalAgronomyEngine.js
  * @description State-of-the-art agronomic, digital soil mapping, climate downscaling,
- * and multi-hazard intelligence engine for ANY specific latitude & longitude in Ethiopia.
+ * and integrated risk intelligence engine for ANY specific latitude & longitude in Ethiopia.
  * Integrates:
  * - SRTM 30m Digital Elevation Model (DEM) & Atmospheric Lapse-Rate Downscaling
  * - EthioSIS Soil Fertility & Agricultural Lime (ኖራ) Prescription Algorithm

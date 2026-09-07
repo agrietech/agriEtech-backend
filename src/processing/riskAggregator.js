@@ -29,7 +29,7 @@ function getAlertLevel(score) {
   return 'GREEN';
 }
 
-// Calculate weighted multi-hazard composite risk index
+// Calculate weighted integrated risk composite risk index
 function calculateCompositeRisk(hazardScores = {}, customWeights = {}) {
   const seasonal = getSeasonalWeights();
   // customWeights fully override seasonal weights when provided

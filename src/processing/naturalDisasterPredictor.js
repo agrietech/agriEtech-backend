@@ -1,6 +1,6 @@
 /**
  * @file naturalDisasterPredictor.js
- * @description Master Multi-Hazard Natural Disaster Prediction & Early Warning Engine for Ethiopia.
+ * @description Master Integrated Risk Natural Disaster Prediction & Early Warning Engine for Ethiopia.
  * Integrates 6 primary disaster pillars:
  * 1. Earthquakes & Seismic Rifting (USGS API + Wonji / Afar Fault Systems)
  * 2. Soil Degradation & Severe Land Erosion (RUSLE Modeling)
@@ -13,6 +13,7 @@
 const seismologyHazardEngine = require('./seismologyHazardEngine');
 const soilDegradationEngine = require('./soilDegradationEngine');
 const earthEngineConnector = require('../ingestion/connectors/earthEngineConnector');
+const { calculateDistance } = require('../utils/geoUtils');
 const logger = require('../utils/logger');
 
 // Known Ethiopian Active Volcanic & Geothermal Centers
@@ -37,7 +38,7 @@ class NaturalDisasterPredictor {
     const latitude = Number(lat);
     const longitude = Number(lng);
 
-    logger.info(`[NaturalDisasterPredictor] Evaluating multi-hazard risks for [${latitude}, ${longitude}] (${woredaName})`);
+    logger.info(`[NaturalDisasterPredictor] Evaluating integrated risk risks for [${latitude}, ${longitude}] (${woredaName})`);
 
     // 1. Fetch Remote Sensing Data (Sentinel-1 SAR, Sentinel-2 MSI, DEM)
     const planetary = await earthEngineConnector.fetchPlanetaryMetrics({
@@ -110,7 +111,7 @@ class NaturalDisasterPredictor {
     // 7. Pillar 6: Drought & Thermal Desiccation
     let droughtScore = ndvi < 0.35 ? 0.85 : (ndvi < 0.48 ? 0.45 : 0.10);
 
-    // 8. Multi-Hazard Composite Vulnerability Index (0.0 to 1.0)
+    // 8. Integrated Risk Composite Vulnerability Index (0.0 to 1.0)
     const seismicScore = seismicData.seismicHazard.peakGroundAccelerationG > 0.15 ? 0.85 : (seismicData.seismicHazard.peakGroundAccelerationG > 0.05 ? 0.45 : 0.15);
     const erosionScore = soilDegradation.erosionMetrics.annualSoilLossTonsPerHa > 25.0 ? 0.90 : (soilDegradation.erosionMetrics.annualSoilLossTonsPerHa > 12.0 ? 0.50 : 0.20);
 
@@ -218,7 +219,7 @@ class NaturalDisasterPredictor {
     }
 
     return {
-      en: `Maintain active monitoring of weather and multi-hazard remote sensing streams for ${woredaName}.`,
+      en: `Maintain active monitoring of weather and integrated risk remote sensing streams for ${woredaName}.`,
       am: `ለ${woredaName} የአየር ሁኔታና የሳተላይት መረጃዎችን በንቃት መከታተልዎን ይቀጥሉ።`,
       om: `Haala qilleensaa fi odeeffannoo saatalayitii aanaa ${woredaName} hordofaa.`,
     };
@@ -226,14 +227,7 @@ class NaturalDisasterPredictor {
 }
 
 function haversineDistanceKm(lat1, lon1, lat2, lon2) {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * (Math.PI / 180);
-  const dLon = (lon2 - lon1) * (Math.PI / 180);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
+  return calculateDistance(lat1, lon1, lat2, lon2);
 }
 
 module.exports = new NaturalDisasterPredictor();

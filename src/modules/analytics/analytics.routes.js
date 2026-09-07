@@ -19,7 +19,7 @@ router.get('/soil-profile', optionalAuthenticate, controller.getSoilProfile);
 router.get('/downscaled-forecast', optionalAuthenticate, controller.getDownscaledForecast);
 router.get('/agro-zone', optionalAuthenticate, controller.getAgroZone);
 
-// Multi-Hazard Natural Disasters, Seismology & Soil Degradation Engines
+// Integrated Risk Natural Disasters, Seismology & Soil Degradation Engines
 router.get('/seismology', optionalAuthenticate, controller.getSeismologyAnalytics);
 router.get('/earthquakes', optionalAuthenticate, controller.getSeismologyAnalytics);
 router.get('/soil-degradation', optionalAuthenticate, controller.getSoilDegradationAnalytics);
