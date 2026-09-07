@@ -84,9 +84,12 @@ model User {
   role                  Role              @default(FARMER)
   preferredLang         String            @default("am") // 'am' for Amharic, 'en' for English, 'om' for Afaan Oromoo
   isEmailVerified       Boolean           @default(false)
+  isPhoneVerified       Boolean           @default(false)
   resetPasswordToken    String?
   resetPasswordExpires  DateTime?
   verificationToken     String?
+  phoneVerificationToken String?
+  phoneVerificationExpires DateTime?
   regionId              String?
   region                Region?           @relation(fields: [regionId], references: [id], onDelete: SetNull)
   zoneId                String?

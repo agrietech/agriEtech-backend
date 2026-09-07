@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "isPhoneVerified" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "phoneVerificationToken" TEXT;
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "phoneVerificationExpires" TIMESTAMP(3);
