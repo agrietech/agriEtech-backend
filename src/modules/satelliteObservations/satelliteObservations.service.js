@@ -1,31 +1,29 @@
 const axios = require('axios');
-const { prisma, isConnected } = require('../../config/db');
+const { prisma } = require('../../config/db');
 const { getWoredaCoordinates } = require('../boundaries/boundaries.service');
 const logger = require('../../utils/logger');
 
 // Retrieve authentic satellite and weather observation time-series
 async function getObservationsByWoreda(woredaId, source) {
-  if (isConnected()) {
-    try {
-      if (woredaId) {
-        const where = { woredaId };
-        if (source) where.source = source;
+  try {
+    if (woredaId) {
+      const where = { woredaId };
+      if (source) where.source = source;
 
-        const results = await prisma.satelliteObservation.findMany({
-          where,
-          orderBy: { observationDate: 'desc' },
-          take: 30,
-        });
+      const results = await prisma.satelliteObservation.findMany({
+        where,
+        orderBy: { observationDate: 'desc' },
+        take: 30,
+      });
 
-        if (results.length > 0) return results;
-      }
-    } catch (_err) {
-      // Continue to live API fetch
+      if (results && results.length > 0) return results;
     }
+  } catch (_err) {
+    // Continue to live API fetch
   }
 
   // Fetch real-time historical weather from Open-Meteo for this exact Woreda
-  const coords = getWoredaCoordinates(woredaId);
+  const coords = await getWoredaCoordinates(woredaId);
   try {
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${coords.lat}&longitude=${coords.lng}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=Africa%2FAddis_Ababa&past_days=14&forecast_days=7`;
     const response = await axios.get(url, { timeout: 8000 });
@@ -55,7 +53,7 @@ async function getObservationsByWoreda(woredaId, source) {
         };
       });
 
-      if (isConnected() && (woredaId || coords.id)) {
+      if (woredaId || coords.id) {
         const targetWoredaId = woredaId || coords.id;
         setImmediate(async () => {
           try {

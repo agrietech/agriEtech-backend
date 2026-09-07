@@ -1,6 +1,6 @@
-const connectors = require('./connectors/index.js');
-const openWeatherMapConnector = require('./connectors/openWeatherMapConnector');
-const plantIdClient = require('./plantIdClient.js');
+const connectors = require('../src/ingestion/connectors/index.js');
+const openWeatherMapConnector = require('../src/ingestion/connectors/openWeatherMapConnector');
+const plantIdClient = require('../src/ingestion/plantIdClient.js');
 
 const testCoords = { lat: 9.0320, lng: 38.7469 };
 
@@ -23,7 +23,7 @@ async function testConnector(name, testFn) {
 
 async function runAllTests() {
   console.log('\n╔═══════════════════════════════════════════════════════════╗');
-  console.log('║        AgriEtech API Connectors Integration Test         ║');
+  console.log('║        EthioFarm API Connectors Integration Test         ║');
   console.log('╚═══════════════════════════════════════════════════════════╝\n');
   
   const results = [];

@@ -182,11 +182,18 @@ async function recordTelemetry({
   const timestamp = recordedAt ? new Date(recordedAt) : new Date();
   const normalizedMoisture = normalizeSoilMoisture(soilMoisture);
 
-  let actualSensorId = sensorId;
+  let actualSensorId = null;
+  const lookupIdentifier = hardwareId || sensorId;
+  let sensor = null;
 
-  if (hardwareId && !sensorId) {
-    let sensor = await prisma.sensor.findFirst({
-      where: { hardwareId },
+  if (lookupIdentifier) {
+    sensor = await prisma.sensor.findFirst({
+      where: {
+        OR: [
+          { id: lookupIdentifier },
+          { hardwareId: lookupIdentifier },
+        ],
+      },
     });
 
     // Auto-provision if sensor hardwareId is new
@@ -202,18 +209,22 @@ async function recordTelemetry({
           sensor = await prisma.sensor.create({
             data: {
               farmId: targetFarmId,
-              hardwareId,
+              hardwareId: lookupIdentifier,
               sensorType: 'SOIL_MOISTURE',
               isActive: true,
             },
           });
         } catch (createErr) {
-          logger.warn(`[SensorService] Auto-provision warning for ${hardwareId}: ${createErr.message}`);
+          logger.warn(`[SensorService] Auto-provision warning for ${lookupIdentifier}: ${createErr.message}`);
         }
       }
     }
+  }
 
-    if (sensor) actualSensorId = sensor.id;
+  if (sensor) {
+    actualSensorId = sensor.id;
+  } else if (sensorId) {
+    actualSensorId = sensorId;
   }
 
   if (!actualSensorId) {

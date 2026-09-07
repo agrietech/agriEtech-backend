@@ -3,7 +3,49 @@ const app = require('../../src/app');
 const { generateAccessToken } = require('../../src/modules/auth/auth.service');
 
 describe('Sensors Module API Suite', () => {
-  const user = { id: 'usr_agent_01', phoneNumber: '+251911223344', role: 'DEVELOPMENT_AGENT' };
+  beforeAll(async () => {
+    const { prisma } = require('../../src/config/db');
+    await prisma.region.upsert({
+      where: { id: 'reg_oromia_01' },
+      update: {},
+      create: { id: 'reg_oromia_01', nameEn: 'Oromia', nameAm: 'ኦሮሚያ', code: 'ET-OR' },
+    });
+    await prisma.zone.upsert({
+      where: { id: 'zone_east_shewa_01' },
+      update: {},
+      create: { id: 'zone_east_shewa_01', nameEn: 'East Shewa', nameAm: 'ምስራቅ ሸዋ', regionId: 'reg_oromia_01' },
+    });
+    await prisma.woreda.upsert({
+      where: { id: 'woreda_adama_01' },
+      update: {},
+      create: { id: 'woreda_adama_01', nameEn: 'Adama Zuria', nameAm: 'አዳማ ዙሪያ', zoneId: 'zone_east_shewa_01', centerLat: 8.54, centerLng: 39.27 },
+    });
+    await prisma.user.upsert({
+      where: { id: 'usr_agent_01' },
+      update: { woredaId: 'woreda_adama_01' },
+      create: {
+        id: 'usr_agent_01',
+        phoneNumber: '+251911223344',
+        fullName: 'Agent Adama',
+        role: 'DEVELOPMENT_AGENT',
+        woredaId: 'woreda_adama_01',
+      },
+    });
+    await prisma.farm.upsert({
+      where: { id: 'farm_demo_01' },
+      update: {},
+      create: {
+        id: 'farm_demo_01',
+        userId: 'usr_agent_01',
+        woredaId: 'woreda_adama_01',
+        farmName: 'Adama Demonstration Farm',
+        latitude: 8.54,
+        longitude: 39.27,
+      },
+    });
+  });
+
+  const user = { id: 'usr_agent_01', phoneNumber: '+251911223344', role: 'DEVELOPMENT_AGENT', woredaId: 'woreda_adama_01' };
   const token = generateAccessToken(user);
 
   it('POST /api/v1/sensors - should register an IoT probe', async () => {

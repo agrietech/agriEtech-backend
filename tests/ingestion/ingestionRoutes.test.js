@@ -1,9 +1,14 @@
 const request = require('supertest');
 const app = require('../../src/app');
+const { generateAccessToken } = require('../../src/modules/auth/auth.service');
 
 describe('Ingestion Layer API Suite', () => {
+  const adminToken = generateAccessToken({ id: 'usr_admin_01', email: 'admin@agrietech.et', role: 'ADMIN' });
+
   it('GET /api/v1/ingestion/connectors - should list all registered satellite and climate connectors', async () => {
-    const res = await request(app).get('/api/v1/ingestion/connectors');
+    const res = await request(app)
+      .get('/api/v1/ingestion/connectors')
+      .set('Authorization', `Bearer ${adminToken}`);
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
@@ -12,7 +17,10 @@ describe('Ingestion Layer API Suite', () => {
   });
 
   it('POST /api/v1/ingestion/pull - should schedule on-demand data extraction', async () => {
-    const res = await request(app).post('/api/v1/ingestion/pull').send({
+    const res = await request(app)
+      .post('/api/v1/ingestion/pull')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
       source: 'CHIRPS_RAINFALL',
       lat: 8.54,
       lng: 39.27,
