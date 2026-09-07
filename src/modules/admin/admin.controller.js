@@ -254,6 +254,147 @@ function renderDashboard(_req, res) {
     });
 }
 
+/**
+ * Render Professional Admin Login Gateway
+ */
+function renderLogin(_req, res) {
+    const fs = require('fs');
+    const path = require('path');
+
+    const loginPath = path.join(__dirname, 'templates', 'admin_login.html');
+
+    fs.readFile(loginPath, 'utf8', (err, html) => {
+        if (err) {
+            console.error('Error loading admin login template:', err);
+            return res.status(500).send('Admin login template not found');
+        }
+
+        res.setHeader('Content-Type', 'text/html');
+        res.status(200).send(html);
+    });
+}
+
+/**
+ * Handle Admin Authentication (Supports Email/Password & Master Console Key)
+ */
+async function handleAdminLogin(req, res) {
+    try {
+        const jwt = require('jsonwebtoken');
+        const bcrypt = require('bcryptjs');
+        const env = require('../../config/env');
+        const { prisma } = require('../../config/db');
+        const logger = require('../../utils/logger');
+
+        const { email, password, consoleKey } = req.body || {};
+        const keyCandidate = (consoleKey || (!email && password ? password : '')).trim();
+
+        const validKeys = (process.env.ADMIN_API_KEYS || '').split(',').map(k => k.trim()).filter(Boolean);
+        if (process.env.ADMIN_CONSOLE_PASSWORD) {
+            validKeys.push(process.env.ADMIN_CONSOLE_PASSWORD.trim());
+        }
+
+        // 1. Master Console Key Authentication
+        if (keyCandidate && validKeys.includes(keyCandidate)) {
+            const token = jwt.sign(
+                {
+                    id: 'usr_master_admin',
+                    email: 'admin@ethiofarm.et',
+                    role: 'ADMIN',
+                    fullName: 'Master Console Administrator',
+                },
+                env.JWT_SECRET,
+                { expiresIn: '24h' }
+            );
+
+            const isProd = process.env.NODE_ENV === 'production';
+            const secureFlag = isProd ? '; Secure' : '';
+            res.setHeader('Set-Cookie', `admin_token=${token}; Path=/admin; HttpOnly; SameSite=Lax; Max-Age=86400${secureFlag}`);
+            logger.info('[ADMIN_SECURITY] Successful login via Master Console Key');
+
+            if (req.xhr || req.headers.accept?.includes('application/json')) {
+                return res.status(200).json({ success: true, redirect: '/admin/dashboard', token });
+            }
+            return res.redirect('/admin/dashboard');
+        }
+
+        // 2. Email and Password Authentication
+        if (email && password) {
+            const user = await prisma.user.findFirst({
+                where: {
+                    OR: [
+                        { email: { equals: email.trim().toLowerCase(), mode: 'insensitive' } },
+                        { phoneNumber: email.trim() },
+                    ],
+                },
+            });
+
+            if (!user) {
+                if (req.xhr || req.headers.accept?.includes('application/json')) {
+                    return res.status(401).json({ success: false, message: 'Invalid administrative credentials' });
+                }
+                return res.redirect('/admin/login?error=Invalid%20credentials');
+            }
+
+            const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
+            if (!isPasswordValid) {
+                if (req.xhr || req.headers.accept?.includes('application/json')) {
+                    return res.status(401).json({ success: false, message: 'Invalid administrative credentials' });
+                }
+                return res.redirect('/admin/login?error=Invalid%20credentials');
+            }
+
+            const allowedRoles = ['ADMIN', 'REGIONAL_OFFICER', 'ZONAL_OFFICER', 'WOREDA_OFFICER', 'DEVELOPMENT_AGENT'];
+            if (!allowedRoles.includes(user.role)) {
+                logger.warn(`[ADMIN_SECURITY] Unauthorized admin portal login attempt by non-admin user ${user.id} (${user.role})`);
+                if (req.xhr || req.headers.accept?.includes('application/json')) {
+                    return res.status(403).json({ success: false, message: 'Access denied: Administrative privileges required' });
+                }
+                return res.redirect('/admin/login?error=Access%20denied:%20Administrative%20privileges%20required');
+            }
+
+            const token = jwt.sign(
+                {
+                    id: user.id,
+                    email: user.email,
+                    role: user.role,
+                    fullName: user.fullName,
+                    woredaId: user.woredaId,
+                },
+                env.JWT_SECRET,
+                { expiresIn: '24h' }
+            );
+
+            const isProd = process.env.NODE_ENV === 'production';
+            const secureFlag = isProd ? '; Secure' : '';
+            res.setHeader('Set-Cookie', `admin_token=${token}; Path=/admin; HttpOnly; SameSite=Lax; Max-Age=86400${secureFlag}`);
+            logger.info(`[ADMIN_SECURITY] Successful admin portal login by ${user.email} (${user.role})`);
+
+            if (req.xhr || req.headers.accept?.includes('application/json')) {
+                return res.status(200).json({ success: true, redirect: '/admin/dashboard', token, user });
+            }
+            return res.redirect('/admin/dashboard');
+        }
+
+        if (req.xhr || req.headers.accept?.includes('application/json')) {
+            return res.status(400).json({ success: false, message: 'Please provide credentials or a master console key' });
+        }
+        return res.redirect('/admin/login?error=Credentials%20required');
+    } catch (err) {
+        if (req.xhr || req.headers.accept?.includes('application/json')) {
+            return res.status(500).json({ success: false, message: 'Internal server error during authentication' });
+        }
+        return res.redirect('/admin/login?error=Internal%20error');
+    }
+}
+
+/**
+ * Handle Admin Logout
+ */
+function handleAdminLogout(_req, res) {
+    res.setHeader('Set-Cookie', 'admin_token=; Path=/admin; HttpOnly; SameSite=Lax; Max-Age=0');
+    return res.redirect('/admin/login');
+}
+
 async function cleanTestData(req, res, next) {
     try {
         const adminContext = { id: req.user?.id, email: req.user?.email, ip: req.ip };
@@ -349,4 +490,7 @@ module.exports = {
     broadcastEmergencyAlert,
     getAuditLogs,
     renderDashboard,
+    renderLogin,
+    handleAdminLogin,
+    handleAdminLogout,
 };

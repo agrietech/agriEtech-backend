@@ -6,6 +6,13 @@ const roleRequestController = require('../roleRequest/roleRequest.controller');
 // Admin authentication middleware (Supports API Keys, JWT Bearer Tokens, and browser sessions)
 const { isTokenBlacklisted } = require('../auth/auth.service');
 
+function getCookie(req, name) {
+  const cookieHeader = req.headers.cookie;
+  if (!cookieHeader) return null;
+  const match = cookieHeader.match(new RegExp(`(^|;\\s*)${name}=([^;]*)`));
+  return match ? decodeURIComponent(match[2]) : null;
+}
+
 const adminAuth = async (req, res, next) => {
   if (process.env.NODE_ENV === 'test') {
     if (!req.user) req.user = { id: 'usr_admin_01', email: 'admin@ethiofarm.et', role: 'ADMIN' };
@@ -17,17 +24,19 @@ const adminAuth = async (req, res, next) => {
   const apiKey = req.headers['x-api-key'] || req.headers['api-key'];
   if (apiKey) {
     const validKeys = (process.env.ADMIN_API_KEYS || '').split(',').map(k => k.trim()).filter(Boolean);
+    if (process.env.ADMIN_CONSOLE_PASSWORD) validKeys.push(process.env.ADMIN_CONSOLE_PASSWORD.trim());
     if (validKeys.length > 0 && validKeys.includes(apiKey.trim())) {
       req.user = { id: 'usr_admin_apikey', email: 'admin_apikey@ethiofarm.et', fullName: 'API Key Administrator', role: 'ADMIN' };
       return next();
     }
   }
 
-  // 2. JWT Bearer Token Authentication
+  // 2. JWT Bearer Token Authentication (from Header, Cookie, or Query)
   const authHeader = req.headers.authorization;
+  const cookieToken = getCookie(req, 'admin_token') || getCookie(req, 'accessToken');
   const token = (authHeader && authHeader.startsWith('Bearer '))
     ? authHeader.substring(7)
-    : (process.env.NODE_ENV === 'development' ? (req.query.token || req.query.accessToken) : null);
+    : (cookieToken || (process.env.NODE_ENV === 'development' ? (req.query.token || req.query.accessToken) : null));
   
   if (token) {
     try {
@@ -96,7 +105,83 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
-// Public dashboard console view (serves HTML admin interface when accessed via /admin)
+// Server-side Gate protecting HTML dashboard console view
+const adminPageAuth = async (req, res, next) => {
+  if (process.env.NODE_ENV === 'test') {
+    return next();
+  }
+
+  // If accessed via API path (/api/v1/admin), pass through to API router
+  if (req.baseUrl && req.baseUrl.startsWith('/api')) {
+    return next();
+  }
+
+  const queryToken = req.query.token || req.query.accessToken || req.query.apiKey || req.query.key;
+  const cookieToken = getCookie(req, 'admin_token') || getCookie(req, 'accessToken');
+  const authHeader = req.headers.authorization;
+  const headerToken = authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null;
+  const apiKey = req.headers['x-api-key'] || req.headers['api-key'];
+
+  const tokenCandidate = queryToken || cookieToken || headerToken;
+
+  const validKeys = (process.env.ADMIN_API_KEYS || '').split(',').map(k => k.trim()).filter(Boolean);
+  if (process.env.ADMIN_CONSOLE_PASSWORD) {
+    validKeys.push(process.env.ADMIN_CONSOLE_PASSWORD.trim());
+  }
+
+  if (apiKey && validKeys.includes(apiKey.trim())) {
+    return next();
+  }
+
+  if (tokenCandidate && validKeys.includes(tokenCandidate.trim())) {
+    const isProd = process.env.NODE_ENV === 'production';
+    const secureFlag = isProd ? '; Secure' : '';
+    res.setHeader('Set-Cookie', `admin_token=${tokenCandidate.trim()}; Path=/admin; HttpOnly; SameSite=Lax; Max-Age=86400${secureFlag}`);
+    return next();
+  }
+
+  if (tokenCandidate) {
+    try {
+      const jwt = require('jsonwebtoken');
+      const env = require('../../config/env');
+      if (!(await isTokenBlacklisted(tokenCandidate))) {
+        const decoded = jwt.verify(tokenCandidate, env.JWT_SECRET);
+        const allowedRoles = ['ADMIN', 'REGIONAL_OFFICER', 'ZONAL_OFFICER', 'WOREDA_OFFICER', 'DEVELOPMENT_AGENT'];
+        if (decoded && allowedRoles.includes(decoded.role)) {
+          req.user = decoded;
+          return next();
+        }
+      }
+    } catch (_e) {
+      // Token invalid or expired
+    }
+  }
+
+  // User is not authenticated -> Strictly redirect to /admin/login
+  return res.redirect('/admin/login');
+};
+
+// Admin Login Page & Authentication Gateway
+router.get('/login', (req, res) => {
+  const cookieToken = getCookie(req, 'admin_token') || getCookie(req, 'accessToken');
+  if (cookieToken) {
+    try {
+      const jwt = require('jsonwebtoken');
+      const env = require('../../config/env');
+      const decoded = jwt.verify(cookieToken, env.JWT_SECRET);
+      const allowedRoles = ['ADMIN', 'REGIONAL_OFFICER', 'ZONAL_OFFICER', 'WOREDA_OFFICER', 'DEVELOPMENT_AGENT'];
+      if (decoded && allowedRoles.includes(decoded.role)) {
+        return res.redirect('/admin/dashboard');
+      }
+    } catch (_) {}
+  }
+  return controller.renderLogin(req, res);
+});
+
+router.post('/login', controller.handleAdminLogin);
+router.get('/logout', controller.handleAdminLogout);
+
+// Protected dashboard console view (serves HTML admin interface when accessed via /admin)
 router.get('/', (req, res) => {
   if (req.baseUrl && req.baseUrl.startsWith('/api')) {
     return res.status(200).json({
@@ -115,7 +200,7 @@ router.get('/', (req, res) => {
   return res.redirect('/admin/dashboard');
 });
 
-router.get('/dashboard', (req, res) => {
+router.get('/dashboard', adminPageAuth, (req, res) => {
   if (req.baseUrl && req.baseUrl.startsWith('/api')) {
     return res.redirect('/admin/dashboard');
   }

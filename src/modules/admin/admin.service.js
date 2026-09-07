@@ -842,19 +842,25 @@ async function cleanTestData(adminContext = {}) {
       const testUsers = allUsers.filter(u => {
         if (u.role === 'ADMIN' || u.email.includes('admin@ethiofarm.et')) return false;
         return (
-          u.email.startsWith('audit_farmer_') ||
-          u.email.startsWith('farmer_diag_') ||
-          u.email.startsWith('test_') ||
-          u.email.startsWith('mock_') ||
-          u.email.startsWith('farmer_178') ||
-          u.email.startsWith('woreda_officer_178') ||
-          u.email.startsWith('admin_178') ||
-          u.email.startsWith('render_test_') ||
-          u.email.startsWith('camera_farmer_') ||
-          u.email.startsWith('form_user_') ||
-          /^(test[._-]|mock[._-]|temp[._-])/i.test(u.email) ||
-          /@test\.(com|et)$/i.test(u.email) ||
-          u.email.endsWith('@example.com')
+          u.email && (
+            u.email.startsWith('audit_farmer_') ||
+            u.email.startsWith('farmer_diag_') ||
+            u.email.startsWith('test_') ||
+            u.email.startsWith('mock_') ||
+            u.email.startsWith('farmer_178') ||
+            u.email.startsWith('woreda_officer_178') ||
+            u.email.startsWith('admin_178') ||
+            u.email.startsWith('render_test_') ||
+            u.email.startsWith('camera_farmer_') ||
+            u.email.startsWith('form_user_') ||
+            u.email.startsWith('browser_') ||
+            u.email.startsWith('expired_') ||
+            u.email.startsWith('toplevel_') ||
+            u.email.startsWith('unverified_') ||
+            /^(test[._-]|mock[._-]|temp[._-])/i.test(u.email) ||
+            /@test\.(com|et)$/i.test(u.email) ||
+            u.email.endsWith('@example.com')
+          )
         );
       });
 

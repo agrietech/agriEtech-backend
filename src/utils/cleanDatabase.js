@@ -10,17 +10,24 @@ async function inspectAndClean() {
 
   // 2. Identify test users to clean (like audit_farmer_..., farmer_diag_..., test_..., tmp_...)
   const testUsers = allUsers.filter(u => 
-    u.email.startsWith('audit_farmer_') || 
-    u.email.startsWith('farmer_diag_') || 
-    u.email.startsWith('test_') || 
-    u.email.startsWith('mock_') ||
-    u.email.startsWith('farmer_178') ||
-    u.email.startsWith('woreda_officer_178') ||
-    u.email.startsWith('admin_178') ||
-    u.email.startsWith('render_test_') ||
-    u.email.startsWith('camera_farmer_') ||
-    u.email.startsWith('form_user_') ||
-    (u.email.includes('test') && u.role !== 'ADMIN' && !u.email.includes('admin@ethiofarm.et'))
+    u.email && (
+      u.email.startsWith('audit_farmer_') || 
+      u.email.startsWith('farmer_diag_') || 
+      u.email.startsWith('test_') || 
+      u.email.startsWith('mock_') ||
+      u.email.startsWith('farmer_178') ||
+      u.email.startsWith('woreda_officer_178') ||
+      u.email.startsWith('admin_178') ||
+      u.email.startsWith('render_test_') ||
+      u.email.startsWith('camera_farmer_') ||
+      u.email.startsWith('form_user_') ||
+      u.email.startsWith('browser_') ||
+      u.email.startsWith('expired_') ||
+      u.email.startsWith('toplevel_') ||
+      u.email.startsWith('unverified_') ||
+      (u.email.includes('test') && u.role !== 'ADMIN' && !u.email.includes('admin@ethiofarm.et')) ||
+      u.email.endsWith('@example.com')
+    )
   );
 
   const testUserIds = testUsers.map(u => u.id);

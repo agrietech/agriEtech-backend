@@ -1434,11 +1434,7 @@
     function signOutAdmin() {
       localStorage.removeItem('accessToken');
       localStorage.removeItem('adminUser');
-      document.getElementById('adminUserBadge').style.display = 'none';
-      document.getElementById('authBtn').style.display = 'inline-flex';
-      document.getElementById('signOutBtn').style.display = 'none';
-      showToast('Signed out of administrative console');
-      openAuthModal('Signed out. Please sign in to resume.');
+      window.location.href = '/admin/logout';
     }
 
     async function verifyAndLoadAdmin() {
