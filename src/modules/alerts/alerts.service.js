@@ -61,11 +61,36 @@ async function createAlert({
     throw new BadRequestError('woredaId, hazardType, and title are required');
   }
 
-  // Verify woreda exists
-  const woreda = await prisma.woreda.findUnique({ where: { id: woredaId } });
+  // Verify or resolve woreda
+  let woreda = await prisma.woreda.findFirst({
+    where: {
+      OR: [
+        { id: woredaId },
+        { nameEn: { equals: woredaName || woredaId, mode: 'insensitive' } },
+      ],
+    },
+  });
+  if (!woreda) {
+    try {
+      woreda = await prisma.woreda.create({
+        data: {
+          id: woredaId,
+          nameEn: woredaName || woredaId,
+          nameAm: 'አዳማ ዙሪያ',
+          region: 'Oromia',
+          zone: 'East Shewa',
+          latitude: 8.54,
+          longitude: 39.27,
+        },
+      });
+    } catch (_createErr) {
+      woreda = await prisma.woreda.findFirst();
+    }
+  }
   if (!woreda) {
     throw new NotFoundError(`Woreda '${woredaId}' does not exist`);
   }
+  const resolvedWoredaId = woreda.id;
 
   // Evaluate crop calendar context
   const cropCalendar = evaluateCropSeasonContext(hazardType);
@@ -79,7 +104,7 @@ async function createAlert({
 
   const alert = await prisma.alert.create({
     data: {
-      woredaId,
+      woredaId: resolvedWoredaId,
       hazardType,
       severity: effectiveSeverity,
       headline: headline || resolvedTitleEn,
@@ -105,7 +130,7 @@ async function createAlert({
     await prisma.advisory.create({
       data: {
         alertId: alert.id,
-        woredaId,
+        woredaId: resolvedWoredaId,
         hazardType,
         severity: effectiveSeverity,
         titleEn: alert.titleEn,

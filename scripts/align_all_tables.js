@@ -45,7 +45,14 @@ async function alignAllTables() {
     `ALTER TABLE "DiseaseDiagnosis" ADD COLUMN IF NOT EXISTS "treatmentAm" TEXT;`,
     `ALTER TABLE "DiseaseDiagnosis" ADD COLUMN IF NOT EXISTS "treatmentOm" TEXT;`,
     `ALTER TABLE "DiseaseDiagnosis" ADD COLUMN IF NOT EXISTS "preventionAm" TEXT;`,
-    `ALTER TABLE "DiseaseDiagnosis" ADD COLUMN IF NOT EXISTS "preventionOm" TEXT;`
+    `ALTER TABLE "DiseaseDiagnosis" ADD COLUMN IF NOT EXISTS "preventionOm" TEXT;`,
+
+    // SatelliteObservation columns
+    `ALTER TABLE "SatelliteObservation" ADD COLUMN IF NOT EXISTS "soilClayPercent" DOUBLE PRECISION;`,
+    `ALTER TABLE "SatelliteObservation" ADD COLUMN IF NOT EXISTS "soilSandPercent" DOUBLE PRECISION;`,
+    `ALTER TABLE "SatelliteObservation" ADD COLUMN IF NOT EXISTS "soilSiltPercent" DOUBLE PRECISION;`,
+    `ALTER TABLE "SatelliteObservation" ADD COLUMN IF NOT EXISTS "soilOrganicCarbon" DOUBLE PRECISION;`,
+    `ALTER TABLE "SatelliteObservation" ADD COLUMN IF NOT EXISTS "soilPh" DOUBLE PRECISION;`
   ];
 
   for (const sql of statements) {

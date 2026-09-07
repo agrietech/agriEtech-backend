@@ -2,8 +2,17 @@ const axios = require('axios');
 const env = require('../config/env');
 const logger = require('./logger');
 
+// Model assignment mapping for the configured key pool slots
+const SLOT_MODEL_PAIRINGS = [
+  'minimax/minimax-m3:free',
+  'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
+  'minimax/minimax-m3:free',
+  'google/gemma-4-26b-a4b-it:free',
+  'openrouter/free',
+];
+
 /**
- * OpenRouter AI Client for Google Gemini 2.5 Flash
+ * OpenRouter AI Client for Multi-Model Intelligence
  * Provides Multimodal Vision, Structured Agronomic Reasoning, Graph Trend Analysis, and Bilingual (Amharic & English) Processing.
  */
 class OpenRouterClient {
@@ -17,11 +26,12 @@ class OpenRouterClient {
     this.appUrl = env.OPENROUTER_SITE_URL || env.APP_URL || 'https://ethiofarm.et';
     this.siteName = env.OPENROUTER_SITE_NAME || 'EthioFarm Smart Farming Platform';
 
-    // Enterprise Key Pool with health tracking and auto-quarantine
+    // Enterprise Key Pool with health tracking, dedicated model mapping and auto-quarantine
     this.keyPool = this.apiKeys.map((key, index) => ({
       id: `key_${index + 1}`,
       key,
       masked: `${key.slice(0, 14)}...${key.slice(-4)}`,
+      dedicatedModel: SLOT_MODEL_PAIRINGS[index] || this.model,
       active: true,
       cooldownUntil: 0,
       successCount: 0,
@@ -37,13 +47,24 @@ class OpenRouterClient {
   }
 
   /**
-   * Select next healthy API key via round-robin with automatic cooldown recovery
+   * Select next healthy API key with model affinity and automatic cooldown recovery
    */
-  _getNextKey() {
+  _getNextKey(targetModel = null) {
     if (!this.keyPool || this.keyPool.length === 0) return null;
     const now = Date.now();
 
-    // Select among keys whose cooldown has expired
+    // 1. If targetModel is requested, try finding healthy key dedicated to this model first
+    if (targetModel) {
+      const pairedKeys = this.keyPool.filter((k) => k.active && k.cooldownUntil <= now && k.dedicatedModel === targetModel);
+      if (pairedKeys.length > 0) {
+        const selected = pairedKeys[this._roundRobinIdx % pairedKeys.length];
+        this._roundRobinIdx = (this._roundRobinIdx + 1) % this.keyPool.length;
+        selected.lastUsedAt = now;
+        return selected;
+      }
+    }
+
+    // 2. Otherwise select among healthy keys whose cooldown has expired
     const healthyKeys = this.keyPool.filter((k) => k.active && k.cooldownUntil <= now);
     if (healthyKeys.length > 0) {
       const selected = healthyKeys[this._roundRobinIdx % healthyKeys.length];
@@ -52,7 +73,7 @@ class OpenRouterClient {
       return selected;
     }
 
-    // If all keys are in cooldown, pick the key closest to expiry
+    // 3. If all keys are in cooldown, pick the key closest to expiry
     const sorted = [...this.keyPool].sort((a, b) => a.cooldownUntil - b.cooldownUntil);
     const earliest = sorted[0];
     earliest.lastUsedAt = now;
@@ -60,20 +81,24 @@ class OpenRouterClient {
   }
 
   /**
-   * Handle key errors: quarantine for rate-limits (429) or auth issues (401/403)
+   * Handle key errors: quarantine for auth issues (401/403) or account-wide rate limits
    */
   _markKeyError(keyObj, statusCode, errorMessage = '') {
     if (!keyObj) return;
     keyObj.errorCount++;
     const now = Date.now();
+    const msg = (errorMessage || '').toLowerCase();
 
-    if (statusCode === 429 || errorMessage.toLowerCase().includes('rate') || errorMessage.toLowerCase().includes('quota') || errorMessage.toLowerCase().includes('credits')) {
-      keyObj.rateLimitCount++;
-      keyObj.cooldownUntil = now + 60000; // 60-second cooldown
-      logger.warn(`[OpenRouterClient] Key ${keyObj.masked} rate-limited (${statusCode || '429'}). Cooldown for 60s.`);
-    } else if (statusCode === 401 || statusCode === 403) {
+    // Quarantine key only on auth failure (401/403) or account-wide limit.
+    // Provider free tier daily model limits (free-models-per-day) or unreachable errors do NOT quarantine the key
+    // because the key remains valid and healthy for other models.
+    if (statusCode === 401 || statusCode === 403) {
       keyObj.cooldownUntil = now + 600000; // 10-minute cooldown
       logger.error(`[OpenRouterClient] Key ${keyObj.masked} unauthorized (${statusCode}). Cooldown for 10m.`);
+    } else if (statusCode === 429 && (msg.includes('user rate limit') || msg.includes('credits exhausted'))) {
+      keyObj.rateLimitCount++;
+      keyObj.cooldownUntil = now + 60000; // 60-second cooldown
+      logger.warn(`[OpenRouterClient] Key ${keyObj.masked} rate-limited. Cooldown for 60s.`);
     }
   }
 
@@ -97,6 +122,7 @@ class OpenRouterClient {
       keys: this.keyPool.map((k) => ({
         id: k.id,
         masked: k.masked,
+        dedicatedModel: k.dedicatedModel,
         inCooldown: k.cooldownUntil > now,
         cooldownRemainingSec: Math.max(0, Math.round((k.cooldownUntil - now) / 1000)),
         successCount: k.successCount,
@@ -123,13 +149,9 @@ class OpenRouterClient {
     const candidateModels = [
       primaryModel,
       'minimax/minimax-m3:free',
-      'google/gemma-4-31b-it:free',
+      'openrouter/free',
       'google/gemma-4-26b-a4b-it:free',
       'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
-      'openrouter/free',
-      'nvidia/nemotron-3.5-lightning:free',
-      'liquid/lfm-2.5-2.6b:free',
-      'dots-studio/dots-3-note-preview:free',
       'minimax/minimax-m2.7:free',
     ].filter((m, i, arr) => m && arr.indexOf(m) === i);
 
@@ -161,7 +183,7 @@ class OpenRouterClient {
           'X-Title': this.siteName,
           'Content-Type': 'application/json',
         },
-        timeout: 8000,
+        timeout: 15000,
       });
     };
 
@@ -169,11 +191,10 @@ class OpenRouterClient {
 
     // Outer loop: Iterate through candidate models
     for (const targetModel of candidateModels) {
-      // Inner loop: Try up to 3 distinct healthy keys per model before failing to next model
       const maxKeyAttempts = Math.min(3, this.keyPool.length || 1);
 
       for (let attempt = 0; attempt < maxKeyAttempts; attempt++) {
-        const activeKey = this._getNextKey();
+        const activeKey = this._getNextKey(targetModel);
         if (!activeKey) break;
 
         try {
@@ -224,14 +245,14 @@ class OpenRouterClient {
         } catch (err) {
           lastError = err;
           const status = err.response?.status;
-          const errorMsg = err.response?.data?.error?.message || err.message;
+          const errorMsg = (err.response?.data?.error?.message || err.message || '').toLowerCase();
           logger.warn(`[OpenRouterClient] Model ${targetModel} attempt failed with key ${activeKey.masked}: ${status || ''} ${errorMsg}`);
 
-          // If it's a 404 (model unavailable on provider) or 400 (bad request), don't retry with other keys for this model
-          if (status === 404 || status === 400) {
+          // If model is unreachable (502/503), not found (404), or has daily model limit (429 free-models-per-day),
+          // retrying other keys with THIS SAME MODEL won't help. Immediately break to next model!
+          if (status === 404 || status === 400 || errorMsg.includes('unreachable') || errorMsg.includes('free-models-per-day') || errorMsg.includes('no endpoints')) {
             break;
           }
-          // If 429 or 5xx, the loop will automatically rotate to the next key in keyPool
         }
       }
     }
@@ -243,7 +264,7 @@ class OpenRouterClient {
 
   /**
    * Stream chat completion via OpenRouter Server-Sent Events (SSE)
-   * Supports reasoning token extraction and real-time streaming chunks.
+   * Supports reasoning token extraction and real-time streaming chunks with resilient cascading fallback.
    */
   async chatCompletionStream({
     messages,
@@ -259,8 +280,8 @@ class OpenRouterClient {
       return { success: true, content: fallback.content, isOfflineFallback: true };
     }
 
-    const activeKey = this._getNextKey();
     const targetModel = model || this.model;
+    const activeKey = this._getNextKey(targetModel);
 
     const payload = {
       model: targetModel,
@@ -283,7 +304,7 @@ class OpenRouterClient {
           'Content-Type': 'application/json',
         },
         responseType: 'stream',
-        timeout: 10000,
+        timeout: 15000,
       });
 
       return new Promise((resolve, reject) => {
@@ -329,8 +350,12 @@ class OpenRouterClient {
       });
     } catch (err) {
       this._markKeyError(activeKey, err.response?.status, err.message);
-      // Fallback to standard chatCompletion
-      return await this.chatCompletion({ messages, temperature, maxTokens, model, enableReasoning });
+      // Resilient fallback to chatCompletion across candidate models
+      const fallbackResult = await this.chatCompletion({ messages, temperature, maxTokens, model, enableReasoning });
+      if (onChunk && fallbackResult.content) {
+        onChunk(fallbackResult.content);
+      }
+      return fallbackResult;
     }
   }
 
