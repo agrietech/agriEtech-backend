@@ -123,12 +123,14 @@ class OpenRouterClient {
     const candidateModels = [
       primaryModel,
       'minimax/minimax-m3:free',
-      'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
-      'openrouter/free',
       'google/gemma-4-31b-it:free',
       'google/gemma-4-26b-a4b-it:free',
+      'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
+      'openrouter/free',
       'nvidia/nemotron-3.5-lightning:free',
       'liquid/lfm-2.5-2.6b:free',
+      'dots-studio/dots-3-note-preview:free',
+      'minimax/minimax-m2.7:free',
     ].filter((m, i, arr) => m && arr.indexOf(m) === i);
 
     if (!this.isConfigured()) {
@@ -159,7 +161,7 @@ class OpenRouterClient {
           'X-Title': this.siteName,
           'Content-Type': 'application/json',
         },
-        timeout: 5000,
+        timeout: 8000,
       });
     };
 
