@@ -1,4 +1,4 @@
-const { sendSms } = require('../src/delivery/sms/africasTalkingClient');
+const { sendSms } = require('../src/delivery/sms/smsEthiopiaClient');
 
 async function test() {
   console.log('--- TEST 1: English SMS ---');

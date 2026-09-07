@@ -1,6 +1,5 @@
 const admin = require('firebase-admin');
 const fs = require('fs');
-const path = require('path');
 const logger = require('../../utils/logger');
 const env = require('../../config/env');
 
@@ -10,14 +9,14 @@ function initFirebaseAdmin() {
   if (fcmInitialized) return admin;
 
   try {
-    const serviceAccountPath = env.FIREBASE_SERVICE_ACCOUNT_PATH || path.join(__dirname, '../../config/firebase-service-account.json');
+    const serviceAccountPath = env.FIREBASE_SERVICE_ACCOUNT_PATH;
 
-    if (fs.existsSync(serviceAccountPath)) {
+    if (serviceAccountPath && fs.existsSync(serviceAccountPath)) {
       const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
       admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
         databaseURL: env.FIREBASE_DATABASE_URL,
-        projectId: env.FIREBASE_PROJECT_ID || 'arduinomoisture',
+        projectId: env.FIREBASE_PROJECT_ID || serviceAccount.project_id,
       });
       fcmInitialized = true;
       logger.info('[FCM Dispatcher] Firebase Admin initialized with service account.');

@@ -1,27 +1,23 @@
-const AfricasTalking = require('africastalking');
+const { sendSms } = require('../src/delivery/sms/smsEthiopiaClient');
 const env = require('../src/config/env');
 
-console.log('Testing Africa\'s Talking SMS Gateway...');
-console.log('Username:', env.AFRICAS_TALKING_USERNAME);
-console.log('API Key configured:', env.AFRICAS_TALKING_API_KEY ? 'YES (' + env.AFRICAS_TALKING_API_KEY.substring(0, 10) + '...)' : 'NO');
-
-const at = AfricasTalking({
-  apiKey: env.AFRICAS_TALKING_API_KEY,
-  username: env.AFRICAS_TALKING_USERNAME,
-});
+console.log('Testing SMS Ethiopia Gateway...');
+console.log('Sender ID:', env.SMS_ETHIOPIA_SENDER_ID);
+console.log('API Key configured:', env.SMS_ETHIOPIA_API_KEY ? 'YES (' + env.SMS_ETHIOPIA_API_KEY.substring(0, 10) + '...)' : 'NO');
 
 async function run() {
   try {
-    const result = await at.SMS.send({
-      to: ['+251924276862'],
-      message: '[AgriEtech Test] Early Warning SMS System verified successfully for +251924276862.',
-    });
-    console.log('\n--- SUCCESS RESPONSE FROM AFRICA\'S TALKING ---');
+    const result = await sendSms(
+      '+251977100607',
+      '[EthioFarm Test] Early Warning SMS System verified successfully via SMS Ethiopia gateway.'
+    );
+    console.log('\n--- SUCCESS RESPONSE FROM SMS ETHIOPIA ---');
     console.log(JSON.stringify(result, null, 2));
   } catch (err) {
-    console.log('\n--- ERROR / NOTICE FROM AFRICA\'S TALKING ---');
+    console.log('\n--- ERROR / NOTICE FROM SMS ETHIOPIA ---');
     console.error(err.message || err);
   }
 }
 
 run();
+

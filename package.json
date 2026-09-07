@@ -29,7 +29,6 @@
     "@supabase/supabase-js": "^2.112.3",
     "@turf/turf": "^6.5.0",
     "adm-zip": "^0.5.10",
-    "africastalking": "^0.6.2",
     "axios": "^1.6.8",
     "bcryptjs": "^2.4.3",
     "bullmq": "^5.7.0",

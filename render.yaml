@@ -41,10 +41,6 @@ services:
         sync: false
       - key: AFRICAS_TALKING_API_KEY
         sync: false
-      - key: FIREBASE_DATABASE_URL
-        sync: false
-      - key: FIREBASE_API_KEY
-        sync: false
       - key: FIREBASE_PROJECT_ID
         sync: false
       - key: REDIS_URL
@@ -76,10 +72,6 @@ services:
       - key: SMS_ETHIOPIA_SENDER_ID
         value: EthioFarm
       - key: ADMIN_API_KEYS
-        sync: false
-      - key: SENSOR_API_KEYS
-        sync: false
-      - key: IOT_API_KEYS
         sync: false
       - key: FRONTEND_URL
         value: https://agrietech-web.onrender.com

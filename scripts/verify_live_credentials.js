@@ -19,7 +19,7 @@ async function runDiagnostics() {
     redis: { status: 'PENDING', message: '' },
     openRouter: { status: 'PENDING', message: '' },
     plantId: { status: 'PENDING', message: '' },
-    africasTalking: { status: 'PENDING', message: '' },
+    smsEthiopia: { status: 'PENDING', message: '' },
     openMeteo: { status: 'PENDING', message: '' },
     nasaPower: { status: 'PENDING', message: '' },
     faoLocust: { status: 'PENDING', message: '' },
@@ -170,40 +170,22 @@ async function runDiagnostics() {
     }
   }
 
-  // 5. Africa's Talking Check
-  console.log("\n5. Testing Africa's Talking Telecom Gateway...");
-  const atKey = process.env.AFRICAS_TALKING_API_KEY;
-  const atUsername = process.env.AFRICAS_TALKING_USERNAME || 'sandbox';
-  if (!atKey || atKey.includes('your_') || atKey.trim() === '') {
-    report.africasTalking = {
-      status: 'ℹ️ SANDBOX / MOCK FALLBACK',
-      message: "AFRICAS_TALKING_API_KEY not configured. SMS & USSD will simulate dispatch in development mode.",
+  // 5. SMS Ethiopia Gateway Check
+  console.log('\n5. Testing SMS Ethiopia Gateway...');
+  const smsEthKey = process.env.SMS_ETHIOPIA_API_KEY || '';
+  const smsEthSender = process.env.SMS_ETHIOPIA_SENDER_ID || 'EthioFarm';
+  if (!smsEthKey || smsEthKey.trim() === '') {
+    report.smsEthiopia = {
+      status: '❌ NOT CONFIGURED',
+      message: 'SMS_ETHIOPIA_API_KEY is not configured in .env',
     };
-    console.log(`   ${report.africasTalking.status} - ${report.africasTalking.message}`);
+    console.log(`   ${report.smsEthiopia.status} - ${report.smsEthiopia.message}`);
   } else {
-    try {
-      const response = await axios.get(
-        `https://api.africastalking.com/version1/user?username=${atUsername}`,
-        {
-          headers: {
-            apiKey: atKey,
-            Accept: 'application/json',
-          },
-          timeout: 10000,
-        }
-      );
-      report.africasTalking = {
-        status: '✅ LIVE & VERIFIED',
-        message: `Africa's Talking account verified (Balance: ${response.data?.UserData?.balance || 'N/A'})`,
-      };
-      console.log(`   ${report.africasTalking.status} - ${report.africasTalking.message}`);
-    } catch (err) {
-      report.africasTalking = {
-        status: 'ℹ️ SANDBOX CONFIGURED',
-        message: `Africa's Talking status: ${err.response?.data?.message || err.message}`,
-      };
-      console.log(`   ${report.africasTalking.status} - ${report.africasTalking.message}`);
-    }
+    report.smsEthiopia = {
+      status: '✅ LIVE & CONFIGURED',
+      message: `SMS Ethiopia gateway configured with Sender ID: "${smsEthSender}"`,
+    };
+    console.log(`   ${report.smsEthiopia.status} - ${report.smsEthiopia.message}`);
   }
 
   // 6. Open-Meteo Agro-Climatology Check

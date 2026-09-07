@@ -2,36 +2,26 @@ const jwt = require('jsonwebtoken');
 const env = require('../config/env');
 const { isTokenBlacklisted } = require('../modules/auth/auth.service');
 
-// Build API key whitelist from environment (comma-separated)
-function buildApiKeySet() {
-  const raw = [
-    ...(env.SENSOR_API_KEYS || '').split(','),
-    ...(env.IOT_API_KEYS || '').split(','),
-  ];
+// Build Admin API key whitelist from environment
+function getAdminApiKeySet() {
+  const raw = (env.ADMIN_API_KEYS || '').split(',');
   return new Set(raw.map((k) => k.trim()).filter(Boolean));
 }
 
-let _apiKeySet = null;
-function getApiKeySet() {
-  if (!_apiKeySet) _apiKeySet = buildApiKeySet();
-  return _apiKeySet;
-}
-
-// Authenticate JWT bearer token or API Key
+// Authenticate JWT bearer token or Admin API Key
 async function authenticate(req, res, next) {
   try {
-    // 1. IoT Sensor API Key authentication — validated against whitelist
+    // 1. Admin API Key authentication — validated against ADMIN_API_KEYS
     const apiKey = req.headers['x-api-key'] || req.headers['api-key'] || req.query.apiKey || req.query.api_key;
     if (apiKey) {
-      const validKeys = getApiKeySet();
-      if (!validKeys.size || !validKeys.has(apiKey)) {
+      const validKeys = getAdminApiKeySet();
+      if (!validKeys.size || !validKeys.has(apiKey.trim())) {
         return res.status(401).json({
           success: false,
           error: { message: 'Invalid API key', code: 'UNAUTHORIZED' },
         });
       }
-      // Grant sensor role only — not ADMIN — to IoT devices
-      req.user = { id: `iot_${apiKey.substring(0, 8)}`, role: 'SENSOR', fullName: 'IoT Sensor Device' };
+      req.user = { id: 'usr_master_admin', email: 'admin@ethiofarm.et', role: 'ADMIN', fullName: 'Master Administrator' };
       return next();
     }
 

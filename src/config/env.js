@@ -31,16 +31,11 @@ const env = {
   JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET || 'dev_refresh_secret_change_in_production',
   JWT_REFRESH_EXPIRES_IN: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
   ADMIN_API_KEYS: process.env.ADMIN_API_KEYS || '',
-  SENSOR_API_KEYS: process.env.SENSOR_API_KEYS || '',
-  IOT_API_KEYS: process.env.IOT_API_KEYS || '',
   SMS_PROVIDER: process.env.SMS_PROVIDER || 'smsethiopia',
-  SMS_ETHIOPIA_API_KEY: process.env.SMS_ETHIOPIA_API_KEY || '6FWG35FDLC1FAC42U0MH04R3O2J5W9WC05G9UYQL',
+  SMS_ETHIOPIA_API_KEY: process.env.SMS_ETHIOPIA_API_KEY || '',
   SMS_ETHIOPIA_BASE_URL: process.env.SMS_ETHIOPIA_BASE_URL || 'https://smsethiopia.com/api',
   SMS_ETHIOPIA_SENDER_ID: process.env.SMS_ETHIOPIA_SENDER_ID || 'EthioFarm',
   USSD_SHORT_CODE: process.env.USSD_SHORT_CODE || '*804#',
-  AFRICAS_TALKING_API_KEY: process.env.AFRICAS_TALKING_API_KEY,
-  AFRICAS_TALKING_USERNAME: process.env.AFRICAS_TALKING_USERNAME || 'sandbox',
-  AFRICAS_TALKING_SENDER_ID: process.env.AFRICAS_TALKING_SENDER_ID || 'EthioFarm',
   OPENWEATHER_API_KEY: process.env.OPENWEATHER_API_KEY,
   OPEN_METEO_BASE_URL: process.env.OPEN_METEO_BASE_URL || 'https://api.open-meteo.com/v1',
   NASA_POWER_BASE_URL:
@@ -65,12 +60,8 @@ const env = {
   OPENROUTER_BASE_URL: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
   OPENROUTER_SITE_URL: process.env.OPENROUTER_SITE_URL || process.env.APP_URL || 'https://ethiofarm.et',
   OPENROUTER_SITE_NAME: process.env.OPENROUTER_SITE_NAME || 'EthioFarm Smart Farming Platform',
-  FIREBASE_DATABASE_URL:
-    process.env.FIREBASE_DATABASE_URL || 'https://arduinomoisture-default-rtdb.firebaseio.com',
-  FIREBASE_API_KEY: process.env.FIREBASE_API_KEY || '',
-  FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID || 'arduinomoisture',
-  FIREBASE_SERVICE_ACCOUNT_PATH:
-    process.env.FIREBASE_SERVICE_ACCOUNT_PATH || './config/firebase-service-account.json',
+  FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID || '',
+  FIREBASE_SERVICE_ACCOUNT_PATH: process.env.FIREBASE_SERVICE_ACCOUNT_PATH || '',
   SMTP_HOST: process.env.SMTP_HOST || '',
   SMTP_PORT: parseInt(process.env.SMTP_PORT, 10) || 587,
   SMTP_USER: process.env.SMTP_USER || '',
@@ -100,9 +91,6 @@ if (env.NODE_ENV === 'production') {
   // Soft requirements — app degrades gracefully without these
   if (!process.env.REDIS_URL && (!process.env.REDIS_HOST || process.env.REDIS_HOST === 'localhost')) {
     warnings.push('REDIS_HOST/REDIS_URL not set — rate limiting will use in-memory fallback');
-  }
-  if (!process.env.FIREBASE_API_KEY) {
-    warnings.push('FIREBASE_API_KEY not set — push notifications disabled');
   }
 
   if (warnings.length > 0) {

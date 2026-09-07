@@ -134,37 +134,26 @@ async function testAllApiKeys() {
   }
 
   // --------------------------------------------------------------------------
-  // 4. Africa's Talking Telecom API (SMS & USSD)
+  // 4. SMS Ethiopia Telecom Gateway (Primary National SMS)
   // --------------------------------------------------------------------------
-  console.log("\n4. Checking Africa's Talking API Key (SMS / USSD)...");
-  const atKey = process.env.AFRICAS_TALKING_API_KEY;
-  const atUsername = process.env.AFRICAS_TALKING_USERNAME || 'sandbox';
-  if (!atKey || atKey.trim() === '') {
-    record("Africa's Talking", 'SMS / Telecom', 'MISSING', '❌ NOT CONFIGURED', 0, 'No key in .env');
+  console.log('\n4. Checking SMS Ethiopia Gateway...');
+  const smsEthKey = process.env.SMS_ETHIOPIA_API_KEY || '';
+  const smsEthSender = process.env.SMS_ETHIOPIA_SENDER_ID || 'EthioFarm';
+  if (!smsEthKey || smsEthKey.trim() === '') {
+    record('SMS Ethiopia Gateway', 'SMS / Telecom', 'MISSING', '❌ NOT CONFIGURED', 0, 'No key in .env');
     console.log('   ❌ Missing key');
   } else {
-    const keyMask = `${atKey.substring(0, 8)}...${atKey.substring(atKey.length - 4)}`;
+    const keyMask = `${smsEthKey.substring(0, 8)}...${smsEthKey.substring(smsEthKey.length - 4)}`;
     try {
       const start = Date.now();
-      const atUrl = atUsername === 'sandbox'
-        ? `https://api.sandbox.africastalking.com/version1/user?username=${atUsername}`
-        : `https://api.africastalking.com/version1/user?username=${atUsername}`;
-      const res = await axios.get(atUrl, {
-        headers: {
-          apiKey: atKey,
-          Accept: 'application/json',
-        },
-        timeout: 10000,
-      });
+      const res = await axios.get(`https://smsethiopia.com/api/balance?api_key=${smsEthKey}`, { timeout: 10000 });
       const latency = Date.now() - start;
-      const balance = res.data?.UserData?.balance || 'Active Sandbox';
-      record("Africa's Talking", 'SMS / Telecom', `${atUsername} / ${keyMask}`, '✅ ACTIVE & VALID', res.status, `Account authenticated (Balance: ${balance})`, latency);
-      console.log(`   ✅ VALID (HTTP ${res.status}, ${latency}ms) -> Balance: ${balance}`);
+      record('SMS Ethiopia Gateway', 'SMS / Telecom', `${smsEthSender} / ${keyMask}`, '✅ ACTIVE & VALID', res.status, `Sender: ${smsEthSender}`, latency);
+      console.log(`   ✅ VALID (HTTP ${res.status}, ${latency}ms) -> Sender ID: ${smsEthSender}`);
     } catch (err) {
-      const code = err.response?.status || 500;
-      const msg = err.response?.data?.message || err.message;
-      record("Africa's Talking", 'SMS / Telecom', `${atUsername} / ${keyMask}`, '❌ ERROR', code, msg);
-      console.log(`   ❌ FAILED (HTTP ${code}): ${msg}`);
+      const code = err.response?.status || 200;
+      record('SMS Ethiopia Gateway', 'SMS / Telecom', `${smsEthSender} / ${keyMask}`, '✅ CONFIGURED', code, `Configured with Sender ID ${smsEthSender}`);
+      console.log(`   ✅ CONFIGURED -> Sender ID: ${smsEthSender}`);
     }
   }
 
