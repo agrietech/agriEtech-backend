@@ -62,9 +62,12 @@ app.use(
         defaultSrc: ["'self'"],
         scriptSrc: [
           "'self'",
-          (_req, res) => `'nonce-${res.locals.cspNonce}'`,
-          "'unsafe-inline'", // Fallback for embedded dashboard/docs
+          "'unsafe-inline'",
+          "'unsafe-eval'",
+          'https://unpkg.com',
+          'https://cdn.jsdelivr.net',
         ],
+        scriptSrcAttr: ["'unsafe-inline'"],
         styleSrc: [
           "'self'",
           "'unsafe-inline'",

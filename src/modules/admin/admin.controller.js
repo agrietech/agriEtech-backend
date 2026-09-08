@@ -343,9 +343,9 @@ async function handleAdminLogin(req, res) {
 
             const tokenPayload = {
                 id: targetUser ? targetUser.id : 'usr_master_admin',
-                email: targetUser ? targetUser.email : (trimmedEmail || env.ADMIN_EMAIL || 'abraham.tiruneh7@gmail.com'),
+                email: targetUser ? targetUser.email : (trimmedEmail || env.ADMIN_EMAIL || 'admin@ethiofarm.et'),
                 role: 'ADMIN',
-                fullName: targetUser ? targetUser.fullName : 'Abraham Tiruneh (Administrator)',
+                fullName: targetUser ? targetUser.fullName : 'Platform Administrator',
                 woredaId: targetUser?.woredaId || null,
             };
 
@@ -535,12 +535,16 @@ async function handleAdminResetPassword(req, res) {
         const logger = require('../../utils/logger');
 
         const { email, masterKey, newPassword } = req.body || {};
-        const trimmedEmail = (email || 'abraham.tiruneh7@gmail.com').trim().toLowerCase();
+        const defaultAdminEmail = (process.env.ADMIN_EMAIL || 'admin@ethiofarm.et').toLowerCase();
+        const trimmedEmail = (email || defaultAdminEmail).trim().toLowerCase();
         const trimmedKey = (masterKey || '').trim();
         const trimmedNewPassword = (newPassword || '').trim();
 
+        const isJson = req.xhr || req.headers.accept?.includes('application/json');
+
         if (!trimmedNewPassword || trimmedNewPassword.length < 6) {
-            return res.status(400).json({ success: false, message: 'New password must be at least 6 characters long' });
+            if (isJson) return res.status(400).json({ success: false, message: 'New password must be at least 6 characters long' });
+            return res.redirect('/admin/login?error=Password%20must%20be%20at%20least%206%20characters');
         }
 
         const validKeys = env.getAdminKeys ? env.getAdminKeys() : [
@@ -556,7 +560,8 @@ async function handleAdminResetPassword(req, res) {
         ].map(k => (k || '').trim()).filter(Boolean);
 
         if (!trimmedKey || !validKeys.includes(trimmedKey)) {
-            return res.status(403).json({ success: false, message: 'Invalid Master Security Key / Passcode' });
+            if (isJson) return res.status(403).json({ success: false, message: 'Invalid Master Security Key / Passcode' });
+            return res.redirect('/admin/login?error=Invalid%20Master%20Security%20Key');
         }
 
         // Find or create admin user in database
@@ -575,7 +580,7 @@ async function handleAdminResetPassword(req, res) {
             user = await prisma.user.create({
                 data: {
                     email: trimmedEmail,
-                    fullName: trimmedEmail.includes('abraham') ? 'Abraham Tiruneh (Administrator)' : 'Platform Administrator',
+                    fullName: 'Platform Administrator',
                     passwordHash: newHash,
                     role: 'ADMIN',
                     isEmailVerified: true,
@@ -598,16 +603,22 @@ async function handleAdminResetPassword(req, res) {
         res.setHeader('Set-Cookie', `admin_token=${token}; Path=/admin; HttpOnly; SameSite=Lax; Max-Age=86400${secureFlag}`);
         logger.info(`[ADMIN_SECURITY] Password reset and auto-login for ${user.email}`);
 
-        return res.status(200).json({
-            success: true,
-            message: 'Password successfully updated!',
-            redirect: `/admin/dashboard?token=${encodeURIComponent(token)}`,
-            token,
-            user: tokenPayload,
-        });
+        if (isJson) {
+            return res.status(200).json({
+                success: true,
+                message: 'Password successfully updated!',
+                redirect: `/admin/dashboard?token=${encodeURIComponent(token)}`,
+                token,
+                user: tokenPayload,
+            });
+        }
+        return res.redirect(`/admin/dashboard?token=${encodeURIComponent(token)}`);
     } catch (err) {
         logger.error(`[ADMIN_SECURITY] Password reset error: ${err.message}`);
-        return res.status(500).json({ success: false, message: 'Internal error updating admin password' });
+        if (req.xhr || req.headers.accept?.includes('application/json')) {
+            return res.status(500).json({ success: false, message: 'Internal error updating admin password' });
+        }
+        return res.redirect('/admin/login?error=Internal%20server%20error');
     }
 }
 

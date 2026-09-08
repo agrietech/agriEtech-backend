@@ -35,14 +35,16 @@
     .login-card {
       width: 100%;
       max-width: 460px;
-      background: rgba(30, 41, 59, 0.85);
+      background: rgba(30, 41, 59, 0.88);
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
       border: 1px solid rgba(16, 185, 129, 0.25);
       border-radius: var(--radius);
-      box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5), 0 0 30px rgba(16, 185, 129, 0.1);
+      box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.6), 0 0 30px rgba(16, 185, 129, 0.12);
       overflow: hidden;
       animation: fadeIn 0.3s ease;
+      position: relative;
+      z-index: 10;
     }
 
     @keyframes fadeIn {
@@ -107,29 +109,44 @@
     /* Tab Switcher */
     .auth-tabs {
       display: flex;
-      background: rgba(15, 23, 42, 0.6);
-      border-radius: 8px;
-      padding: 4px;
+      background: rgba(15, 23, 42, 0.7);
+      border-radius: 10px;
+      padding: 5px;
       margin-bottom: 1.5rem;
-      border: 1px solid rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      gap: 4px;
     }
 
     .auth-tab {
       flex: 1;
-      padding: 0.55rem;
+      padding: 0.65rem 0.4rem;
       font-size: 0.8rem;
       font-weight: 600;
       text-align: center;
-      cursor: pointer;
-      border-radius: 6px;
+      cursor: pointer !important;
+      pointer-events: auto !important;
+      user-select: none;
+      border: none;
+      background: transparent;
       color: #94a3b8;
-      transition: all 0.2s;
+      border-radius: 6px;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.35rem;
+      font-family: inherit;
+    }
+
+    .auth-tab:hover {
+      color: #ffffff;
+      background: rgba(255, 255, 255, 0.06);
     }
 
     .auth-tab.active {
       background: #10b981;
       color: #ffffff;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+      box-shadow: 0 2px 8px rgba(16, 185, 129, 0.35);
     }
 
     .form-group {
@@ -146,8 +163,8 @@
 
     .form-input {
       width: 100%;
-      padding: 0.75rem 1rem;
-      background: rgba(15, 23, 42, 0.7);
+      padding: 0.8rem 1rem;
+      background: rgba(15, 23, 42, 0.75);
       border: 1px solid rgba(255, 255, 255, 0.15);
       border-radius: 8px;
       color: #ffffff;
@@ -159,7 +176,7 @@
 
     .form-input:focus {
       border-color: #10b981;
-      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.25);
     }
 
     .form-input::placeholder {
@@ -168,31 +185,38 @@
 
     .btn-submit {
       width: 100%;
-      padding: 0.85rem;
+      padding: 0.875rem;
       background: linear-gradient(135deg, #10b981, #059669);
       color: #ffffff;
       border: none;
       border-radius: 8px;
       font-size: 0.925rem;
       font-weight: 700;
-      cursor: pointer;
+      cursor: pointer !important;
+      pointer-events: auto !important;
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 0.5rem;
-      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);
-      transition: all 0.2s;
-      margin-top: 0.5rem;
+      box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+      transition: all 0.2s ease;
+      margin-top: 0.75rem;
+      font-family: inherit;
     }
 
     .btn-submit:hover {
       background: linear-gradient(135deg, #059669, #047857);
       transform: translateY(-1px);
+      box-shadow: 0 6px 18px rgba(16, 185, 129, 0.45);
+    }
+
+    .btn-submit:active {
+      transform: translateY(0);
     }
 
     .btn-submit:disabled {
       opacity: 0.6;
-      cursor: not-allowed;
+      cursor: not-allowed !important;
       transform: none;
     }
 
@@ -211,6 +235,12 @@
       color: #fca5a5;
     }
 
+    .alert-success {
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      color: #6ee7b7;
+    }
+
     .card-footer {
       padding: 1.25rem 2rem;
       text-align: center;
@@ -223,7 +253,7 @@
     .helper-text {
       font-size: 0.75rem;
       color: #94a3b8;
-      margin-top: 0.35rem;
+      margin-top: 0.4rem;
     }
   </style>
 </head>
@@ -242,31 +272,31 @@
     <div class="card-body">
       <div id="alertBox" class="alert-box alert-danger"></div>
 
-      <!-- Tab Switcher -->
-      <div class="auth-tabs">
-        <div id="tabAccountBtn" class="auth-tab active" onclick="selectAuthMode('account')">
-          👤 Admin Account
-        </div>
-        <div id="tabKeyBtn" class="auth-tab" onclick="selectAuthMode('key')">
-          🔑 Master Key
-        </div>
-        <div id="tabResetBtn" class="auth-tab" onclick="selectAuthMode('reset')">
-          🔄 Set Password
-        </div>
+      <!-- Tab Switcher (Accessible Buttons) -->
+      <div class="auth-tabs" role="tablist">
+        <button type="button" id="tabAccountBtn" class="auth-tab active" data-tab="account" onclick="selectAuthMode('account')" role="tab" aria-selected="true">
+          <span>👤</span> Admin Account
+        </button>
+        <button type="button" id="tabKeyBtn" class="auth-tab" data-tab="key" onclick="selectAuthMode('key')" role="tab" aria-selected="false">
+          <span>🔑</span> Master Key
+        </button>
+        <button type="button" id="tabResetBtn" class="auth-tab" data-tab="reset" onclick="selectAuthMode('reset')" role="tab" aria-selected="false">
+          <span>🔄</span> Set Password
+        </button>
       </div>
 
       <!-- Form 1: Admin Account (Email/Password) -->
-      <form id="accountForm" onsubmit="handleAccountSubmit(event)">
+      <form id="accountForm" action="/admin/login" method="POST" onsubmit="handleAccountSubmit(event)">
         <div class="form-group">
           <label class="form-label" for="adminEmail">Official Email Address</label>
-          <input type="text" id="adminEmail" class="form-input" placeholder="abraham.tiruneh7@gmail.com" required autocomplete="username">
-          <div class="helper-text">Use <code>abraham.tiruneh7@gmail.com</code> or <code>admin@ethiofarm.et</code>.</div>
+          <input type="text" name="email" id="adminEmail" class="form-input" placeholder="admin@organization.et" required autocomplete="username">
+          <div class="helper-text">Enter your authorized administrative email address.</div>
         </div>
 
         <div class="form-group">
           <label class="form-label" for="adminPassword">Administrative Password</label>
-          <input type="password" id="adminPassword" class="form-input" placeholder="••••••••••••" required autocomplete="current-password">
-          <div class="helper-text">Default is <code>Admin@2026!</code>, or enter your Render master key/password.</div>
+          <input type="password" name="password" id="adminPassword" class="form-input" placeholder="Enter your password" required autocomplete="current-password">
+          <div class="helper-text">Enter your administrative password or master key.</div>
         </div>
 
         <button type="submit" id="accountSubmitBtn" class="btn-submit">
@@ -275,11 +305,11 @@
       </form>
 
       <!-- Form 2: Master Console Key / Passcode -->
-      <form id="keyForm" style="display: none;" onsubmit="handleKeySubmit(event)">
+      <form id="keyForm" action="/admin/login" method="POST" style="display: none;" onsubmit="handleKeySubmit(event)">
         <div class="form-group">
           <label class="form-label" for="consoleKey">Master Console Key / Passcode</label>
-          <input type="password" id="consoleKey" class="form-input" placeholder="Paste Master Console Key or Password" required autocomplete="off">
-          <div class="helper-text">Enter <code>agrietech_admin_live_sec_key_2026_98827</code> or Render master key.</div>
+          <input type="password" name="consoleKey" id="consoleKey" class="form-input" placeholder="Enter master security key or passcode" required autocomplete="off">
+          <div class="helper-text">Authenticate directly using your cloud master security key.</div>
         </div>
 
         <button type="submit" id="keySubmitBtn" class="btn-submit">
@@ -288,25 +318,27 @@
       </form>
 
       <!-- Form 3: Set / Reset Password -->
-      <form id="resetForm" style="display: none;" onsubmit="handleResetSubmit(event)">
+      <form id="resetForm" action="/admin/reset-password" method="POST" style="display: none;" onsubmit="handleResetSubmit(event)">
         <div class="form-group">
-          <label class="form-label" for="resetEmail">Official Admin Email</label>
-          <input type="email" id="resetEmail" class="form-input" value="abraham.tiruneh7@gmail.com" required>
+          <label class="form-label" for="resetEmail">Administrator Email</label>
+          <input type="email" name="email" id="resetEmail" class="form-input" placeholder="admin@organization.et" required>
+          <div class="helper-text">Email address for the administrator account.</div>
         </div>
 
         <div class="form-group">
-          <label class="form-label" for="resetMasterKey">Master Security Key or Passcode</label>
-          <input type="password" id="resetMasterKey" class="form-input" placeholder="Paste Master Key or Render Key" required>
-          <div class="helper-text">Enter <code>agrietech_admin_live_sec_key_2026_98827</code> or your Render master key.</div>
+          <label class="form-label" for="resetMasterKey">Master Security Authorization Key</label>
+          <input type="password" name="masterKey" id="resetMasterKey" class="form-input" placeholder="Enter master security authorization key" required>
+          <div class="helper-text">Requires valid master console security key to authorize changes.</div>
         </div>
 
         <div class="form-group">
           <label class="form-label" for="resetNewPassword">New Desired Password</label>
-          <input type="password" id="resetNewPassword" class="form-input" placeholder="Enter your new admin password (min 6 chars)" required>
+          <input type="password" name="newPassword" id="resetNewPassword" class="form-input" placeholder="Enter new password (min 6 characters)" required>
+          <div class="helper-text">Set your personal administrator password.</div>
         </div>
 
         <button type="submit" id="resetSubmitBtn" class="btn-submit">
-          <span>🔄</span> Set Password & Open Dashboard
+          <span>🔄</span> Update Password & Open Console
         </button>
       </form>
     </div>
@@ -317,31 +349,61 @@
   </div>
 
   <script>
-    let activeMode = 'account';
-
-    // Parse URL error params if any
-    const urlParams = new URLSearchParams(window.location.search);
-    const initialError = urlParams.get('error');
-    if (initialError) {
-      showAlert(decodeURIComponent(initialError));
-    }
-
+    // Tab Mode Switching with full DOM robustness
     function selectAuthMode(mode) {
-      activeMode = mode;
-      document.getElementById('alertBox').style.display = 'none';
+      const alertEl = document.getElementById('alertBox');
+      if (alertEl) alertEl.style.display = 'none';
 
-      document.getElementById('tabAccountBtn').classList.toggle('active', mode === 'account');
-      document.getElementById('tabKeyBtn').classList.toggle('active', mode === 'key');
-      document.getElementById('tabResetBtn').classList.toggle('active', mode === 'reset');
+      const accountBtn = document.getElementById('tabAccountBtn');
+      const keyBtn = document.getElementById('tabKeyBtn');
+      const resetBtn = document.getElementById('tabResetBtn');
 
-      document.getElementById('accountForm').style.display = mode === 'account' ? 'block' : 'none';
-      document.getElementById('keyForm').style.display = mode === 'key' ? 'block' : 'none';
-      document.getElementById('resetForm').style.display = mode === 'reset' ? 'block' : 'none';
+      if (accountBtn) {
+        accountBtn.classList.toggle('active', mode === 'account');
+        accountBtn.setAttribute('aria-selected', mode === 'account' ? 'true' : 'false');
+      }
+      if (keyBtn) {
+        keyBtn.classList.toggle('active', mode === 'key');
+        keyBtn.setAttribute('aria-selected', mode === 'key' ? 'true' : 'false');
+      }
+      if (resetBtn) {
+        resetBtn.classList.toggle('active', mode === 'reset');
+        resetBtn.setAttribute('aria-selected', mode === 'reset' ? 'true' : 'false');
+      }
+
+      const accountForm = document.getElementById('accountForm');
+      const keyForm = document.getElementById('keyForm');
+      const resetForm = document.getElementById('resetForm');
+
+      if (accountForm) accountForm.style.display = mode === 'account' ? 'block' : 'none';
+      if (keyForm) keyForm.style.display = mode === 'key' ? 'block' : 'none';
+      if (resetForm) resetForm.style.display = mode === 'reset' ? 'block' : 'none';
     }
 
-    function showAlert(msg) {
+    // Attach listeners directly to tabs as well
+    document.addEventListener('DOMContentLoaded', function() {
+      const tabs = document.querySelectorAll('.auth-tab');
+      tabs.forEach(function(tab) {
+        tab.addEventListener('click', function(e) {
+          e.preventDefault();
+          const mode = this.getAttribute('data-tab');
+          if (mode) selectAuthMode(mode);
+        });
+      });
+
+      // Parse error parameters from URL
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const err = urlParams.get('error');
+        if (err) showAlert(decodeURIComponent(err));
+      } catch (_e) {}
+    });
+
+    function showAlert(msg, isSuccess) {
       const box = document.getElementById('alertBox');
+      if (!box) return;
       box.textContent = msg;
+      box.className = 'alert-box ' + (isSuccess ? 'alert-success' : 'alert-danger');
       box.style.display = 'block';
     }
 
@@ -351,9 +413,15 @@
       const password = document.getElementById('adminPassword').value;
       const btn = document.getElementById('accountSubmitBtn');
 
+      if (!email || !password) {
+        showAlert('Please enter both email and password');
+        return;
+      }
+
       btn.disabled = true;
       btn.innerHTML = '<span>⏳</span> Verifying credentials...';
-      document.getElementById('alertBox').style.display = 'none';
+      const alertEl = document.getElementById('alertBox');
+      if (alertEl) alertEl.style.display = 'none';
 
       try {
         const res = await fetch('/admin/login', {
@@ -367,12 +435,8 @@
 
         const json = await res.json();
         if (res.ok && json.success) {
-          if (json.token) {
-            localStorage.setItem('accessToken', json.token);
-          }
-          if (json.user) {
-            localStorage.setItem('adminUser', JSON.stringify(json.user));
-          }
+          if (json.token) localStorage.setItem('accessToken', json.token);
+          if (json.user) localStorage.setItem('adminUser', JSON.stringify(json.user));
           window.location.href = json.redirect || '/admin/dashboard';
         } else {
           showAlert(json.message || 'Invalid administrative credentials');
@@ -380,9 +444,8 @@
           btn.innerHTML = '<span>🔐</span> Unlock Console';
         }
       } catch (err) {
-        showAlert('Network or server error during sign in. Please try again.');
-        btn.disabled = false;
-        btn.innerHTML = '<span>🔐</span> Unlock Console';
+        // Fallback to native form submission if fetch is interrupted
+        document.getElementById('accountForm').submit();
       }
     }
 
@@ -391,9 +454,15 @@
       const consoleKey = document.getElementById('consoleKey').value.trim();
       const btn = document.getElementById('keySubmitBtn');
 
+      if (!consoleKey) {
+        showAlert('Please enter the Master Console Key');
+        return;
+      }
+
       btn.disabled = true;
       btn.innerHTML = '<span>⏳</span> Authenticating key...';
-      document.getElementById('alertBox').style.display = 'none';
+      const alertEl = document.getElementById('alertBox');
+      if (alertEl) alertEl.style.display = 'none';
 
       try {
         const res = await fetch('/admin/login', {
@@ -407,9 +476,8 @@
 
         const json = await res.json();
         if (res.ok && json.success) {
-          if (json.token) {
-            localStorage.setItem('accessToken', json.token);
-          }
+          if (json.token) localStorage.setItem('accessToken', json.token);
+          if (json.user) localStorage.setItem('adminUser', JSON.stringify(json.user));
           window.location.href = json.redirect || '/admin/dashboard';
         } else {
           showAlert(json.message || 'Invalid Master Console Key');
@@ -417,9 +485,7 @@
           btn.innerHTML = '<span>⚡</span> Authenticate Master Key';
         }
       } catch (err) {
-        showAlert('Network or server error during key verification.');
-        btn.disabled = false;
-        btn.innerHTML = '<span>⚡</span> Authenticate Master Key';
+        document.getElementById('keyForm').submit();
       }
     }
 
@@ -430,9 +496,15 @@
       const newPassword = document.getElementById('resetNewPassword').value.trim();
       const btn = document.getElementById('resetSubmitBtn');
 
+      if (!email || !masterKey || !newPassword) {
+        showAlert('All fields are required to update administrator password');
+        return;
+      }
+
       btn.disabled = true;
-      btn.innerHTML = '<span>⏳</span> Setting password...';
-      document.getElementById('alertBox').style.display = 'none';
+      btn.innerHTML = '<span>⏳</span> Updating password...';
+      const alertEl = document.getElementById('alertBox');
+      if (alertEl) alertEl.style.display = 'none';
 
       try {
         const res = await fetch('/admin/reset-password', {
@@ -446,22 +518,19 @@
 
         const json = await res.json();
         if (res.ok && json.success) {
-          if (json.token) {
-            localStorage.setItem('accessToken', json.token);
-          }
-          if (json.user) {
-            localStorage.setItem('adminUser', JSON.stringify(json.user));
-          }
-          window.location.href = json.redirect || '/admin/dashboard';
+          if (json.token) localStorage.setItem('accessToken', json.token);
+          if (json.user) localStorage.setItem('adminUser', JSON.stringify(json.user));
+          showAlert('Password updated successfully! Redirecting...', true);
+          setTimeout(function() {
+            window.location.href = json.redirect || '/admin/dashboard';
+          }, 400);
         } else {
-          showAlert(json.message || 'Failed to update admin password');
+          showAlert(json.message || 'Failed to update administrator password');
           btn.disabled = false;
-          btn.innerHTML = '<span>🔄</span> Set Password & Open Dashboard';
+          btn.innerHTML = '<span>🔄</span> Update Password & Open Console';
         }
       } catch (err) {
-        showAlert('Network or server error setting admin password.');
-        btn.disabled = false;
-        btn.innerHTML = '<span>🔄</span> Set Password & Open Dashboard';
+        document.getElementById('resetForm').submit();
       }
     }
   </script>
