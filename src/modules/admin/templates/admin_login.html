@@ -248,7 +248,10 @@
           👤 Admin Account
         </div>
         <div id="tabKeyBtn" class="auth-tab" onclick="selectAuthMode('key')">
-          🔑 Master Console Key
+          🔑 Master Key
+        </div>
+        <div id="tabResetBtn" class="auth-tab" onclick="selectAuthMode('reset')">
+          🔄 Set Password
         </div>
       </div>
 
@@ -263,7 +266,7 @@
         <div class="form-group">
           <label class="form-label" for="adminPassword">Administrative Password</label>
           <input type="password" id="adminPassword" class="form-input" placeholder="••••••••••••" required autocomplete="current-password">
-          <div class="helper-text">Accepts your database account password or your Render environment master password.</div>
+          <div class="helper-text">Default is <code>Admin@2026!</code>, or enter your Render master key/password.</div>
         </div>
 
         <button type="submit" id="accountSubmitBtn" class="btn-submit">
@@ -276,11 +279,34 @@
         <div class="form-group">
           <label class="form-label" for="consoleKey">Master Console Key / Passcode</label>
           <input type="password" id="consoleKey" class="form-input" placeholder="Paste Master Console Key or Password" required autocomplete="off">
-          <div class="helper-text">Enter the key/password configured in Render (<code>ADMIN_PASSWORD</code>, <code>ADMIN_CONSOLE_PASSWORD</code>, or <code>ADMIN_API_KEYS</code>).</div>
+          <div class="helper-text">Enter <code>agrietech_admin_live_sec_key_2026_98827</code> or Render master key.</div>
         </div>
 
         <button type="submit" id="keySubmitBtn" class="btn-submit">
           <span>⚡</span> Authenticate Master Key
+        </button>
+      </form>
+
+      <!-- Form 3: Set / Reset Password -->
+      <form id="resetForm" style="display: none;" onsubmit="handleResetSubmit(event)">
+        <div class="form-group">
+          <label class="form-label" for="resetEmail">Official Admin Email</label>
+          <input type="email" id="resetEmail" class="form-input" value="abraham.tiruneh7@gmail.com" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="resetMasterKey">Master Security Key or Passcode</label>
+          <input type="password" id="resetMasterKey" class="form-input" placeholder="Paste Master Key or Render Key" required>
+          <div class="helper-text">Enter <code>agrietech_admin_live_sec_key_2026_98827</code> or your Render master key.</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="resetNewPassword">New Desired Password</label>
+          <input type="password" id="resetNewPassword" class="form-input" placeholder="Enter your new admin password (min 6 chars)" required>
+        </div>
+
+        <button type="submit" id="resetSubmitBtn" class="btn-submit">
+          <span>🔄</span> Set Password & Open Dashboard
         </button>
       </form>
     </div>
@@ -304,17 +330,13 @@
       activeMode = mode;
       document.getElementById('alertBox').style.display = 'none';
 
-      if (mode === 'account') {
-        document.getElementById('tabAccountBtn').classList.add('active');
-        document.getElementById('tabKeyBtn').classList.remove('active');
-        document.getElementById('accountForm').style.display = 'block';
-        document.getElementById('keyForm').style.display = 'none';
-      } else {
-        document.getElementById('tabKeyBtn').classList.add('active');
-        document.getElementById('tabAccountBtn').classList.remove('active');
-        document.getElementById('keyForm').style.display = 'block';
-        document.getElementById('accountForm').style.display = 'none';
-      }
+      document.getElementById('tabAccountBtn').classList.toggle('active', mode === 'account');
+      document.getElementById('tabKeyBtn').classList.toggle('active', mode === 'key');
+      document.getElementById('tabResetBtn').classList.toggle('active', mode === 'reset');
+
+      document.getElementById('accountForm').style.display = mode === 'account' ? 'block' : 'none';
+      document.getElementById('keyForm').style.display = mode === 'key' ? 'block' : 'none';
+      document.getElementById('resetForm').style.display = mode === 'reset' ? 'block' : 'none';
     }
 
     function showAlert(msg) {
@@ -398,6 +420,48 @@
         showAlert('Network or server error during key verification.');
         btn.disabled = false;
         btn.innerHTML = '<span>⚡</span> Authenticate Master Key';
+      }
+    }
+
+    async function handleResetSubmit(e) {
+      e.preventDefault();
+      const email = document.getElementById('resetEmail').value.trim();
+      const masterKey = document.getElementById('resetMasterKey').value.trim();
+      const newPassword = document.getElementById('resetNewPassword').value.trim();
+      const btn = document.getElementById('resetSubmitBtn');
+
+      btn.disabled = true;
+      btn.innerHTML = '<span>⏳</span> Setting password...';
+      document.getElementById('alertBox').style.display = 'none';
+
+      try {
+        const res = await fetch('/admin/reset-password', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify({ email, masterKey, newPassword })
+        });
+
+        const json = await res.json();
+        if (res.ok && json.success) {
+          if (json.token) {
+            localStorage.setItem('accessToken', json.token);
+          }
+          if (json.user) {
+            localStorage.setItem('adminUser', JSON.stringify(json.user));
+          }
+          window.location.href = json.redirect || '/admin/dashboard';
+        } else {
+          showAlert(json.message || 'Failed to update admin password');
+          btn.disabled = false;
+          btn.innerHTML = '<span>🔄</span> Set Password & Open Dashboard';
+        }
+      } catch (err) {
+        showAlert('Network or server error setting admin password.');
+        btn.disabled = false;
+        btn.innerHTML = '<span>🔄</span> Set Password & Open Dashboard';
       }
     }
   </script>

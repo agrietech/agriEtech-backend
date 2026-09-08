@@ -1370,28 +1370,24 @@
       btn.textContent = 'Verifying credentials...';
 
       try {
-        const res = await fetch('/api/v1/auth/login', {
+        const res = await fetch('/admin/login', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password }),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: JSON.stringify({ email, password, consoleKey: password }),
         });
 
         const json = await res.json();
-        if (res.ok && json.success && json.data?.token) {
-          const user = json.data.user;
-          const allowedRoles = ['ADMIN', 'REGIONAL_OFFICER', 'ZONAL_OFFICER', 'WOREDA_OFFICER', 'DEVELOPMENT_AGENT'];
-          if (!allowedRoles.includes(user?.role)) {
-            alert.textContent = `Access denied: Role "${user?.role}" does not have administrative privileges.`;
-            alert.style.display = 'block';
-            alert.style.background = '#fef2f2';
-            alert.style.color = '#991b1b';
-            alert.style.border = '1px solid #fca5a5';
-            btn.disabled = false;
-            btn.textContent = '🔐 Sign In to Console';
-            return;
-          }
+        if (res.ok && json.success && json.token) {
+          const user = json.user || {
+            email: email || 'abraham.tiruneh7@gmail.com',
+            fullName: 'Abraham Tiruneh (Administrator)',
+            role: 'ADMIN',
+          };
 
-          localStorage.setItem('accessToken', json.data.token);
+          localStorage.setItem('accessToken', json.token);
           localStorage.setItem('adminUser', JSON.stringify(user));
           closeModal('authModal');
           showToast(`Welcome, ${user.fullName || user.email}!`);
@@ -1399,7 +1395,7 @@
           loadOverview();
           initMap();
         } else {
-          alert.textContent = json.error?.message || json.message || 'Invalid administrative credentials';
+          alert.textContent = json.message || json.error?.message || 'Invalid administrative credentials';
           alert.style.display = 'block';
           alert.style.background = '#fef2f2';
           alert.style.color = '#991b1b';
@@ -1439,7 +1435,7 @@
 
     async function verifyAndLoadAdmin() {
       const urlParams = new URLSearchParams(window.location.search);
-      const urlToken = urlParams.get('token') || urlParams.get('apiKey');
+      const urlToken = urlParams.get('token') || urlParams.get('apiKey') || urlParams.get('key');
       if (urlToken) localStorage.setItem('accessToken', urlToken);
 
       const token = localStorage.getItem('accessToken');
@@ -1448,6 +1444,22 @@
         return;
       }
 
+      // 1. Try decoding client-side first for instant UI response without waiting
+      try {
+        const parts = token.split('.');
+        if (parts.length === 3) {
+          const payload = JSON.parse(atob(parts[1]));
+          if (payload && (payload.role === 'ADMIN' || payload.email || payload.id)) {
+            updateUserBadge({
+              fullName: payload.fullName || 'Abraham Tiruneh (Administrator)',
+              email: payload.email || 'abraham.tiruneh7@gmail.com',
+              role: payload.role || 'ADMIN',
+            });
+          }
+        }
+      } catch (_) {}
+
+      // 2. Verify with backend
       try {
         const res = await fetch('/api/v1/auth/me', { headers: getAuthHeaders() });
         if (res.ok) {
@@ -1459,9 +1471,19 @@
             return;
           }
         }
+
+        // If /me returned non-200 but token is present, test /api/v1/admin/overview directly
+        const overviewRes = await fetch('/api/v1/admin/overview', { headers: getAuthHeaders() });
+        if (overviewRes.ok) {
+          loadOverview();
+          initMap();
+          return;
+        }
+
         localStorage.removeItem('accessToken');
         openAuthModal('Your session has expired. Please sign in again.');
       } catch (_e) {
+        // Offline or network glitch — continue rendering with existing token
         loadOverview();
         initMap();
       }

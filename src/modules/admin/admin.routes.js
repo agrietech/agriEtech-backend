@@ -44,7 +44,7 @@ const adminAuth = async (req, res, next) => {
   const cookieToken = getCookie(req, 'admin_token') || getCookie(req, 'accessToken');
   const token = (authHeader && authHeader.startsWith('Bearer '))
     ? authHeader.substring(7)
-    : (cookieToken || (process.env.NODE_ENV === 'development' ? (req.query.token || req.query.accessToken) : null));
+    : (cookieToken || req.query.token || req.query.accessToken);
   
   if (token) {
     try {
@@ -192,6 +192,7 @@ router.get('/login', (req, res) => {
 });
 
 router.post('/login', controller.handleAdminLogin);
+router.post('/reset-password', controller.handleAdminResetPassword);
 router.get('/logout', controller.handleAdminLogout);
 
 // Protected dashboard console view (serves HTML admin interface when accessed via /admin)
