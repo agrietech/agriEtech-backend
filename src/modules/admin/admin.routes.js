@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const controller = require('./admin.controller');
 const roleRequestController = require('../roleRequest/roleRequest.controller');
+const env = require('../../config/env');
 
 // Admin authentication middleware (Supports API Keys, JWT Bearer Tokens, and browser sessions)
 const { isTokenBlacklisted } = require('../auth/auth.service');
@@ -20,11 +21,18 @@ const adminAuth = async (req, res, next) => {
   }
 
   // 1. API Key Authentication (x-api-key header)
-  // Strictly validates against ADMIN_API_KEYS env variable only
+  // Validates against configured admin keys/passwords
   const apiKey = req.headers['x-api-key'] || req.headers['api-key'];
   if (apiKey) {
-    const validKeys = (process.env.ADMIN_API_KEYS || '').split(',').map(k => k.trim()).filter(Boolean);
-    if (process.env.ADMIN_CONSOLE_PASSWORD) validKeys.push(process.env.ADMIN_CONSOLE_PASSWORD.trim());
+    const validKeys = env.getAdminKeys ? env.getAdminKeys() : [
+      ...(process.env.ADMIN_API_KEYS || '').split(','),
+      process.env.ADMIN_CONSOLE_PASSWORD,
+      process.env.ADMIN_PASSWORD,
+      process.env.ADMIN_SECRET,
+      process.env.ADMIN_KEY,
+      process.env.ADMIN_PASS,
+      process.env.ADMIN_TOKEN,
+    ].map(k => (k || '').trim()).filter(Boolean);
     if (validKeys.length > 0 && validKeys.includes(apiKey.trim())) {
       req.user = { id: 'usr_admin_apikey', email: 'admin_apikey@ethiofarm.et', fullName: 'API Key Administrator', role: 'ADMIN' };
       return next();
@@ -124,10 +132,15 @@ const adminPageAuth = async (req, res, next) => {
 
   const tokenCandidate = queryToken || cookieToken || headerToken;
 
-  const validKeys = (process.env.ADMIN_API_KEYS || '').split(',').map(k => k.trim()).filter(Boolean);
-  if (process.env.ADMIN_CONSOLE_PASSWORD) {
-    validKeys.push(process.env.ADMIN_CONSOLE_PASSWORD.trim());
-  }
+  const validKeys = env.getAdminKeys ? env.getAdminKeys() : [
+    ...(process.env.ADMIN_API_KEYS || '').split(','),
+    process.env.ADMIN_CONSOLE_PASSWORD,
+    process.env.ADMIN_PASSWORD,
+    process.env.ADMIN_SECRET,
+    process.env.ADMIN_KEY,
+    process.env.ADMIN_PASS,
+    process.env.ADMIN_TOKEN,
+  ].map(k => (k || '').trim()).filter(Boolean);
 
   if (apiKey && validKeys.includes(apiKey.trim())) {
     return next();

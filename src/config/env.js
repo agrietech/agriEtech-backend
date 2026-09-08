@@ -31,6 +31,26 @@ const env = {
   JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET || 'dev_refresh_secret_change_in_production',
   JWT_REFRESH_EXPIRES_IN: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
   ADMIN_API_KEYS: process.env.ADMIN_API_KEYS || '',
+  ADMIN_CONSOLE_PASSWORD: process.env.ADMIN_CONSOLE_PASSWORD || process.env.ADMIN_PASSWORD || process.env.ADMIN_SECRET || process.env.ADMIN_KEY || '',
+  ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || process.env.ADMIN_CONSOLE_PASSWORD || '',
+  ADMIN_EMAIL: (process.env.ADMIN_EMAIL || 'admin@ethiofarm.et').trim().toLowerCase(),
+  getAdminKeys: () => {
+    const keys = new Set();
+    const candidates = [
+      process.env.ADMIN_API_KEYS,
+      process.env.ADMIN_CONSOLE_PASSWORD,
+      process.env.ADMIN_PASSWORD,
+      process.env.ADMIN_SECRET,
+      process.env.ADMIN_KEY,
+      process.env.ADMIN_PASS,
+      process.env.ADMIN_TOKEN,
+    ];
+    for (const item of candidates) {
+      if (!item) continue;
+      item.split(',').map((k) => k.trim()).filter(Boolean).forEach((k) => keys.add(k));
+    }
+    return Array.from(keys);
+  },
   SMS_PROVIDER: process.env.SMS_PROVIDER || 'smsethiopia',
   SMS_ETHIOPIA_API_KEY: process.env.SMS_ETHIOPIA_API_KEY || '',
   SMS_ETHIOPIA_BASE_URL: process.env.SMS_ETHIOPIA_BASE_URL || 'https://smsethiopia.com/api',
