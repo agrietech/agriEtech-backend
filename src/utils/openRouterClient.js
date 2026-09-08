@@ -4,10 +4,10 @@ const logger = require('./logger');
 
 // Model assignment mapping for the configured key pool slots
 const SLOT_MODEL_PAIRINGS = [
-  'minimax/minimax-m3:free',
-  'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
-  'minimax/minimax-m3:free',
   'google/gemma-4-26b-a4b-it:free',
+  'nvidia/nemotron-3.5-lightning:free',
+  'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
+  'google/gemma-4-31b-it:free',
   'openrouter/free',
 ];
 
@@ -21,15 +21,16 @@ class OpenRouterClient {
       ? env.OPENROUTER_API_KEYS_LIST
       : (env.OPENROUTER_API_KEY ? [env.OPENROUTER_API_KEY] : []);
     this.apiKey = this.apiKeys[0] || '';
-    this.model = env.OPENROUTER_MODEL || 'minimax/minimax-m3:free';
+    this.model = env.OPENROUTER_MODEL || 'google/gemma-4-26b-a4b-it:free';
     this.baseUrl = env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
-    this.appUrl = env.OPENROUTER_SITE_URL || env.APP_URL || 'https://ethiofarm.et';
+    this.appUrl = env.OPENROUTER_SITE_URL || env.APP_URL || 'https://agrietech.onrender.com';
     this.siteName = env.OPENROUTER_SITE_NAME || 'EthioFarm Smart Farming Platform';
 
     // Enterprise Key Pool with health tracking, dedicated model mapping and auto-quarantine
     this.keyPool = this.apiKeys.map((key, index) => ({
       id: `key_${index + 1}`,
       key,
+
       masked: `${key.slice(0, 14)}...${key.slice(-4)}`,
       dedicatedModel: SLOT_MODEL_PAIRINGS[index] || this.model,
       active: true,
@@ -73,11 +74,8 @@ class OpenRouterClient {
       return selected;
     }
 
-    // 3. If all keys are in cooldown, pick the key closest to expiry
-    const sorted = [...this.keyPool].sort((a, b) => a.cooldownUntil - b.cooldownUntil);
-    const earliest = sorted[0];
-    earliest.lastUsedAt = now;
-    return earliest;
+    // 3. If all keys are currently in cooldown, return null so callers can immediately use fallback
+    return null;
   }
 
   /**
@@ -95,10 +93,15 @@ class OpenRouterClient {
     if (statusCode === 401 || statusCode === 403) {
       keyObj.cooldownUntil = now + 600000; // 10-minute cooldown
       logger.error(`[OpenRouterClient] Key ${keyObj.masked} unauthorized (${statusCode}). Cooldown for 10m.`);
-    } else if (statusCode === 429 && (msg.includes('user rate limit') || msg.includes('credits exhausted'))) {
+    } else if (statusCode === 429) {
       keyObj.rateLimitCount++;
-      keyObj.cooldownUntil = now + 60000; // 60-second cooldown
-      logger.warn(`[OpenRouterClient] Key ${keyObj.masked} rate-limited. Cooldown for 60s.`);
+      if (msg.includes('free-models-per-day')) {
+        keyObj.cooldownUntil = now + 3600000; // 1-hour cooldown for daily free-tier exhaustion
+        logger.warn(`[OpenRouterClient] Key ${keyObj.masked} reached daily free limit (free-models-per-day). Cooldown for 1h.`);
+      } else {
+        keyObj.cooldownUntil = now + 45000; // 45-second cooldown for transient concurrency
+        logger.warn(`[OpenRouterClient] Key ${keyObj.masked} rate-limited (429). Cooldown for 45s.`);
+      }
     }
   }
 
@@ -147,12 +150,11 @@ class OpenRouterClient {
   }) {
     const primaryModel = model || this.model;
     const candidateModels = [
-      primaryModel,
-      'minimax/minimax-m3:free',
       'openrouter/free',
-      'google/gemma-4-26b-a4b-it:free',
-      'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
-      'minimax/minimax-m2.7:free',
+      'liquid/lfm-2.5-2.6b:free',
+      primaryModel,
+      'nvidia/nemotron-3.5-lightning:free',
+      'google/gemma-4-31b-it:free',
     ].filter((m, i, arr) => m && arr.indexOf(m) === i);
 
     if (!this.isConfigured()) {
@@ -168,7 +170,9 @@ class OpenRouterClient {
         max_tokens: tokens,
       };
 
-      if (responseFormat === 'json') {
+      // Free models on OpenRouter (including openrouter/free) often hang or return safety tokens when response_format: { type: 'json_object' } is requested.
+      // System prompts strictly mandate JSON, and our callers use regex JSON extraction.
+      if (responseFormat === 'json' && !targetModel.includes(':free') && !targetModel.startsWith('openrouter/free')) {
         payload.response_format = { type: 'json_object' };
       }
 
@@ -183,17 +187,23 @@ class OpenRouterClient {
           'X-Title': this.siteName,
           'Content-Type': 'application/json',
         },
-        timeout: 15000,
+        timeout: 6000,
       });
     };
 
     let lastError = null;
+    const startTime = Date.now();
 
     // Outer loop: Iterate through candidate models
     for (const targetModel of candidateModels) {
-      const maxKeyAttempts = Math.min(3, this.keyPool.length || 1);
+      if (Date.now() - startTime > 12000) {
+        logger.info('[OpenRouterClient] Cascade budget (12s) reached. Switching to dynamic agronomic synthesizer.');
+        break;
+      }
+      const maxKeyAttempts = 1;
 
       for (let attempt = 0; attempt < maxKeyAttempts; attempt++) {
+        if (Date.now() - startTime > 12000) break;
         const activeKey = this._getNextKey(targetModel);
         if (!activeKey) break;
 
@@ -215,6 +225,30 @@ class OpenRouterClient {
                 : Math.min(80, currentTokens);
               logger.warn(`[OpenRouterClient] Token adjustment for ${targetModel} on ${activeKey.masked} (${errorMsg}). Retrying with ${affordableTokens} tokens.`);
               response = await executeRequestWithKey(activeKey, targetModel, affordableTokens);
+            } else if ((status === 400 || status === 404) && (errorMsg.includes('image') || errorMsg.includes('vision') || errorMsg.includes('url') || errorMsg.includes('fetching') || errorMsg.includes('support image input'))) {
+              // Model does not accept image_url or image URL was not fetchable; retry immediately using text-only synthesis
+              const textOnlyMessages = messages.map((m) => {
+                if (Array.isArray(m.content)) {
+                  const textContent = m.content.filter((c) => c.type === 'text').map((c) => c.text).join('\n');
+                  return { ...m, content: textContent };
+                }
+                return m;
+              });
+              response = await axios.post(`${this.baseUrl}/chat/completions`, {
+                model: targetModel,
+                messages: textOnlyMessages,
+                temperature,
+                max_tokens: currentTokens,
+                response_format: responseFormat === 'json' ? { type: 'json_object' } : undefined,
+              }, {
+                headers: {
+                  Authorization: `Bearer ${activeKey.key}`,
+                  'HTTP-Referer': this.appUrl,
+                  'X-Title': this.siteName,
+                  'Content-Type': 'application/json',
+                },
+                timeout: 4500,
+              });
             } else {
               this._markKeyError(activeKey, status, errorMsg);
               throw firstErr;
@@ -512,18 +546,22 @@ JSON schema:
   /**
    * Process Farmer Voice Inquiries in Amharic & English
    */
-  async processVoiceInquiry({ userQuestion, audioTranscript, audioBase64: _audioBase64, mimeType: _mimeType, language = 'am' }) {
+  async processVoiceInquiry({ userQuestion, farmContextSummary = null, audioTranscript, audioBase64: _audioBase64, mimeType: _mimeType, language = 'am' }) {
     const textQuery = userQuestion || audioTranscript || 'የሰብል እንክብካቤ እና የበሽታ መከላከል መመሪያ ቢነግሩኝ?';
 
+    const farmInfo = farmContextSummary ? `The farmer's registered crops are: ${farmContextSummary}. Use this background only when relevant.\n` : '';
+
     const systemPrompt = `You are EthioFarm's Interactive Voice Agronomist supporting Ethiopian farmers in Amharic (አማርኛ) and English.
-Formulate practical, empathetic, and scientifically accurate agricultural advice based specifically on the user's question.
+${farmInfo}CRITICAL GUIDELINES:
+- For simple greetings, conversational icebreakers (e.g. "hello", "hi", "selam", "ሰላም"), or general check-ins: Reply warmly and politely in both English and Amharic, and ask how you can assist their farm today. DO NOT return long crop essays for greetings.
+- For specific farming, crop, pest, disease, soil, fertilizer, or weather questions: Provide concise, practical, scientifically verified advice tailored directly to their question.
 You MUST output valid JSON ONLY with exact fields:
 {
-  "transcription": "Exact text of the farmer inquiry",
+  "transcription": "${textQuery.replace(/"/g, "'")}",
   "detectedLanguage": "Amharic or English",
-  "responseEn": "Clear spoken-style response in English addressing the specific question asked.",
-  "responseAm": "ለገበሬው የተጠየቀውን ጥያቄ በግልጽ የሚመልስ የአማርኛ መልስ።",
-  "recommendedAction": "Actionable priority guidance for the farmer."
+  "responseEn": "Conversational, practical response in English directly addressing the question or greeting.",
+  "responseAm": "የተጠየቀውን ጥያቄ ወይም ሰላምታ በቀጥታ የሚመልስ የተፈጥሮ የአማርኛ መልስ።",
+  "recommendedAction": "Actionable priority guidance or next step for the farmer."
 }`;
 
     const messages = [
@@ -535,11 +573,14 @@ You MUST output valid JSON ONLY with exact fields:
       messages,
       temperature: 0.3,
       responseFormat: 'json',
-      maxTokens: 300,
+      maxTokens: 500,
     });
 
     try {
-      const parsed = JSON.parse(result.content.replace(/```json/g, '').replace(/```/g, '').trim());
+      let rawJson = (result.content || '').trim();
+      const jsonMatch = rawJson.match(/\{[\s\S]*\}/);
+      if (jsonMatch) rawJson = jsonMatch[0];
+      const parsed = JSON.parse(rawJson);
       if (parsed && (parsed.responseAm || parsed.responseEn)) {
         return {
           success: true,
@@ -549,6 +590,7 @@ You MUST output valid JSON ONLY with exact fields:
             responseEn: parsed.responseEn || '',
             responseAm: parsed.responseAm || '',
             recommendedAction: parsed.recommendedAction || 'Inspect crop field regularly and follow extension guidance.',
+            aiModel: result.model || 'OpenRouter LLM',
           },
         };
       }
@@ -613,34 +655,51 @@ You MUST output valid JSON ONLY with exact fields:
    * localized Ethiopian agricultural advisory in both Amharic and English.
    */
   _generateDynamicVoiceResponse(queryText = '', preferredLang = 'am') {
-    const q = (queryText || '').toLowerCase().trim();
-    const isAmharicInput = /[\u1200-\u137F]/.test(queryText);
+    // Strip any internal context markers from queryText
+    const cleanText = (queryText || '').replace(/\[farmer's crops:[^\]]*\]/gi, '').trim();
+    const q = cleanText.toLowerCase();
+    const isAmharicInput = /[\u1200-\u137F]/.test(cleanText);
     const detectedLang = isAmharicInput || preferredLang === 'am' ? 'Amharic' : 'English';
 
     if (!q || q.length === 0) {
       return {
         transcription: detectedLang === 'Amharic' ? 'የድምፅ ጥያቄዎን ይጠብቃል' : 'Listening for your question',
         detectedLanguage: detectedLang,
-        responseEn: 'Hello! I am your EthioFarm AI Agronomic Assistant. Please type or speak any question regarding your crops, fruit trees, soil moisture, pests, disease treatments, or weather forecasts.',
-        responseAm: 'ጤና ይስጥልኝ! እኔ የአግሪቴክ የግብርና AI ረዳትዎ ነኝ። እባክዎን ስለ ሰብልዎ፣ ፍራፍሬዎች፣ ማዳቀል፣ በሽታዎች፣ የአፈር እርጥበት ወይም የአየር ሁኔታ ማንኛውንም ጥያቄ ይናገሩ ወይም ይፃፉ።',
+        responseEn: 'Hello! I am your EthioFarm AI Agronomic Assistant. How can I help you today with your crops, fruit trees, soil moisture, pests, disease treatments, or weather forecasts?',
+        responseAm: 'ጤና ይስጥልኝ! እኔ የአግሪቴክ የግብርና AI ረዳትዎ ነኝ። ዛሬ ስለ ሰብልዎ፣ ፍራፍሬዎች፣ አፈር፣ በሽታዎች ወይም የአየር ሁኔታ በምን ልርዳዎ?',
         recommendedAction: detectedLang === 'Amharic' ? 'ጥያቄዎን ይናገሩ ወይም ከታች ያሉትን አማራጮች ይምረጡ።' : 'Speak your question or choose one of the quick topics below.',
       };
     }
 
-    // Comprehensive Topic & Keyword Detectors
-    const isAppleOrGrafting = q.includes('apple') || q.includes('graft') || q.includes('fruit') || queryText.includes('ፖም') || queryText.includes('ማዳቀል') || queryText.includes('ፍራፍሬ') || queryText.includes('ችግኝ');
-    const isAvocadoOrMango = q.includes('avocado') || q.includes('mango') || queryText.includes('አቮካዶ') || queryText.includes('ማንጎ');
-    const isTomatoOrVegetable = q.includes('tomato') || q.includes('onion') || q.includes('potato') || q.includes('pepper') || queryText.includes('ቲማቲም') || queryText.includes('ሽንኩርት') || queryText.includes('ድንች') || queryText.includes('ቃሪያ');
-    const isLegumes = q.includes('bean') || q.includes('chickpea') || q.includes('lentil') || q.includes('pea') || queryText.includes('ባቄላ') || queryText.includes('ሽምብራ') || queryText.includes('ምስር') || queryText.includes('አተር');
-    const isCoffee = q.includes('coffee') || q.includes('shade') || queryText.includes('ቡና') || queryText.includes('ጥላ');
-    const isTeff = q.includes('teff') || queryText.includes('ጤፍ');
-    const isMaize = q.includes('maize') || q.includes('corn') || queryText.includes('በቆሎ');
-    const isWheatOrCereal = q.includes('wheat') || q.includes('barley') || q.includes('sorghum') || queryText.includes('ስንዴ') || queryText.includes('ገብስ') || queryText.includes('ማሽላ');
-    const isSoilOrLime = q.includes('soil') || q.includes('lime') || q.includes('acid') || q.includes('vertisol') || queryText.includes('አፈር') || queryText.includes('ኖራ') || queryText.includes('አሲድ') || queryText.includes('ወላካ');
-    const isPest = q.includes('pest') || q.includes('worm') || q.includes('bug') || q.includes('locust') || queryText.includes('ተባይ') || queryText.includes('አባጨጓሬ') || queryText.includes('አንበጣ');
-    const isDisease = q.includes('disease') || q.includes('rust') || q.includes('blight') || q.includes('fungus') || queryText.includes('በሽታ') || queryText.includes('ዋግ') || queryText.includes('ዝገት') || queryText.includes('ፈንገስ');
-    const isWater = q.includes('rain') || q.includes('water') || q.includes('drought') || q.includes('irrigation') || queryText.includes('ውሃ') || queryText.includes('ዝናብ') || queryText.includes('ድርቅ') || queryText.includes('መስኖ');
-    const isFertilizer = q.includes('fertilizer') || q.includes('urea') || q.includes('nps') || q.includes('dap') || q.includes('compost') || queryText.includes('ማዳበሪያ') || queryText.includes('ዩሪያ') || queryText.includes('ኤንፒኤስ') || queryText.includes('ኮምፖስት');
+    // 1. Dedicated Conversational Greeting & Social Exchange Detector
+    const isGreeting = /^(hello|hi|hey|greetings|good\s*(morning|afternoon|evening)|selam|ሰላም|ደህና|ጤና\s*ይስጥልኝ)/i.test(q) ||
+      ['hello', 'hi', 'hey', 'selam', 'ሰላም', 'ሰላም ነው', 'ጤና ይስጥልኝ', 'እንደምን አለህ', 'እንደምን አለሽ', 'እንደምን አደራችሁ', 'እንደምን ዋላችሁ'].includes(q);
+
+    if (isGreeting) {
+      return {
+        transcription: cleanText,
+        detectedLanguage: detectedLang,
+        responseEn: 'Hello! I am your EthioFarm AI Agronomic Assistant. How can I assist you today with your crops, fruit trees, soil, pests, disease treatments, or weather forecast?',
+        responseAm: 'ጤና ይስጥልኝ! እኔ የEthioFarm የግብርና AI ረዳትዎ ነኝ። ዛሬ ስለ ሰብልዎ፣ አፈር፣ ተባይ መከላከል ወይም የአየር ሁኔታ በምን ላግዝዎ እችላለሁ?',
+        recommendedAction: detectedLang === 'Amharic' ? 'የሚፈልጉትን የግብርና ጥያቄ ይናገሩ ወይም ይፃፉ።' : 'Speak or type any farming question to get instant advisory.',
+      };
+    }
+
+    // Comprehensive Topic & Keyword Detectors with Word Boundary Matching
+    const hasWord = (word) => new RegExp(`\\b${word}\\b`, 'i').test(q);
+    const isAppleOrGrafting = q.includes('apple') || q.includes('graft') || cleanText.includes('ፖም') || cleanText.includes('ማዳቀል') || cleanText.includes('ፍራፍሬ') || cleanText.includes('ችግኝ');
+    const isAvocadoOrMango = q.includes('avocado') || q.includes('mango') || cleanText.includes('አቮካዶ') || cleanText.includes('ማንጎ');
+    const isTomatoOrVegetable = q.includes('tomato') || q.includes('onion') || q.includes('potato') || q.includes('pepper') || cleanText.includes('ቲማቲም') || cleanText.includes('ሽንኩርት') || cleanText.includes('ድንች') || cleanText.includes('ቃሪያ');
+    const isLegumes = q.includes('bean') || q.includes('chickpea') || q.includes('lentil') || q.includes('pea') || cleanText.includes('ባቄላ') || cleanText.includes('ሽምብራ') || cleanText.includes('ምስር') || cleanText.includes('አተር');
+    const isCoffee = q.includes('coffee') || cleanText.includes('ቡና');
+    const isTeff = hasWord('teff') || cleanText.includes('ጤፍ');
+    const isMaize = hasWord('maize') || hasWord('corn') || cleanText.includes('በቆሎ');
+    const isWheatOrCereal = hasWord('wheat') || hasWord('barley') || hasWord('sorghum') || cleanText.includes('ስንዴ') || cleanText.includes('ገብስ') || cleanText.includes('ማሽላ');
+    const isSoilOrLime = q.includes('soil') || q.includes('lime') || q.includes('acid') || q.includes('vertisol') || cleanText.includes('አፈር') || cleanText.includes('ኖራ') || cleanText.includes('አሲድ') || cleanText.includes('ወላካ');
+    const isPest = q.includes('pest') || q.includes('worm') || q.includes('armyworm') || q.includes('locust') || cleanText.includes('ተባይ') || cleanText.includes('አባጨጓሬ') || cleanText.includes('አንበጣ');
+    const isDisease = q.includes('disease') || q.includes('rust') || q.includes('blight') || cleanText.includes('በሽታ') || cleanText.includes('ዋግ') || cleanText.includes('ዝገት');
+    const isWater = q.includes('rain') || q.includes('water') || q.includes('drought') || q.includes('irrigation') || cleanText.includes('ውሃ') || cleanText.includes('ዝናብ') || cleanText.includes('ድርቅ') || cleanText.includes('መስኖ');
+    const isFertilizer = q.includes('fertilizer') || q.includes('urea') || q.includes('nps') || q.includes('dap') || q.includes('compost') || cleanText.includes('ማዳበሪያ') || cleanText.includes('ዩሪያ') || cleanText.includes('ኮምፖስት');
 
     let responseEn = '';
     let responseAm = '';
@@ -851,8 +910,8 @@ You MUST output valid JSON ONLY with exact fields:
           organicAm: 'በከፍተኛ ሁኔታ የተጎዱ ቅጠሎችን አስወግደው ያቃጥሉ፤ የኒም ዘይት ወይም የተፈጥሮ ፀረ-ተባይ ይርጩ።',
           chemicalEn: perenualTop?.solutions?.[0]
             ? (typeof perenualTop.solutions[0] === 'object'
-                ? `${perenualTop.solutions[0].subtitle || 'Targeted Protocol'}: ${perenualTop.solutions[0].description || ''}`
-                : String(perenualTop.solutions[0]))
+              ? `${perenualTop.solutions[0].subtitle || 'Targeted Protocol'}: ${perenualTop.solutions[0].description || ''}`
+              : String(perenualTop.solutions[0]))
             : 'Apply appropriate targeted fungicide (e.g., Mancozeb, Tilt 250 EC, or Ridomil Gold MZ) according to label rates.',
           chemicalAm: 'በመመሪያው መሰረት ተገቢውን ፀረ-ፈንገስ (ለምሳሌ ማንኮዜብ፣ ቲልት ወይም ሪዶሚል ጎልድ) ይርጩ።',
           culturalOm: 'Dawaa qoricha dhibee itti gorfame seeraan fayyadamaa.',

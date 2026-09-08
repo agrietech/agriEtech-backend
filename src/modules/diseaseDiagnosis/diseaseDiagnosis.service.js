@@ -242,6 +242,13 @@ async function diagnoseCropImage({ farmId, cropType, imageUrl, imageFile, imageB
       const existingFarm = await prisma.farm.findUnique({ where: { id: farmId } });
       if (existingFarm) validFarmId = farmId;
     }
+    // If farmId wasn't found or provided, auto-assign to user's first registered farm if available
+    if (!validFarmId && user && user.id && isConnected()) {
+      try {
+        const userFarm = await prisma.farm.findFirst({ where: { userId: user.id } });
+        if (userFarm) validFarmId = userFarm.id;
+      } catch (_) {}
+    }
 
     const saved = await prisma.diseaseDiagnosis.create({
       data: {
@@ -305,8 +312,10 @@ async function diagnoseCropImage({ farmId, cropType, imageUrl, imageFile, imageB
       preventionAm: saved.preventionAm,
       aiModel: 'Multi-Engine (Plant.id v3 + Pl@ntNet v2 + Perenual + Gemini & OpenRouter AI)',
       enginesUsed: ['Plant.id v3', 'Pl@ntNet v2', 'Perenual Agronomy', 'OpenRouter AI'],
+      dataSources: 'Plant.id Botanical API • Pl@ntNet Vision • Perenual Agronomy • OpenRouter Multimodal AI',
       rawResponse: saved.rawResponse,
       createdAt: saved.createdAt,
+      fetchedAt: saved.createdAt ? (saved.createdAt.toISOString ? saved.createdAt.toISOString() : String(saved.createdAt)) : new Date().toISOString(),
     };
   } catch (saveErr) {
     logger.warn(`[DiseaseDiagnosis] DB save notice: ${saveErr.message}. Gracefully returning computed AI diagnosis.`);
@@ -335,8 +344,10 @@ async function diagnoseCropImage({ farmId, cropType, imageUrl, imageFile, imageB
       preventionAm,
       aiModel: 'Multi-Engine (Plant.id v3 + Pl@ntNet v2 + Perenual + Gemini & OpenRouter AI)',
       enginesUsed: ['Plant.id v3', 'Pl@ntNet v2', 'Perenual Agronomy', 'OpenRouter AI'],
+      dataSources: 'Plant.id Botanical API • Pl@ntNet Vision • Perenual Agronomy • OpenRouter Multimodal AI',
       rawResponse,
       createdAt: new Date().toISOString(),
+      fetchedAt: new Date().toISOString(),
     };
   }
 }
@@ -350,10 +361,24 @@ async function getAllDiagnoses({ farmId, cropType, user } = {}) {
   if (farmId) where.farmId = farmId;
   if (cropType) where.cropType = cropType;
 
-  if (user) {
+  if (user && isConnected()) {
     const role = (user.role || 'FARMER').toUpperCase();
     if (role === 'FARMER') {
-      where.farm = { userId: user.id };
+      try {
+        const userFarms = await prisma.farm.findMany({ where: { userId: user.id }, select: { id: true } });
+        const userFarmIds = userFarms.map((f) => f.id);
+        if (userFarmIds.length > 0) {
+          where.OR = [
+            { farmId: { in: userFarmIds } },
+            { farmId: null },
+          ];
+        } else {
+          // Farmer has no farms registered yet: show diagnoses submitted without farm
+          where.farmId = null;
+        }
+      } catch (_) {
+        where.farm = { userId: user.id };
+      }
     } else if (role === 'DEVELOPMENT_AGENT' || role === 'WOREDA_OFFICER') {
       if (user.woredaId) {
         where.farm = { woredaId: user.woredaId };
@@ -369,21 +394,31 @@ async function getAllDiagnoses({ farmId, cropType, user } = {}) {
     }
   }
 
-  return await prisma.diseaseDiagnosis.findMany({
-    where,
-    orderBy: { createdAt: 'desc' },
-    include: {
-      farm: {
-        select: {
-          id: true,
-          farmName: true,
-          userId: true,
-          woredaId: true,
-          woreda: { select: { id: true, nameEn: true, nameAm: true, zoneId: true, zone: { select: { id: true, regionId: true } } } },
+  const records = isConnected()
+    ? await prisma.diseaseDiagnosis.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          farm: {
+            select: {
+              id: true,
+              farmName: true,
+              userId: true,
+              woredaId: true,
+              woreda: { select: { id: true, nameEn: true, nameAm: true, zoneId: true, zone: { select: { id: true, regionId: true } } } },
+            },
+          },
         },
-      },
-    },
-  });
+      })
+    : [];
+
+  return records.map((r) => ({
+    ...r,
+    dataSources: 'Plant.id Botanical API • Pl@ntNet Vision • Perenual Agronomy • OpenRouter Multimodal AI',
+    enginesUsed: ['Plant.id v3', 'Pl@ntNet v2', 'Perenual Agronomy', 'OpenRouter AI'],
+    aiModel: r.aiModel || 'Multi-Engine (Plant.id v3 + Pl@ntNet v2 + Perenual + Gemini & OpenRouter AI)',
+    fetchedAt: r.createdAt ? (r.createdAt.toISOString ? r.createdAt.toISOString() : String(r.createdAt)) : new Date().toISOString(),
+  }));
 }
 
 const { setDiagnosisJobState, getDiagnosisJobState } = require('../../ingestion/jobs/queue');

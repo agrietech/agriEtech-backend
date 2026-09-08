@@ -45,21 +45,21 @@ async function processVoiceInquiry({ userQuestion, audioTranscript, audioFile, l
     }
   }
 
-  let query = (userQuestion || audioTranscript || '').trim();
+  const cleanQuery = (userQuestion || audioTranscript || '').trim();
+  let farmContextSummary = null;
 
-  // Prepend farm context to personalize the AI advisory
   if (farmContext && farmContext.length > 0) {
-    const contextSummary = farmContext
+    farmContextSummary = farmContext
       .map((f) => `${f.cropType} (${f.areaSqMeters ? Math.round(f.areaSqMeters / 10000) + ' ha' : 'unknown size'})`)
       .join(', ');
-    query = `[Farmer's crops: ${contextSummary}] ${query}`;
-    logger.debug(`[AIVoiceService] Farm context injected for userId=${userId}: ${contextSummary}`);
+    logger.debug(`[AIVoiceService] Farm context available for userId=${userId}: ${farmContextSummary}`);
   }
 
-  logger.info(`[AIVoiceService] Processing voice inquiry in language=${language}: "${query.substring(0, 60)}"`);
+  logger.info(`[AIVoiceService] Processing voice inquiry in language=${language}: "${cleanQuery.substring(0, 60)}"`);
 
   const aiResult = await openRouterClient.processVoiceInquiry({
-    userQuestion: query,
+    userQuestion: cleanQuery,
+    farmContextSummary,
     audioTranscript,
     audioBase64,
     mimeType,
@@ -80,8 +80,8 @@ async function processVoiceInquiry({ userQuestion, audioTranscript, audioFile, l
     }
     await prisma.aIInsight.create({
       data: {
-        prompt: query || 'Voice inquiry',
-        model: isAiOffline ? 'ethiofarm-offline-synthesizer' : (data.aiModel || 'google/gemini-2.5-flash'),
+        prompt: cleanQuery || 'Voice inquiry',
+        model: isAiOffline ? 'ethiofarm-offline-synthesizer' : (data.aiModel || 'EthioFarm Agronomic AI Assistant'),
         feature: 'VOICE_ASSISTANT',
         rawResponse: data,
         userId: validUserId,
@@ -106,7 +106,7 @@ async function processVoiceInquiry({ userQuestion, audioTranscript, audioFile, l
     degradedReason: isAiOffline ? (aiResult.degradedReason || 'AI service temporarily unavailable') : null,
     offlineNotice: isAiOffline ? '⚠️ AI is offline — response uses cached agronomic advisory' : null,
     audioInputUrl: hostedAudioInputUrl,
-    transcription: data.transcription || query || (isEnglish ? 'Voice inquiry received' : 'የድምፅ ጥያቄ ተቀብለናል'),
+    transcription: data.transcription || cleanQuery || (isEnglish ? 'Voice inquiry received' : 'የድምፅ ጥያቄ ተቀብለናል'),
     detectedLanguage: data.detectedLanguage || (isEnglish ? 'English' : 'Amharic'),
     responseEn: data.responseEn || '',
     responseAm: data.responseAm || '',
@@ -123,7 +123,7 @@ async function processVoiceInquiry({ userQuestion, audioTranscript, audioFile, l
     audioUrl: proxyAudioUrl,
     audioUrlAm: `${backendBaseUrl}/api/v1/ai/tts-stream?text=${encodeURIComponent(cleanTextForSpeech(data.responseAm).substring(0, 300))}&lang=am`,
     audioUrlEn: `${backendBaseUrl}/api/v1/ai/tts-stream?text=${encodeURIComponent(cleanTextForSpeech(data.responseEn).substring(0, 300))}&lang=en`,
-    aiModel: isAiOffline ? 'ethiofarm-offline-synthesizer' : (data.aiModel || 'Google Gemini 2.5 Flash (OpenRouter Voice Intelligence)'),
+    aiModel: isAiOffline ? 'ethiofarm-offline-synthesizer' : (data.aiModel || 'EthioFarm Agronomic AI Assistant'),
     timestamp: new Date().toISOString(),
   };
 }
