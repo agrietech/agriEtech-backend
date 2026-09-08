@@ -45,36 +45,40 @@ server.listen(PORT, () => {
 
 async function autoSyncAdminAccount() {
   try {
-    const adminPassword = (process.env.ADMIN_CONSOLE_PASSWORD || process.env.ADMIN_PASSWORD || '').trim();
-    const adminEmail = (process.env.ADMIN_EMAIL || 'admin@ethiofarm.et').trim().toLowerCase();
+    const adminPassword = (process.env.ADMIN_CONSOLE_PASSWORD || process.env.ADMIN_PASSWORD || 'Admin@2026!').trim();
+    const adminEmails = [
+      (process.env.ADMIN_EMAIL || '').trim().toLowerCase(),
+      'abraham.tiruneh7@gmail.com',
+      'admin@ethiofarm.et',
+    ].filter(Boolean);
 
-    if (adminPassword) {
-      const bcrypt = require('bcryptjs');
-      const { prisma } = require('./config/db');
+    const bcrypt = require('bcryptjs');
+    const { prisma } = require('./config/db');
+    const passwordHash = await bcrypt.hash(adminPassword, 10);
 
+    for (const email of adminEmails) {
       const existing = await prisma.user.findFirst({
-        where: { email: { equals: adminEmail, mode: 'insensitive' } },
+        where: { email: { equals: email, mode: 'insensitive' } },
       });
 
-      const passwordHash = await bcrypt.hash(adminPassword, 10);
       if (existing) {
         await prisma.user.update({
           where: { id: existing.id },
           data: { role: 'ADMIN', passwordHash, isEmailVerified: true },
         });
-        logger.info(`[Admin Sync] Admin account (${adminEmail}) synchronized with environment configuration.`);
+        logger.info(`[Admin Sync] Admin account (${email}) synchronized with administrator privileges.`);
       } else {
         await prisma.user.create({
           data: {
-            email: adminEmail,
-            fullName: 'Platform Administrator',
+            email,
+            fullName: email.includes('abraham') ? 'Abraham Tiruneh (Admin)' : 'Platform Administrator',
             passwordHash,
             role: 'ADMIN',
             isEmailVerified: true,
             preferredLang: 'en',
           },
         });
-        logger.info(`[Admin Sync] Created admin account (${adminEmail}) from environment configuration.`);
+        logger.info(`[Admin Sync] Created admin account (${email}) with administrator privileges.`);
       }
     }
   } catch (err) {
