@@ -37,6 +37,7 @@ const ussdRoutes = require('./delivery/ussd/ussd.routes');
 const adminRoutes = require('./modules/admin/admin.routes');
 const mediaRoutes = require('./modules/media/media.routes');
 const roleRequestRoutes = require('./modules/roleRequest/roleRequest.routes');
+const weatherRoutes = require('./modules/weather/weather.routes');
 const { isConnected } = require('./config/db');
 
 
@@ -306,6 +307,7 @@ app.use('/api/v1/disease-diagnosis', aiLimiter, diseaseRoutes);
 app.use('/api/v1/media', mediaRoutes);
 app.use('/api/v1/analytics', analyticsRoutes);
 app.use('/api/v1/ai', aiLimiter, aiRoutes);
+app.use('/api/v1/weather', weatherRoutes);
 app.use('/api/v1/ingestion', telemetryLimiter, ingestionRoutes);
 app.use('/api/v1/delivery/ussd', ussdLimiter, ussdRoutes);
 app.use('/api/v1/admin', adminRoutes);
