@@ -23,7 +23,7 @@ function cleanTextForSpeech(text) {
  * AI Voice & Speech Service
  * Supports Amharic (አማርኛ) and English farmer voice inquiries and audio synthesis.
  */
-async function processVoiceInquiry({ userQuestion, audioTranscript, audioFile, language = 'am', farmContext = null, userId = null }) {
+async function processVoiceInquiry({ userQuestion, audioTranscript, audioFile, language = 'am', farmContext = null, userId = null, baseUrl = null }) {
   let audioBase64 = null;
   let mimeType = 'audio/wav';
 
@@ -94,7 +94,7 @@ async function processVoiceInquiry({ userQuestion, audioTranscript, audioFile, l
   const rawSpeechText = isEnglish ? data.responseEn : data.responseAm;
   const speakableText = cleanTextForSpeech(rawSpeechText);
 
-  const backendBaseUrl = env.APP_URL || 'https://agrietech.onrender.com';
+  const backendBaseUrl = baseUrl || env.APP_URL || 'https://agrietech.onrender.com';
   const targetLang = isEnglish ? 'en' : 'am';
   const proxyAudioUrl = `${backendBaseUrl}/api/v1/ai/tts-stream?text=${encodeURIComponent(speakableText.substring(0, 300))}&lang=${targetLang}`;
   const directTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(speakableText.substring(0, 200))}&tl=${targetLang}&client=tw-ob`;
@@ -131,7 +131,7 @@ async function processVoiceInquiry({ userQuestion, audioTranscript, audioFile, l
 /**
  * Text-to-Speech synthesis configuration & phonetic generator
  */
-async function synthesizeSpeech({ text, language = 'am' }) {
+async function synthesizeSpeech({ text, language = 'am', baseUrl = null }) {
   if (!text) {
     throw new Error('Text to synthesize is required');
   }
@@ -139,7 +139,7 @@ async function synthesizeSpeech({ text, language = 'am' }) {
   const cleanText = cleanTextForSpeech(text);
   const isAmharic = language === 'am' || /[\u1200-\u137F]/.test(cleanText);
   const targetLang = isAmharic ? 'am' : 'en';
-  const backendBaseUrl = env.APP_URL || 'https://agrietech.onrender.com';
+  const backendBaseUrl = baseUrl || env.APP_URL || 'https://agrietech.onrender.com';
   const audioUrl = `${backendBaseUrl}/api/v1/ai/tts-stream?text=${encodeURIComponent(cleanText.substring(0, 300))}&lang=${targetLang}`;
   const directAudioUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(cleanText.substring(0, 200))}&tl=${targetLang}&client=tw-ob`;
 

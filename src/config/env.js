@@ -81,6 +81,23 @@ const env = {
   OPENROUTER_SITE_URL: process.env.OPENROUTER_SITE_URL || process.env.APP_URL || 'https://ethiofarm.et',
   OPENROUTER_SITE_NAME: process.env.OPENROUTER_SITE_NAME || 'EthioFarm Smart Farming Platform',
   GEMINI_API_KEY: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.GOOGLE_AI_KEY || '',
+  GEMINI_API_KEYS_LIST: Array.from(new Set([
+    ...(process.env.GEMINI_API_KEYS || process.env.GOOGLE_API_KEYS || '')
+      .split(',')
+      .map((k) => k.trim())
+      .filter((k) => k && k.length > 5),
+    process.env.GEMINI_API_KEY,
+    process.env.GEMINI_API_KEY_1,
+    process.env.GEMINI_API_KEY_2,
+    process.env.GEMINI_API_KEY_3,
+    process.env.GEMINI_API_KEY_4,
+    process.env.GEMINI_API_KEY_5,
+    process.env.GEMINI_API_KEY_6,
+    process.env.GEMINI_API_KEY_7,
+    process.env.GEMINI_API_KEY_8,
+    process.env.GOOGLE_API_KEY,
+    process.env.GOOGLE_AI_KEY,
+  ].filter((k) => k && typeof k === 'string' && k.trim().length > 5).map((k) => k.trim()))),
   GROQ_API_KEY: process.env.GROQ_API_KEY || '',
   FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID || '',
   FIREBASE_SERVICE_ACCOUNT_PATH: process.env.FIREBASE_SERVICE_ACCOUNT_PATH || '',

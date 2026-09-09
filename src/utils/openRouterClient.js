@@ -26,9 +26,25 @@ class OpenRouterClient {
     this.appUrl = env.OPENROUTER_SITE_URL || env.APP_URL || 'https://agrietech.onrender.com';
     this.siteName = env.OPENROUTER_SITE_NAME || 'EthioFarm Smart Farming Platform';
 
-    // Optional direct API credentials for zero-delay high-throughput failover
-    this.geminiApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.GOOGLE_AI_KEY || '';
+    // Multi-Account Direct Google Gemini Pool (1,500 req/day per account)
+    this.geminiKeys = (env.GEMINI_API_KEYS_LIST && env.GEMINI_API_KEYS_LIST.length > 0)
+      ? env.GEMINI_API_KEYS_LIST
+      : (env.GEMINI_API_KEY ? [env.GEMINI_API_KEY] : []);
+    this.geminiApiKey = this.geminiKeys[0] || '';
     this.groqApiKey = process.env.GROQ_API_KEY || '';
+
+    this.geminiKeyPool = this.geminiKeys.map((key, index) => ({
+      id: `gemini_acc_${index + 1}`,
+      key,
+      masked: `${key.slice(0, 10)}...${key.slice(-4)}`,
+      active: true,
+      cooldownUntil: 0,
+      successCount: 0,
+      errorCount: 0,
+      rateLimitCount: 0,
+      lastUsedAt: 0,
+    }));
+    this._geminiRoundRobinIdx = 0;
 
     // Enterprise Key Pool with health tracking, dedicated model mapping and auto-quarantine
     this.keyPool = this.apiKeys.map((key, index) => ({
@@ -45,6 +61,44 @@ class OpenRouterClient {
       lastUsedAt: 0,
     }));
     this._roundRobinIdx = 0;
+  }
+
+  /**
+   * Select next healthy Gemini API key from pool
+   */
+  _getNextGeminiKey() {
+    if (!this.geminiKeyPool || this.geminiKeyPool.length === 0) return null;
+    const now = Date.now();
+    const healthy = this.geminiKeyPool.filter((k) => k.active && k.cooldownUntil <= now);
+    if (healthy.length > 0) {
+      const selected = healthy[this._geminiRoundRobinIdx % healthy.length];
+      this._geminiRoundRobinIdx = (this._geminiRoundRobinIdx + 1) % healthy.length;
+      selected.lastUsedAt = now;
+      return selected;
+    }
+    const sorted = [...this.geminiKeyPool].sort((a, b) => a.cooldownUntil - b.cooldownUntil);
+    return sorted[0] || null;
+  }
+
+  _markGeminiKeyError(keyObj, statusCode, errorMessage = '') {
+    if (!keyObj) return;
+    keyObj.errorCount++;
+    const now = Date.now();
+    const msg = (errorMessage || '').toLowerCase();
+    if (statusCode === 429 || msg.includes('quota') || msg.includes('resource_exhausted')) {
+      keyObj.rateLimitCount++;
+      keyObj.cooldownUntil = now + 60000; // 1-minute cooldown for rate limits
+      logger.warn(`[OpenRouterClient] Gemini ${keyObj.id} (${keyObj.masked}) rate-limited (429/Quota). Cooldown 60s.`);
+    } else if (statusCode === 401 || statusCode === 403) {
+      keyObj.cooldownUntil = now + 1800000; // 30-minute cooldown
+      logger.error(`[OpenRouterClient] Gemini ${keyObj.id} (${keyObj.masked}) unauthorized (${statusCode}). Cooldown 30m.`);
+    }
+  }
+
+  _markGeminiKeySuccess(keyObj) {
+    if (!keyObj) return;
+    keyObj.successCount++;
+    keyObj.cooldownUntil = 0;
   }
 
   isConfigured() {
@@ -141,6 +195,20 @@ class OpenRouterClient {
         rateLimitCount: k.rateLimitCount,
         lastUsedAt: k.lastUsedAt ? new Date(k.lastUsedAt).toISOString() : null,
       })),
+      geminiPool: {
+        totalAccounts: this.geminiKeyPool.length,
+        activeAccounts: this.geminiKeyPool.filter((k) => k.cooldownUntil <= now).length,
+        accounts: this.geminiKeyPool.map((k) => ({
+          id: k.id,
+          masked: k.masked,
+          inCooldown: k.cooldownUntil > now,
+          cooldownRemainingSec: Math.max(0, Math.round((k.cooldownUntil - now) / 1000)),
+          successCount: k.successCount,
+          errorCount: k.errorCount,
+          rateLimitCount: k.rateLimitCount,
+          lastUsedAt: k.lastUsedAt ? new Date(k.lastUsedAt).toISOString() : null,
+        })),
+      },
     };
   }
 
@@ -148,52 +216,81 @@ class OpenRouterClient {
    * Execute chat completion via OpenRouter with multi-key pooling,
    * automatic failover, reasoning token support & resilient model cascades.
    */
-  async chatCompletion({
-    messages,
-    temperature = 0.2,
-    responseFormat = null,
-    maxTokens = 300,
-    model = null,
-    enableReasoning = false,
-  }) {
-    // 0. Direct Google Gemini Integration (1,500 free requests/day, fast 1-2s latency)
-    if (this.geminiApiKey) {
-      const geminiCandidateModels = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.7-flash', 'gemini-3.8-flash'];
+  async chatCompletion(args = {}, legacyOptions = {}) {
+    let messages, temperature, responseFormat, maxTokens, model, enableReasoning;
+    if (Array.isArray(args)) {
+      messages = args;
+      ({
+        temperature = 0.2,
+        responseFormat = null,
+        maxTokens = 300,
+        model = null,
+        enableReasoning = false,
+      } = legacyOptions);
+    } else {
+      ({
+        messages = [],
+        temperature = 0.2,
+        responseFormat = null,
+        maxTokens = 300,
+        model = null,
+        enableReasoning = false,
+      } = args);
+    }
+    messages = messages || [];
+
+    // 0. Direct Google Gemini Multi-Account Pool Integration (1,500 free requests/day per account)
+    if (this.geminiKeyPool && this.geminiKeyPool.length > 0 && messages.length > 0) {
+      const geminiCandidateModels = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash-preview-tts'];
       const geminiContent = messages
-        .map((m) => `${m.role.toUpperCase()}: ${typeof m.content === 'string' ? m.content : (Array.isArray(m.content) ? m.content.map(c => c.text || '').filter(Boolean).join(' ') : JSON.stringify(m.content))}`)
+        .map((m) => `${(m.role || 'user').toUpperCase()}: ${typeof m.content === 'string' ? m.content : (Array.isArray(m.content) ? m.content.map(c => c.text || '').filter(Boolean).join(' ') : JSON.stringify(m.content))}`)
         .join('\n\n');
 
-      for (const gModel of geminiCandidateModels) {
-        try {
-          const geminiRes = await axios.post(
-            `https://generativelanguage.googleapis.com/v1beta/models/${gModel}:generateContent`,
-            {
-              contents: [{ parts: [{ text: geminiContent }] }],
-              generationConfig: {
-                temperature,
-                maxOutputTokens: Math.max(maxTokens, 1000),
-                ...(responseFormat === 'json' ? { responseMimeType: 'application/json' } : {}),
+      const maxAttempts = Math.min(this.geminiKeyPool.length, 5);
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const keyObj = this._getNextGeminiKey();
+        if (!keyObj || !keyObj.key) break;
+
+        for (const gModel of geminiCandidateModels) {
+          try {
+            const geminiRes = await axios.post(
+              `https://generativelanguage.googleapis.com/v1beta/models/${gModel}:generateContent`,
+              {
+                contents: [{ parts: [{ text: geminiContent }] }],
+                generationConfig: {
+                  temperature,
+                  maxOutputTokens: Math.max(maxTokens, 1000),
+                  ...(responseFormat === 'json' ? { responseMimeType: 'application/json' } : {}),
+                },
               },
-            },
-            {
-              headers: {
-                'x-goog-api-key': this.geminiApiKey,
-                'Content-Type': 'application/json',
-              },
-              timeout: 12000,
+              {
+                headers: {
+                  'x-goog-api-key': keyObj.key,
+                  'Content-Type': 'application/json',
+                },
+                timeout: 12000,
+              }
+            );
+            const text = geminiRes.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (text && text.trim().length > 0) {
+              this._markGeminiKeySuccess(keyObj);
+              return {
+                success: true,
+                content: text,
+                model: `google/${gModel} [${keyObj.id}]`,
+                usage: geminiRes.data?.usageMetadata || null,
+              };
             }
-          );
-          const text = geminiRes.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (text && text.trim().length > 0) {
-            return {
-              success: true,
-              content: text,
-              model: `google/${gModel}`,
-              usage: geminiRes.data?.usageMetadata || null,
-            };
+          } catch (geminiErr) {
+            const statusCode = geminiErr.response?.status;
+            const errMsg = geminiErr.response?.data?.error?.message || geminiErr.message;
+            this._markGeminiKeyError(keyObj, statusCode, errMsg);
+            logger.warn(`[OpenRouterClient] Direct Google Gemini (${gModel} - ${keyObj.id}) attempt notice: ${errMsg}`);
+            if (statusCode === 429) {
+              // Break inner model loop to rotate to the next account key immediately
+              break;
+            }
           }
-        } catch (geminiErr) {
-          logger.warn(`[OpenRouterClient] Direct Google Gemini (${gModel}) attempt notice: ${geminiErr.response?.data?.error?.message || geminiErr.message}`);
         }
       }
     }
@@ -559,14 +656,13 @@ Required JSON format:
 
     const isValidImage = cleanBase64 && cleanBase64.length > 200;
 
-    // 1. Direct High-Speed Google Gemini Multimodal Vision
-    if (this.geminiApiKey) {
+    // 1. Direct High-Speed Google Gemini Multimodal Vision (Multi-Account Pool)
+    if (this.geminiKeyPool && this.geminiKeyPool.length > 0) {
       const geminiVisionModels = [
-        'gemini-flash-lite-latest',
-        'gemini-3.5-flash-lite',
-        'gemini-flash-latest',
         'gemini-3.6-flash',
         'gemini-3.5-flash',
+        'gemini-3.5-flash-lite',
+        'gemini-flash-latest',
       ];
       const userTextPrompt = `Analyze this Ethiopian crop disease sample. Return ONLY a single valid JSON object following the requested schema.
 Crop Hint: ${cropHint || 'Unknown'}.
@@ -574,65 +670,78 @@ Plant.id botanical data: ${JSON.stringify(plantIdData || {})}.
 Pl@ntNet disease detection: ${JSON.stringify(plantNetData || {})}.
 Perenual treatment knowledge: ${JSON.stringify(perenualData || {})}.`;
 
-      for (const gModel of geminiVisionModels) {
-        try {
-          const parts = [{ text: `${systemPrompt}\n\n${userTextPrompt}` }];
-          if (isValidImage) {
-            parts.push({
-              inlineData: {
-                mimeType: mimeType || 'image/jpeg',
-                data: cleanBase64,
+      const maxAttempts = Math.min(this.geminiKeyPool.length, 5);
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const keyObj = this._getNextGeminiKey();
+        if (!keyObj || !keyObj.key) break;
+
+        for (const gModel of geminiVisionModels) {
+          try {
+            const parts = [{ text: `${systemPrompt}\n\n${userTextPrompt}` }];
+            if (isValidImage) {
+              parts.push({
+                inlineData: {
+                  mimeType: mimeType || 'image/jpeg',
+                  data: cleanBase64,
+                },
+              });
+            }
+
+            const geminiRes = await axios.post(
+              `https://generativelanguage.googleapis.com/v1beta/models/${gModel}:generateContent`,
+              {
+                contents: [{ parts }],
+                generationConfig: {
+                  responseMimeType: 'application/json',
+                  temperature: 0.15,
+                  maxOutputTokens: 1500,
+                },
               },
-            });
+              {
+                headers: {
+                  'x-goog-api-key': keyObj.key,
+                  'Content-Type': 'application/json',
+                },
+                timeout: 10000,
+              }
+            );
+
+            const rawText = geminiRes.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (rawText && rawText.trim().length > 0) {
+              let parsed = null;
+              const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+              if (jsonMatch) {
+                try {
+                  parsed = JSON.parse(jsonMatch[0]);
+                } catch (_pErr) {}
+              }
+              if (!parsed) {
+                const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+                try {
+                  parsed = JSON.parse(cleanJson);
+                } catch (_pErr2) {}
+              }
+
+              if (parsed && typeof parsed === 'object') {
+                this._markGeminiKeySuccess(keyObj);
+                logger.info(`[OpenRouterClient] Gemini Multimodal Vision (${gModel} [${keyObj.id}]) analysis succeeded!`);
+                return {
+                  success: true,
+                  diagnosis: parsed,
+                  rawContent: rawText,
+                  engine: `Google ${gModel} Multimodal Vision [${keyObj.id}]`,
+                };
+              }
+            }
+          } catch (geminiErr) {
+            const statusCode = geminiErr.response?.status;
+            const errMsg = geminiErr.response?.data?.error?.message || geminiErr.message;
+            this._markGeminiKeyError(keyObj, statusCode, errMsg);
+            logger.warn(`[OpenRouterClient] Gemini Vision (${gModel} - ${keyObj.id}) attempt notice: ${errMsg}`);
+            if (statusCode === 429) {
+              break;
+            }
           }
-
-          const geminiRes = await axios.post(
-            `https://generativelanguage.googleapis.com/v1beta/models/${gModel}:generateContent`,
-            {
-              contents: [{ parts }],
-              generationConfig: {
-                responseMimeType: 'application/json',
-                temperature: 0.15,
-                maxOutputTokens: 1500,
-              },
-            },
-            {
-              headers: {
-                'x-goog-api-key': this.geminiApiKey,
-                'Content-Type': 'application/json',
-              },
-              timeout: 10000,
-            }
-          );
-
-          const rawText = geminiRes.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (rawText && rawText.trim().length > 0) {
-            let parsed = null;
-            const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-              try {
-                parsed = JSON.parse(jsonMatch[0]);
-              } catch (_pErr) {}
-            }
-            if (!parsed) {
-              const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-              try {
-                parsed = JSON.parse(cleanJson);
-              } catch (_pErr2) {}
-            }
-
-            if (parsed && typeof parsed === 'object') {
-              logger.info(`[OpenRouterClient] Gemini Multimodal Vision (${gModel}) analysis succeeded!`);
-              return {
-                success: true,
-                diagnosis: parsed,
-                rawContent: rawText,
-                engine: `Google ${gModel} Multimodal Vision`,
-              };
-            }
-          }
-        } catch (geminiErr) {
-          logger.warn(`[OpenRouterClient] Gemini Vision (${gModel}) attempt notice: ${geminiErr.response?.data?.error?.message || geminiErr.message}`);
         }
       }
     }
@@ -839,26 +948,26 @@ JSON schema:
   async processVoiceInquiry({ userQuestion, farmContextSummary = null, audioTranscript, audioBase64: _audioBase64, mimeType: _mimeType, language = 'am' }) {
     const textQuery = userQuestion || audioTranscript || 'የሰብል እንክብካቤ እና የበሽታ መከላከል መመሪያ ቢነግሩኝ?';
     const isAm = language === 'am' || /[\u1200-\u137F]/.test(textQuery);
-    const farmInfo = farmContextSummary ? `The farmer's registered crops are: ${farmContextSummary}. Use this background only when relevant.\n` : '';
+    const farmInfo = farmContextSummary ? `The farmer's registered crops are: ${farmContextSummary}. Use this background when relevant.\n` : '';
 
-    const systemPrompt = `You are EthioFarm's Senior Interactive Voice & Agronomic Assistant for Ethiopia.
-${farmInfo}CRITICAL GUIDELINES:
-- For simple greetings or conversational icebreakers (e.g. "hello", "hi", "selam", "ሰላም", "ጤና ይስጥልኝ"): Reply warmly and politely in both English and Amharic, and ask how you can assist their farm today. DO NOT return long crop essays for greetings.
-- For specific farming, crop, pest, disease, soil, fertilizer, or weather questions: Provide concise, highly practical, scientifically verified advice tailored directly to their question.
-- You MUST output valid JSON ONLY with these exact fields:
-${isAm ? `{
-  "responseAm": "የተጠየቀውን ጥያቄ ወይም ሰላምታ በቀጥታ የሚመልስ የተሟላ ሳይንሳዊ የአማርኛ መልስ።",
-  "responseEn": "Conversational, practical response in English directly addressing the question or greeting.",
-  "recommendedAction": "Actionable priority guidance or next step for the farmer.",
+    const systemPrompt = `You are EthioFarm's Chief Agronomic AI Specialist and Voice Assistant for Ethiopian Agriculture.
+${farmInfo}CORE DIRECTIVES:
+1. GREETINGS & SOCIAL ICEBREAKERS: For casual greetings (e.g., "hello", "hi", "selam", "ሰላም", "ጤና ይስጥልኝ"), reply warmly and courteously in both English and Amharic, briefly welcoming the farmer and asking how you can help with their crops, soil, pests, or livestock today.
+2. FARMING & AGRONOMIC INQUIRIES: For ANY questions about crops (Teff, Wheat, Maize, Coffee, Barley, Sorghum, Tomato, Potato, Onion, Pepper, Avocado, Enset, etc.), plant diseases, insect pests, weeds, soil health, fertilizers (NPS-B, Urea, Compost, Lime), irrigation, livestock (dairy cows, poultry, sheep, goats), weather advisories, or post-harvest storage:
+   - Provide COMPREHENSIVE, authoritative, and practical advice grounded in Ethiopian agro-ecological conditions (Highlands/Dega, Midlands/Weyna Dega, Lowlands/Kolla).
+   - Structure responses clearly with Markdown:
+     • 🔍 Overview & Diagnosis: Direct explanation, symptoms, and causes.
+     • 📋 Actionable Steps: Step-by-step guidance (sowing/planting dates, seed rates kg/ha, row/plant spacing).
+     • 💊 Inputs & Dosages: Exact fertilizer rates (NPS-B basal, Urea split schedules) and chemical/biological control (specific chemical names e.g., Tilt 250 EC, Ridomil Gold MZ, Ampligo 150 ZC, Mancozeb 80% WP, dosages per ha or per 15L knapsack, timing, and pre-harvest safety intervals).
+     • 🛡️ Preventative Practices: Soil conservation, crop rotation, sanitation, or moisture harvesting.
+3. OUTPUT FORMAT: You MUST return valid JSON ONLY with these exact fields:
+{
+  "responseAm": "የተሟላ፣ ደረጃ በደረጃ የተብራራ ሳይንሳዊ የአማርኛ የግብርና መመሪያ (የሰብል እንክብካቤ፣ የተባይና የበሽታ መከላከያ መድሃኒት ስሞችና መጠኖች፣ የማዳበሪያ አጠቃቀም)።",
+  "responseEn": "Comprehensive, step-by-step scientific agronomic advisory in English with detailed inputs, chemical dosages, application timings, and cultural practices.",
+  "recommendedAction": "Concise 1-sentence high-priority immediate action step for the farmer.",
   "transcription": "${textQuery.replace(/"/g, "'")}",
-  "detectedLanguage": "Amharic"
-}` : `{
-  "responseEn": "Conversational, practical response in English directly addressing the question or greeting.",
-  "responseAm": "የተጠየቀውን ጥያቄ ወይም ሰላምታ በቀጥታ የሚመልስ የተሟላ ሳይንሳዊ የአማርኛ መልስ።",
-  "recommendedAction": "Actionable priority guidance or next step for the farmer.",
-  "transcription": "${textQuery.replace(/"/g, "'")}",
-  "detectedLanguage": "English"
-}`}`;
+  "detectedLanguage": "${isAm ? 'Amharic' : 'English'}"
+}`;
 
     const messages = [
       { role: 'system', content: systemPrompt },
@@ -867,9 +976,9 @@ ${isAm ? `{
 
     const result = await this.chatCompletion({
       messages,
-      temperature: 0.25,
+      temperature: 0.2,
       responseFormat: 'json',
-      maxTokens: 850,
+      maxTokens: 2500,
     });
 
     if (result?.content) {
@@ -1004,209 +1113,482 @@ ${isAm ? `{
     const isSoilOrLime = q.includes('soil') || q.includes('lime') || q.includes('acid') || q.includes('vertisol') || q.includes('clay') || cleanText.includes('አፈር') || cleanText.includes('ኖራ') || cleanText.includes('አሲድ') || cleanText.includes('ወላካ');
     const isWater = q.includes('water') || q.includes('rain') || q.includes('drought') || q.includes('irrigation') || cleanText.includes('ውሃ') || cleanText.includes('ዝናብ') || cleanText.includes('ድርቅ') || cleanText.includes('መስኖ');
     const isHarvestOrStorage = q.includes('store') || q.includes('storage') || q.includes('harvest') || q.includes('post-harvest') || q.includes('weevil') || cleanText.includes('ማከማቸት') || cleanText.includes('መጋዘን') || cleanText.includes('መሰብሰብ') || cleanText.includes('አጨዳ') || cleanText.includes('ጎተራ');
+    const isLivestock = q.includes('cow') || q.includes('cattle') || q.includes('dairy') || q.includes('milk') || q.includes('calf') || q.includes('beef') || q.includes('mastitis') || q.includes('tick') || cleanText.includes('ላም') || cleanText.includes('ከብት') || cleanText.includes('ወተት') || cleanText.includes('ማስቲቲስ') || cleanText.includes('መጎጎ') || cleanText.includes('መዥገር');
+    const isPoultry = q.includes('poultry') || q.includes('chicken') || q.includes('hen') || q.includes('egg') || q.includes('newcastle') || cleanText.includes('ዶሮ') || cleanText.includes('እንቁላል') || cleanText.includes('ፈንግል');
+    const isSheepOrGoat = q.includes('sheep') || q.includes('goat') || q.includes('lamb') || q.includes('fatten') || cleanText.includes('በግ') || cleanText.includes('ፍየል') || cleanText.includes('ማደለብ');
+    const isForage = q.includes('forage') || q.includes('desho') || q.includes('napier') || q.includes('alfalfa') || q.includes('fodder') || q.includes('grass') || cleanText.includes('መኖ') || cleanText.includes('ዴሾ') || cleanText.includes('ሳር');
+    const isEnset = q.includes('enset') || q.includes('kocho') || cleanText.includes('እንሰት') || cleanText.includes('ቆጮ');
+    const isWeed = q.includes('weed') || q.includes('striga') || q.includes('herbicide') || cleanText.includes('አረም') || cleanText.includes('ስትራይጋ') || cleanText.includes('አጋም');
+    const isCompost = q.includes('compost') || q.includes('manure') || cleanText.includes('ኮምፖስት') || cleanText.includes('ፍግ');
+    const isMarket = q.includes('market') || q.includes('price') || q.includes('ecx') || q.includes('sell') || cleanText.includes('ገበያ') || cleanText.includes('ዋጋ') || cleanText.includes('መሸጥ');
 
     let responseEn = '';
     let responseAm = '';
     let action = '';
 
     // 2. High-Priority Multi-Intent Composite Matching
-    if (isMaize && isFertilizer) {
-      responseEn = `Maize Fertilizer & Nutrient Management Schedule (Ethiopia):\n` +
-        `1. Basal Application at Sowing: Apply 100 kg/ha NPS-Boron (NPS-B) placed 5 cm beside and 5 cm below the seed at planting.\n` +
-        `2. First Top-Dressing (Split Urea): Apply 50 kg/ha Urea at knee-high vegetative stage (30-35 days after emergence) when soil is moist.\n` +
-        `3. Second Top-Dressing (Split Urea): Apply 50 kg/ha Urea just before tasseling (55-60 days after emergence). Always cover Urea with soil to prevent nitrogen volatilization loss.\n` +
-        `4. Organic Boost: Apply 5-8 tons/ha cured farmyard compost during field preparation to improve moisture retention.`;
-      responseAm = `ለበቆሎ ሰብል የተመጣጠነ የማዳበሪያ አጠቃቀም መመሪያ፡\n` +
-        `1. በመዝሪያ ወቅት (መሰረታዊ)፡ በሄክታር 100 ኪ.ግ NPS-B ከዘሩ ጎንና ስር 5 ሳ.ሜ ርቆ እንዲቀበር ያድርጉ።\n` +
-        `2. አንደኛ ዙር ዩሪያ፡ በቆሎው ጉልበት ሲደርስ (ከተዘራ ከ30-35 ቀናት በኋላ አፈሩ እርጥብ ሲሆን) 50 ኪ.ግ/ሄ ዩሪያ ይጨምሩ።\n` +
-        `3. ሁለተኛ ዙር ዩሪያ፡ በቆሎው አበባ (ዘለላ) ሊያወጣ ሲል (ከተዘራ ከ55-60 ቀናት) ተጨማሪ 50 ኪ.ግ/ሄ ዩሪያ በአፈር ሸፍነው ይጨምሩ።\n` +
-        `4. የተፈጥሮ ማዳበሪያ፡ በመሬት ዝግጅት ወቅት በሄክታር ከ5-8 ቶን የበሰበሰ ኮምፖስት ወይም ፍግ ማከል የአፈሩን እርጥበት የመያዝ አቅም ያሳድጋል።`;
+    if (isLivestock) {
+      responseEn = `### 🐄 Comprehensive Dairy Cattle Management & Veterinary Advisory (Ethiopia):\n\n` +
+        `**1. Nutrition & Milk Ration Balancing:**\n` +
+        `• Base Daily Intake: Provide dry matter equivalent to 3% of the cow's body weight (approx. 10-12 kg DM/day for a 350-400 kg crossbred cow).\n` +
+        `• Supplementary Concentrate: Feed 1 kg of balanced dairy concentrate (noug seed cake 40%, wheat bran 58%, bone meal 1%, salt 1%) for every 2.0 to 2.5 liters of milk produced beyond maintenance.\n` +
+        `• Clean Water: Provide 60-80 liters of fresh, clean water daily; water restriction immediately drops milk yield by 20-30%.\n\n` +
+        `**2. Mastitis (Udder Inflammation) Control & Treatment:**\n` +
+        `• Early Detection: Perform California Mastitis Test (CMT) weekly or strip first squirts onto a black strip cup to inspect for curd/clots.\n` +
+        `• Hygiene & Prevention: Wash teats with lukewarm water, dry with individual clean towels, and dip teats in 0.5% iodine solution immediately post-milking.\n` +
+        `• Clinical Treatment: For acute bacterial mastitis, strip out the infected quarter thoroughly and infuse an intramammary antibiotic tube (e.g., Penicillin/Dihydrostreptomycin or Cloxacillin) once daily for 3 consecutive days. Discard milk during the 72-hour withdrawal period.\n\n` +
+        `**3. Tick & Ectoparasite Control:**\n` +
+        `• Spray or dip cattle every 2 weeks during wet season with Amitraz 0.025% or Deltamethrin 1% pour-on to prevent Babesiosis and Anaplasmosis.`;
+      responseAm = `### 🐄 የተሟላ የወተት ላሞች እንክብካቤ እና የእንስሳት ህክምና መመሪያ፡\n\n` +
+        `**1. የተመጣጠነ መኖ እና የወተት ምርት ማሳደጊያ፡**\n` +
+        `• የቀን መኖ መጠን፡ ላሟ ከሰውነት ክብደቷ 3% የሚሆን ደረቅ መኖ (በቀን ከ10-12 ኪ.ግ) ያስፈልጋታል (ለምሳሌ የዴሾ ሳር፣ የተፈጨ ገለባና ድርቆሽ)።\n` +
+        `• የፋብሪካ ማሟያ መኖ (Concentrate)፡ ላሟ ለምትሰጠው ለእያንዳንዱ 2.5 ሊትር ወተት 1 ኪ.ግ የተመጣጠነ መኖ (የኑግ ፋጉሎ 40%፣ የፋብሪካ ፋፉሽ 58%፣ ቦን ሚል 1%፣ ጨው 1%) ይስጡ።\n` +
+        `• ንጹህ ውሃ፡ በቀን ከ60-80 ሊትር ንጹህ ውሃ ያቅርቡ፤ የውሃ እጥረት የወተት ምርትን በ 30% ይቀንሳል።\n\n` +
+        `**2. የወተት እጢ/የጡት በሽታ (Mastitis) መከላከያና ህክምና፡**\n` +
+        `• ቅድመ-ምርመራ፡ በየሳምንቱ ወተቱን በመፈተሽ የረጋ ደም ወይም ፈሳሽ መኖሩን ያረጋግጡ።\n` +
+        `• ንጽህና፡ ጡቱን በንጹህ ለብ ያለ ውሃ አጥበው ያድርቁ፤ ከታለበ በኋላ ጡቱን በ 0.5% አዮዲን ፈሳሽ ውስጥ ይንከሩ።\n` +
+        `• ህክምና፡ ላሟ በጡት በሽታ ከተያዘች ጡቱን በሚገባ አልበው በማስወጣት የጡት ቱቦ ፀረ-ባክቴሪያ መድኃኒት (ፔኒሲሊን/ስትሬፕቶማይሲን) ለ 3 ተከታታይ ቀናት ወደ ጡቱ ይግፉ። ወተቱ ለ 3 ቀናት እንዳይጠጣ ያድርጉ።\n\n` +
+        `**3. የመዥገርና የተባይ መከላከያ፡**\n` +
+        `• አሚትራዝ (Amitraz 0.025%) ወይም ዴልታሜትሪን የተባለውን ፀረ-ተባይ በየ 15 ቀኑ በከብቱ አካል ላይ በመርጨት መዥገር የሚያመጣውን ወባና በሽታ ይከላከሉ።`;
+      action = 'Provide 1 kg concentrate per 2.5L milk, dip teats in 0.5% iodine post-milking, and spray Amitraz for ticks.';
+    } else if (isPoultry) {
+      responseEn = `### 🐔 Comprehensive Poultry Farming & Disease Control Advisory:\n\n` +
+        `**1. Newcastle Disease (Fengil) Mandatory Vaccination Schedule:**\n` +
+        `• Day 1-7: Administer Newcastle HB1 (Hitchner B1) vaccine via intraocular (eye) drop.\n` +
+        `• Day 21-28: Administer Newcastle LaSota vaccine in clean, chlorine-free drinking water mixed with 2 g/L skim milk powder.\n` +
+        `• Day 60 & Every 3 Months: Booster with LaSota or I-2 thermostable vaccine to sustain lifelong flock immunity.\n\n` +
+        `**2. Coccidiosis Management (Bloody Diarrhea):**\n` +
+        `• Causes: Wet, caked litter with high humidity harboring Eimeria protozoa.\n` +
+        `• Treatment: Administer Amprolium 20% soluble powder at 1.25 g/L drinking water for 5 consecutive days, followed by Vitamin A/K3 recovery supplements.\n` +
+        `• Housing Hygiene: Maintain 5 cm dry wood shavings litter; turn litter twice weekly and discard damp patches immediately.\n\n` +
+        `**3. Feeding & Egg Production:**\n` +
+        `• Layers require 115-125 g/bird/day layer mash containing 16-17% crude protein and 3.5-4.0% calcium (limestone/crushed eggshells) for strong eggshell integrity.`;
+      responseAm = `### 🐔 የተሟላ የዶሮ እርባታ እና የዶሮ በሽታዎች (ፈንግል) መከላከያ መመሪያ፡\n\n` +
+        `**1. የፈንግል (Newcastle) በሽታ የክትባት ፕሮግራም፡**\n` +
+        `• ከ1-7 ቀናት ዕድሜ፡ የኤችቢ1 (HB1) የፈንግል ክትባት በአይን ጠብታ ይሰጣል።\n` +
+        `• ከ21-28 ቀናት ዕድሜ፡ ላሶታ (LaSota) ክትባት ክሎሪን በሌለው ንጹህ የመጠጥ ውሃ ውስጥ ከወተት ዱቄት ጋር ተበርዞ ይሰጣል።\n` +
+        `• በ 2ኛው ወር እና በየ 3 ወሩ፡ የላሶታ ወይም አይ-2 (I-2) ክትባት ተደጋግሞ በመስጠት ዶሮዎችን ከሞት ይታደጉ።\n\n` +
+        `**2. የኮክሲዲዮሲስ (የደም ተቅማጥ) በሽታ ህክምና፡**\n` +
+        `• ምልክት፡ ዶሮዎች ሲኮማተሩ እና የደም ተቅማጥ ሲያሳዩ።\n` +
+        `• ህክምና፡ አምፕሮሊየም (Amprolium 20%) የተባለውን መድሃኒት በሄክታር ሳይሆን በመጠጥ ውሃ (1.25 ግራም በአንድ ሊትር ውሃ) ለ 5 ተከታታይ ቀናት ይስጡ።\n` +
+        `• የሳር/መጋዝ ንጽህና፡ የዶሮው ማረፊያ እርጥብ እንዳይሆን በደረቅ መጋዝ ይሸፍኑ፤ እርጥበት ያለበትን በየጊዜው ያስወግዱ።\n\n` +
+        `**3. የተመጣጠነ መኖ፡**\n` +
+        `• እንቁላል ጣይ ዶሮዎች በቀን ከ115-125 ግራም የተመጣጠነ መኖ እና የእንቁላል ቅርፊት እንዳይሰበር የኖራ ድንጋይ/የአጥንት ዱቄት (ካልሲየም) ያስፈልጋቸዋል።`;
+      action = 'Administer Newcastle HB1/LaSota eye drops and treat bloody diarrhea with Amprolium 20% in drinking water.';
+    } else if (isCompost) {
+      responseEn = `### ♻️ Standardized Rapid Aerobic Compost Preparation Protocol (Ethiopia):\n\n` +
+        `**1. Heap Sizing & Layering (1.5 m x 1.5 m x 1.5 m):**\n` +
+        `• Base Layer (15 cm): Coarse twigs or dry maize stalks to ensure bottom aeration and drainage.\n` +
+        `• Brown Carbon Layer (20 cm): Dry straw, teff chaff, dry leaves (provides carbon energy).\n` +
+        `• Green Nitrogen Layer (15 cm): Fresh green weeds, legume leaves, vegetable scraps (provides nitrogen).\n` +
+        `• Animal Manure Layer (5 cm): Fresh cattle dung or poultry droppings to inoculate active microbes.\n` +
+        `• Top Dressing: Sprinkle a thin layer of topsoil and wood ash (for phosphorus and potassium).\n\n` +
+        `**2. Moisture & Turning Management:**\n` +
+        `• Moisture Level: Water each layer during building until moisture reaches 55-60% (moist like a squeezed damp sponge; drops should not run freely).\n` +
+        `• Turning Cycle: Turn the heap entirely on **Day 21** and **Day 45** to introduce oxygen. Peak temperature should reach 55-65°C to kill weed seeds and pathogens.\n\n` +
+        `**3. Field Application:**\n` +
+        `• Apply 5-10 tons/ha of cured dark, crumbly compost incorporated during final plowing.`;
+      responseAm = `### ♻️ ደረጃውን የጠበቀ የፍጥነት ኮምፖስት (የተፈጥሮ ማዳበሪያ) ዝግጅት መመሪያ፡\n\n` +
+        `**1. የክምሩ መጠን እና አነጣጥፍ (1.5 ሜትር ስፋት x 1.5 ሜትር ቁመት)፡**\n` +
+        `• የመሰረት ሽፋን (15 ሳ.ሜ)፡ አየር እንዲገባ ከስር የደረቁ የበቆሎ አገዳዎች ወይም እንጨቶችን ያንጥፉ።\n` +
+        `• የደረቁ ነገሮች (20 ሳ.ሜ)፡ ገለባ፣ የደረቁ ቅጠሎችና ጭድ (ካርቦን ሰጪ)።\n` +
+        `• አረንጓዴ ነገሮች (15 ሳ.ሜ)፡ ለምለም አረም፣ የባቄላ/አተር ቅጠል፣ የጓሮ አትክልት ተረፈ-ምርት (ናይትሮጂን ሰጪ)።\n` +
+        `• ፍግና እበት (5 ሳ.ሜ)፡ እርጥብ የከብት ፍግ ወይም የዶሮ እዳሪ ማይክሮቦችን ለማራባት ያንጥፉ።\n` +
+        `• የላይኛው ሽፋን፡ ቀጠን ያለ ለም አፈር እና የእንጨት አመድ ይበትኑበት።\n\n` +
+        `**2. የእርጥበትና የመገልበጥ ጊዜ፡**\n` +
+        `• እርጥበት፡ እያንዳንዱን ሽፋን ሲያነጥፉ ውሃ ይርጩበት፤ በእጅ ሲጨመቅ ውሃ የማያፈስ ነገር ግን እርጥብ ስፖንጅ መሆን አለበት።\n` +
+        `• መገልበጥ፡ ክምሩን በ **21ኛው ቀን** እና በ **45ኛው ቀን** ሙሉ በሙሉ ገልብጠው አየር እንዲገባ ያድርጉ።\n\n` +
+        `**3. ለአፈር አጠቃቀም፡**\n` +
+        `• የደረሰ ጥቁር ኮምፖስት በመሬት ዝግጅት ወቅት በሄክታር ከ5-10 ቶን ከአፈሩ ጋር ቀላቅለው ይጠቀሙ።`;
+      action = 'Build a 1.5x1.5m heap with 3:1 brown-to-green layers, maintain 60% moisture, and turn on day 21 and 45.';
+    } else if (isForage || isSheepOrGoat) {
+      responseEn = `### 🌿 High-Yield Livestock Forage Cultivation & Sheep/Goat Fattening:\n\n` +
+        `**1. Desho Grass (Pennisetum glaucifolium) & Napier Grass Agronomy:**\n` +
+        `• Planting: Establish root splits or stem cuttings at 50x50 cm spacing on soil bunds and hillsides for both soil conservation and intensive cut-and-carry fodder.\n` +
+        `• Harvest Frequency: First cutting at 75-90 days; subsequent cuttings every 45-60 days. Produces up to 30-40 tons/ha fresh biomass annually under moderate rainfall.\n` +
+        `• Legume Intercropping: Mix with Alfalfa (Medicago sativa) or Desmodium to boost crude protein to >16%.\n\n` +
+        `**2. Sheep & Goat Fattening (90-Day Protocol):**\n` +
+        `• Deworming: Administer Albendazole (7.5 mg/kg body weight) and Ivermectin injection on Day 1 to eliminate internal flukes and external parasites.\n` +
+        `• Intensive Ration: Feed 300-400 g/day of mixed concentrate (60% wheat bran, 38% oilseed cake, 1% bone meal, 1% salt) alongside ad-libitum Desho grass and clean water.`;
+      responseAm = `### 🌿 የዴሾ/ዝሆን ሳር መኖ አመራረት እና የበግ/ፍየል ማደለብ መመሪያ፡\n\n` +
+        `**1. የዴሾ ሳር (Desho Grass) እና የዝሆን ሳር አመራረት፡**\n` +
+        `• ተከላ፡ ስሮችን ወይም ግንዶችን በ 50 ሳ.ሜ ርቀት በእርከኖችና በዳገታማ መሬት ላይ ይትከሉ፤ አፈርን ከአፈር መሸርሸር ይጠብቃል፣ የተትረፈረፈ መኖ ይሰጣል።\n` +
+        `• አጨዳ፡ የመጀመሪያው አጨዳ ከተተከለ ከ 2 ወር ተኩል በኋላ ሲሆን ቀጥሎ በየ 45-60 ቀኑ ይታጨዳል። በዓመት እስከ 40 ቶን ለምለም ሳር ይሰጣል።\n` +
+        `• ከአልፋልፋ (Alfalfa) ጋር ማቀናጀት፡ ከፍተኛ ፕሮቲን እንዲኖረው ከአልፋልፋ ወይም ዴስሞዲየም ሳር ጋር ቀላቅለው ያምርቱ።\n\n` +
+        `**2. የበግና ፍየል ማደለብ (የ90 ቀናት መርሃ-ግብር)፡**\n` +
+        `• የሆድ ትል ማከም፡ በማደለቢያው የመጀመሪያ ቀን አልቤንዳዞል (Albendazole) የትል መድኃኒት ይስጡ፤ ፀረ-ውጫዊ ተባይ አይቨርሜክቲን ይውጉ።\n` +
+        `• የተመጣጠነ መኖ፡ በቀን ከ300-400 ግራም የተመጣጠነ መኖ (የስንዴ ፋፉሽ 60%፣ የኑግ ፋጉሎ 38%፣ ጨውና ካልሲየም 2%) ከዴሾ ሳር ጋር አቀናጅተው ያብሉ።`;
+      action = 'Plant Desho grass at 50x50 cm spacing and deworm small ruminants with Albendazole before fattening.';
+    } else if (isEnset) {
+      responseEn = `### 🌳 Comprehensive Enset (Ensete ventricosum) Agronomy & Disease Management:\n\n` +
+        `**1. Bacterial Wilt (Xanthomonas vasicola pv. musacearum - BXW) Control:**\n` +
+        `• Symptoms: Yellowing and wilting of the innermost heart leaf, followed by slimy yellow bacterial ooze oozing from cut leaf stalks.\n` +
+        `• Cultural Sanitation: Disinfect all knives, sickles, and harvesting machetes by flaming over fire or soaking in 5% household bleach (Sodium hypochlorite) before moving between plants.\n` +
+        `• Eradication: Immediately uproot infected plants, dig a deep burial pit in a fallow spot, cover with soil, and fence the zone to prevent livestock vectoring.\n\n` +
+        `**2. Soil Fertility & Transplanting:**\n` +
+        `• Apply 15-20 kg of well-cured cattle manure in transplanting holes. Practice systematic rotation across suckers.`;
+      responseAm = `### 🌳 የተሟላ የእንሰት (Ensete ventricosum) እንክብካቤ እና የባክቴሪያ ዋግ በሽታ መከላከያ፡\n\n` +
+        `**1. የእንሰት ባክቴሪያ ዋግ (Bacterial Wilt - Xanthomonas) መከላከያ፡**\n` +
+        `• ምልክት፡ የውስጠኛው የእንሰት ልብ ቅጠል ይጫጫል፣ ይደርቃል፤ ቅጠሉ ሲቆረጥ ቢጫ ፈሳሽ (ሙጫ) ይወጣዋል።\n` +
+        `• የመሳሪያዎች ንጽህና፡ እንሰት የሚቆረጡ ቢላዎችን፣ ማጭዶችን እና መቆፈሪያዎችን በእሳት በማቃጠል ወይም በበረኪና ውሃ (5% Bleach) በማጠብ በሽታው ከአንዱ ወደ ሌላው እንዳይተላለፍ ያድርጉ።\n` +
+        `• የታመመውን ማስወገድ፡ የታመመውን እንሰት ወዲያውኑ ከስሩ ነቅለው ጉድጓድ ቆፍረው ቅበሩት፤ ከብቶች የበሽታውን አምጪ እንዳያሰራጩ አጥሩ።\n\n` +
+        `**2. ማዳበሪያና እንክብካቤ፡**\n` +
+        `• በተከላ ወቅት በእያንዳንዱ ጉድጓድ ከ15-20 ኪ.ግ የበሰበሰ ፍግ ይጨምሩ።`;
+      action = 'Sterilize cutting machetes with fire or bleach and immediately uproot and bury wilt-infected enset plants.';
+    } else if (isWeed || cleanText.includes('ስትራይጋ')) {
+      responseEn = `### 🌾 Integrated Weed & Parasitic Striga (Witchweed) Management:\n\n` +
+        `**1. Striga hermonthica on Sorghum & Maize:**\n` +
+        `• Biological Trap Cropping: Intercrop or rotate cereals with 'false hosts' such as Cowpea, Faba bean, Desmodium, or Groundnut that stimulate Striga seed germination without allowing attachment.\n` +
+        `• Chemical Spray: Apply 2,4-D Amine salt at 1.5-2.0 L/ha before Striga plants flower to prevent seed rain (1 plant produces 50,000+ seeds that survive 20 years in soil).\n` +
+        `• Soil Fertility: High soil nitrogen drastically suppresses Striga emergence. Apply recommended 100 kg/ha Urea.\n\n` +
+        `**2. General Broadleaf & Grassy Weed Control in Wheat/Teff:**\n` +
+        `• Apply 2,4-D Amine (1.0 L/ha) at 30-35 days after sowing for broadleaf weeds, or Puma Super (0.75-1.0 L/ha) for wild oat (Avena fatua) control.`;
+      responseAm = `### 🌾 የተቀናጀ የአረም እና የአጋም/ስትራይጋ (Striga) መከላከያ መመሪያ፡\n\n` +
+        `**1. በማሽላና በቆሎ ላይ የሚከሰተውን ስትራይጋ (Striga/Witchweed) ማጥፊያ፡**\n` +
+        `• ሰብል ማፈራረቅ፡ ማሽላን ከጥራጥሬ ሰብሎች (ለምሳሌ ቦሎቄ፣ አተር፣ ዴስሞዲየም) ጋር ያፈራርቁ፤ የጥራጥሬ ሰብሎች የስትራይጋውን ዘር አፈር ውስጥ አስፈልፍለው ያከስሙታል።\n` +
+        `• የኬሚካል መርጫ፡ ስትራይጋው አበባ ከማውጣቱ በፊት 2,4-ዲ አሚን (2,4-D Amine - 1.5-2.0 ሊ/ሄ) ይርጩ፤ አንድ ተክል 50,000 ዘር ስለሚያፈራ አበባ ሳይይዝ ማጥፋት ወሳኝ ነው።\n` +
+        `• የማዳበሪያ ጥቅም፡ ከፍተኛ ናይትሮጂን (ዩሪያ) ስትራይጋ እንዳይበቅል ያግዳል፤ በሄክታር 100 ኪ.ግ ዩሪያ ይጠቀሙ።\n\n` +
+        `**2. በስንዴና ጤፍ ላይ የተለመደ አረም መቆጣጠሪያ፡**\n` +
+        `• ከተዘራ ከ30-35 ቀናት በኋላ ሰፋፊ ቅጠል ላላቸው አረሞች 2,4-ዲ (1.0 ሊ/ሄ)፣ ለስንዴ አረም/ሰሌን ደግሞ ፑማ ሱፐር (Puma Super) ይርጩ።`;
+      action = 'Rotate with legumes to deplete Striga seedbank and spray 2,4-D amine before Striga flowers.';
+    } else if (isMarket) {
+      responseEn = `### 🏪 Agricultural Marketing & Grain Quality Optimization (Ethiopia):\n\n` +
+        `**1. ECX (Ethiopian Commodity Exchange) Quality Standards:**\n` +
+        `• Moisture Content: Cereals and pulses must be dried to below 12.5% moisture to prevent rejection or price docking.\n` +
+        `• Impurities & Foreign Matter: Screen grain through seed cleaners to reduce chaff, stones, and broken kernels below 2.0%.\n\n` +
+        `**2. Cooperative Aggregation & Price Maximization:**\n` +
+        `• Aggregate harvest through Primary Agricultural Cooperatives to negotiate bulk transport and secure premium contract rates instead of selling individually at low post-harvest spot prices.\n` +
+        `• Use warehouse receipt financing where available to hold grain safely until supply glut subsides (3-4 months post-harvest).`;
+      responseAm = `### 🏪 የሰብል ገበያ፣ የኢትዮጵያ ምርት ገበያ (ECX) እና የተሻለ ዋጋ የማግኛ መመሪያ፡\n\n` +
+        `**1. የጥራት ደረጃና የውሃ መጠን፡**\n` +
+        `• የእርጥበት መጠን፡ በምርት ገበያ ተቀባይነት ለማግኘት የሰብሉ እርጥበት ከ 12.5% በታች መድረቅ አለበት።\n` +
+        `• ባዕድ ነገሮችን ማጥራት፡ አቧራ፣ ጠጠር፣ የተሰበረ ሰብል ከ 2% በታች እንዲሆን በወንፊት ያጽዱ፤ ይህም ከፍተኛ የጥራት ደረጃ (Grade 1/2) ያስገኛል።\n\n` +
+        `**2. በህብረት ስራ ማህበራት በኩል መሸጥ፡**\n` +
+        `• በአጨዳ ወቅት ገበያው በምርት ስለሚጨናነቅ ዋጋ ዝቅ ይላል፤ ምርትዎን በፒክስ ከረጢት ጠብቀው በህብረት ስራ ማህበር በኩል በጅምላ በመሸጥ ከፍተኛ ትርፍ ያግኙ።`;
+      action = 'Clean and sun-dry grain to <12.5% moisture and sell collectively through local agricultural cooperatives.';
+    } else if (isMaize && isFertilizer) {
+      responseEn = `### 🌽 Maize Fertilizer & Nutrient Management Schedule (Ethiopia):\n\n` +
+        `**1. Basal Application at Sowing:**\n` +
+        `• Apply 100 kg/ha NPS-Boron (NPS-B) placed 5 cm beside and 5 cm below the seed at planting.\n\n` +
+        `**2. Split Nitrogen (Urea) Schedule:**\n` +
+        `• First Top-Dressing: Apply 50 kg/ha Urea at knee-high vegetative stage (30-35 days after emergence) when soil is moist.\n` +
+        `• Second Top-Dressing: Apply 50 kg/ha Urea just before tasseling (55-60 days after emergence). Always cover Urea with soil to prevent nitrogen volatilization loss.\n\n` +
+        `**3. Organic Integration:**\n` +
+        `• Incorporate 5-8 tons/ha cured farmyard compost during field preparation to improve moisture retention.`;
+      responseAm = `### 🌽 ለበቆሎ ሰብል የተመጣጠነ የማዳበሪያ አጠቃቀም መመሪያ፡\n\n` +
+        `**1. በመዝሪያ ወቅት (መሰረታዊ)፡**\n` +
+        `• በሄክታር 100 ኪ.ግ NPS-B ከዘሩ ጎንና ስር 5 ሳ.ሜ ርቆ እንዲቀበር ያድርጉ።\n\n` +
+        `**2. የዩሪያ ክፍፍል መርሃ-ግብር፡**\n` +
+        `• አንደኛ ዙር ዩሪያ፡ በቆሎው ጉልበት ሲደርስ (ከተዘራ ከ30-35 ቀናት በኋላ አፈሩ እርጥብ ሲሆን) 50 ኪ.ግ/ሄ ዩሪያ ይጨምሩ።\n` +
+        `• ሁለተኛ ዙር ዩሪያ፡ በቆሎው አበባ (ዘለላ) ሊያወጣ ሲል (ከተዘራ ከ55-60 ቀናት) ተጨማሪ 50 ኪ.ግ/ሄ ዩሪያ በአፈር ሸፍነው ይጨምሩ።\n\n` +
+        `**3. የተፈጥሮ ማዳበሪያ፡**\n` +
+        `• በመሬት ዝግጅት ወቅት በሄክታር ከ5-8 ቶን የበሰበሰ ኮምፖስት ወይም ፍግ ማከል የአፈሩን እርጥበት የመያዝ አቅም ያሳድጋል።`;
       action = 'Apply 100 kg/ha NPS at planting and split 100 kg/ha Urea at knee-high and tasseling stages.';
     } else if ((isWheat || isBarley) && isFertilizer) {
-      responseEn = `Wheat & Cereal Fertilizer Application Protocol (Ethiopian Highlands):\n` +
-        `1. Sowing Application: Apply 100 kg/ha NPS or NPS-Zinc at planting, drilled along seed rows.\n` +
-        `2. Urea Split Schedule: Apply total 100 kg/ha Urea split into two doses: 50 kg/ha at sowing and 50 kg/ha top-dressed at tillering (30 days after sowing) when the soil has good moisture.\n` +
-        `3. Acid Soil Precaution: If soil pH is below 5.5, apply agricultural lime 1 month before sowing; otherwise phosphorus in NPS will be locked in the soil.`;
-      responseAm = `ለስንዴ እና ለገብስ ሰብል የማዳበሪያ አጠቃቀም መመሪያ፡\n` +
-        `1. በመዝሪያ ወቅት፡ በሄክታር 100 ኪ.ግ NPS ወይም NPS-Zinc ከመዝሪያው መስመር ጋር አብረው ይዝሩ።\n` +
-        `2. የዩሪያ ክፍፍል፡ በድምሩ 100 ኪ.ግ ዩሪያ ለሁለት ከፍለው ይጠቀሙ (50 ኪ.ግ በመዝሪያ ወቅት፣ 50 ኪ.ግ በብቅለት/ማደጊያ ወቅት አፈሩ እርጥብ ሲሆን)።\n` +
-        `3. አሲዳማ አፈር፡ አፈሩ አሲዳማ ከሆነ ማዳበሪያው እንዳይባክን ከመዝራት 1 ወር በፊት የግብርና ኖራ ይጠቀሙ።`;
+      responseEn = `### 🌾 Wheat & Cereal Fertilizer Application Protocol (Ethiopian Highlands):\n\n` +
+        `**1. Sowing Application:**\n` +
+        `• Apply 100 kg/ha NPS or NPS-Zinc at planting, drilled along seed rows.\n\n` +
+        `**2. Urea Split Schedule:**\n` +
+        `• Apply total 100 kg/ha Urea split into two equal doses: 50 kg/ha at sowing and 50 kg/ha top-dressed at tillering (30 days after sowing) when the soil has good moisture.\n\n` +
+        `**3. Acid Soil Liming:**\n` +
+        `• If soil pH is below 5.5, apply agricultural lime 1 month before sowing; otherwise phosphorus in NPS will remain locked in the soil.`;
+      responseAm = `### 🌾 ለስንዴ እና ለገብስ ሰብል የማዳበሪያ አጠቃቀም መመሪያ፡\n\n` +
+        `**1. በመዝሪያ ወቅት፡**\n` +
+        `• በሄክታር 100 ኪ.ግ NPS ወይም NPS-Zinc ከመዝሪያው መስመር ጋር አብረው ይዝሩ።\n\n` +
+        `**2. የዩሪያ ክፍፍል፡**\n` +
+        `• በድምሩ 100 ኪ.ግ ዩሪያ ለሁለት ከፍለው ይጠቀሙ (50 ኪ.ግ በመዝሪያ ወቅት፣ 50 ኪ.ግ በብቅለት/ማደጊያ ወቅት አፈሩ እርጥብ ሲሆን)።\n\n` +
+        `**3. አሲዳማ አፈር፡**\n` +
+        `• አፈሩ አሲዳማ ከሆነ ማዳበሪያው እንዳይባክን ከመዝራት 1 ወር በፊት የግብርና ኖራ ይጠቀሙ።`;
       action = 'Apply 100 kg/ha NPS at planting and split Urea (50% at sowing, 50% at tillering).';
     } else if (isTeff && isFertilizer) {
-      responseEn = `Teff (Eragrostis tef) Fertilizer & Lodging Prevention Guide:\n` +
-        `1. Basal Sowing: Apply 100 kg/ha NPS-Boron at sowing on a firm, well-pulverized seedbed.\n` +
-        `2. Top-Dressing Urea: Apply 40-50 kg/ha Urea at early tillering stage (30-35 days after sowing). Avoid excessive Urea as high nitrogen causes severe lodging (falling over).\n` +
-        `3. Split Timing: Apply Urea strictly when soil is moist and hand weeding has already been completed.`;
-      responseAm = `የጤፍ ሰብል ማዳበሪያና መተኛትን (Lodging) የመከላከያ መመሪያ፡\n` +
-        `1. በመዝሪያ ወቅት፡ በሄክታር 100 ኪ.ግ NPS-B በሚገባ በተዘጋጀ እና በደለደለ መሬት ላይ ከዘሩ ጋር ይጨምሩ።\n` +
-        `2. የዩሪያ አጠቃቀም፡ በሄክታር ከ40-50 ኪ.ግ ዩሪያ ሰብሉ በበቀለ ከ30-35 ቀናት በኋላ አረም ተነቅሎ ሲያበቃ ይጨምሩ። ከመጠን በላይ ዩሪያ ሰብሉ እንዲተኛ ስለሚያደርግ መጠኑን አይጨምሩ።\n` +
-        `3. የእርጥበት ሁኔታ፡ ዩሪያ የሚጨመረው አፈሩ በሚገባ እርጥብ በሆነበት ወቅት ብቻ ነው።`;
+      responseEn = `### 🌾 Teff (Eragrostis tef) Fertilizer & Lodging Prevention Guide:\n\n` +
+        `**1. Basal Sowing:**\n` +
+        `• Apply 100 kg/ha NPS-Boron at sowing on a firm, well-pulverized seedbed.\n\n` +
+        `**2. Top-Dressing Urea:**\n` +
+        `• Apply 40-50 kg/ha Urea at early tillering stage (30-35 days after sowing). Avoid excessive Urea as high nitrogen causes severe lodging (falling over).\n\n` +
+        `**3. Split Timing:**\n` +
+        `• Apply Urea strictly when soil is moist and hand weeding has already been completed.`;
+      responseAm = `### 🌾 የጤፍ ሰብል ማዳበሪያና መተኛትን (Lodging) የመከላከያ መመሪያ፡\n\n` +
+        `**1. በመዝሪያ ወቅት፡**\n` +
+        `• በሄክታር 100 ኪ.ግ NPS-B በሚገባ በተዘጋጀ እና በደለደለ መሬት ላይ ከዘሩ ጋር ይጨምሩ።\n\n` +
+        `**2. የዩሪያ አጠቃቀም፡**\n` +
+        `• በሄክታር ከ40-50 ኪ.ግ ዩሪያ ሰብሉ በበቀለ ከ30-35 ቀናት በኋላ አረም ተነቅሎ ሲያበቃ ይጨምሩ። ከመጠን በላይ ዩሪያ ሰብሉ እንዲተኛ ስለሚያደርግ መጠኑን አይጨምሩ።\n\n` +
+        `**3. የእርጥበት ሁኔታ፡**\n` +
+        `• ዩሪያ የሚጨመረው አፈሩ በሚገባ እርጥብ በሆነበት ወቅት ብቻ ነው።`;
       action = 'Apply 100 kg/ha NPS-B at sowing and limit Urea to 50 kg/ha at tillering to prevent lodging.';
     } else if (isVegetable && isFertilizer) {
-      responseEn = `Horticultural & Vegetable Fertilizer Schedule (Onion, Tomato, Potato, Pepper):\n` +
-        `1. Basal Dressing: Apply 150-200 kg/ha NPS at transplanting mixed into planting furrows.\n` +
-        `2. Urea Split Feeding: Apply 100 kg/ha Urea in two splits: first dose at 2-3 weeks after transplanting and second dose at flowering/tuber initiation.\n` +
-        `3. Onion Maturity Tip: Stop nitrogen top-dressing 4 weeks before harvesting onions to allow proper bulb curing and prevent post-harvest neck rot.`;
-      responseAm = `ለአትክልትና ሽንኩርት ሰብሎች የማዳበሪያ አጠቃቀም መመሪያ፡\n` +
-        `1. በመትከያ ወቅት፡ በሄክታር ከ150-200 ኪ.ግ NPS በችግኝ መትከያው መስመር ውስጥ ቀላቅለው ይጨምሩ።\n` +
-        `2. የዩሪያ አጠቃቀም፡ በሄክታር 100 ኪ.ግ ዩሪያ ለሁለት ከፍለው ችግኝ በተተከለ በ 3ኛው ሳምንት እና በአበባ/ፍሬ መያዣ ወቅት ይጨምሩ።\n` +
-        `3. የሽንኩርት ጥንቃቄ፡ ሽንኩርት ከመሰብሰቡ 4 ሳምንታት በፊት ዩሪያ ማቆም አለበት፤ ይህ ሽንኩርቱ በመጋዘን እንዳይበሰብስ ይከላከላል።`;
+      responseEn = `### 🍅 Horticultural & Vegetable Fertilizer Schedule (Onion, Tomato, Potato, Pepper):\n\n` +
+        `**1. Basal Dressing:**\n` +
+        `• Apply 150-200 kg/ha NPS at transplanting mixed into planting furrows.\n\n` +
+        `**2. Urea Split Feeding:**\n` +
+        `• Apply 100 kg/ha Urea in two splits: first dose at 2-3 weeks after transplanting and second dose at flowering/tuber initiation.\n\n` +
+        `**3. Onion Maturity Tip:**\n` +
+        `• Stop nitrogen top-dressing 4 weeks before harvesting onions to allow proper bulb curing and prevent post-harvest neck rot.`;
+      responseAm = `### 🍅 ለአትክልትና ሽንኩርት ሰብሎች የማዳበሪያ አጠቃቀም መመሪያ፡\n\n` +
+        `**1. በመትከያ ወቅት፡**\n` +
+        `• በሄክታር ከ150-200 ኪ.ግ NPS በችግኝ መትከያው መስመር ውስጥ ቀላቅለው ይጨምሩ።\n\n` +
+        `**2. የዩሪያ አጠቃቀም፡**\n` +
+        `• በሄክታር 100 ኪ.ግ ዩሪያ ለሁለት ከፍለው ችግኝ በተተከለ በ 3ኛው ሳምንት እና በአበባ/ፍሬ መያዣ ወቅት ይጨምሩ።\n\n` +
+        `**3. የሽንኩርት ጥንቃቄ፡**\n` +
+        `• ሽንኩርት ከመሰብሰቡ 4 ሳምንታት በፊት ዩሪያ ማቆም አለበት፤ ይህ ሽንኩርቱ በመጋዘን እንዳይበሰብስ ይከላከላል።`;
       action = 'Apply basal NPS at transplanting and split Urea; cease nitrogen 4 weeks before onion harvest.';
     } else if (isHarvestOrStorage) {
-      responseEn = `Post-Harvest Grain Management & Safe Storage Protocol:\n` +
-        `1. Solar Drying: Thoroughly sun-dry grain (Teff, Wheat, Maize) on clean tarpaulins until moisture is below 12-13% (grain cracks crisply between teeth).\n` +
-        `2. Hermetic Storage (PICS Bags): Use triple-layer PICS bags (Perdue Improved Crop Storage). Squeeze out excess air and tie each liner independently to kill weevils through oxygen starvation.\n` +
-        `3. Granary Sanitation: Sweep, clean, and repair storage silos before bringing in new harvest. Keep bags off the floor on wooden pallets away from walls.`;
-      responseAm = `የድህረ-ምርት ሰብል አያያዝ እና አስተማማኝ የመጋዘን/ጎተራ አጠባበቅ መመሪያ፡\n` +
-        `1. የፀሐይ ማድረቅ፡ ሰብሉን (ስንዴ፣ በቆሎ፣ ጤፍ) በንጹህ ሸራ ላይ የውሃ መጠኑ ከ12-13% በታች እስኪሆን ድረስ በሚገባ ያድርቁ (በጥርስ ሲነከስ የሚሰበር መሆን አለበት)።\n` +
-        `2. ፒክስ ከረጢት (PICS Bags)፡ አየር የማያስገቡ 3 ደራራብ የፒክስ ከረጢቶችን ይጠቀሙ፤ አየሩን አውጥተው እያንዳንዱን ከረጢት ለይተው በማሰር ነቀዝን ያለ ኬሚካል ያጥፉ።\n` +
-        `3. የመጋዘን ንጽህና፡ አዲሱን ምርት ከማስገባትዎ በፊት ጎተራውን ያጽዱ፤ ከረጢቶችን ከወለል ከፍ ባሉ የእንጨት ፓሌቶች ላይ ያስቀምጡ።`;
+      responseEn = `### 🌾 Post-Harvest Grain Management & Safe Storage Protocol:\n\n` +
+        `**1. Solar Drying:**\n` +
+        `• Thoroughly sun-dry grain (Teff, Wheat, Maize) on clean tarpaulins until moisture is below 12-13% (grain cracks crisply between teeth).\n\n` +
+        `**2. Hermetic Storage (PICS Bags):**\n` +
+        `• Use triple-layer PICS bags (Perdue Improved Crop Storage). Squeeze out excess air and tie each liner independently to kill weevils through oxygen starvation.\n\n` +
+        `**3. Granary Sanitation:**\n` +
+        `• Sweep, clean, and repair storage silos before bringing in new harvest. Keep bags off the floor on wooden pallets away from walls.`;
+      responseAm = `### 🌾 የድህረ-ምርት ሰብል አያያዝ እና አስተማማኝ የመጋዘን/ጎተራ አጠባበቅ መመሪያ፡\n\n` +
+        `**1. የፀሐይ ማድረቅ፡**\n` +
+        `• ሰብሉን (ስንዴ፣ በቆሎ፣ ጤፍ) በንጹህ ሸራ ላይ የውሃ መጠኑ ከ12-13% በታች እስኪሆን ድረስ በሚገባ ያድርቁ (በጥርስ ሲነከስ የሚሰበር መሆን አለበት)።\n\n` +
+        `**2. ፒክስ ከረጢት (PICS Bags)፡**\n` +
+        `• አየር የማያስገቡ 3 ደራራብ የፒክስ ከረጢቶችን ይጠቀሙ፤ አየሩን አውጥተው እያንዳንዱን ከረጢት ለይተው በማሰር ነቀዝን ያለ ኬሚካል ያጥፉ።\n\n` +
+        `**3. የመጋዘን ንጽህና፡**\n` +
+        `• አዲሱን ምርት ከማስገባትዎ በፊት ጎተራውን ያጽዱ፤ ከረጢቶችን ከወለል ከፍ ባሉ የእንጨት ፓሌቶች ላይ ያስቀምጡ።`;
       action = 'Sun-dry grain to <13% moisture and store in hermetic triple-layer PICS bags.';
     } else if (isApple || (isFruit && isGrafting)) {
-      responseEn = `Expert Apple Tree Propagation & Grafting Advisory (Ethiopian Highlands):\n` +
-        `1. Grafting Technique: Use Cleft Grafting (for top-working older trees) or Whip-and-Tongue Grafting (for nursery rootstocks 1-2 cm diameter). Ensure exact cambium alignment.\n` +
-        `2. Timing & Season: Best performed during tree dormancy before bud break (late January to February, or early Belg season) in highland zones (e.g., Wollo, Debre Birhan, Chencha).\n` +
-        `3. Scion & Rootstock: Select mature, pencil-thick, dormant scion wood from virus-free mother trees (e.g., Anna, Dorsett Golden, Crispin varieties). Use semi-dwarfing rootstocks (MM106 or M9).\n` +
-        `4. Sealing & Aftercare: Wrap tightly with grafting tape or parafilm and apply pruning sealant to prevent desiccation and fungal entry. Keep root zone moist and remove rootstock suckers below the union.`;
-      responseAm = `የፖም ዛፍ ማዳቀል (Grafting) እና የፍራፍሬ ችግኝ እንክብካቤ ባለሙያ መመሪያ፡\n` +
-        `1. የማዳቀል ዘዴ፡ በችግኝ ላይ የጅራትና ምላስ (Whip & Tongue) ወይም በጎለመሱ ዛፎች ላይ የስንጥቅ (Cleft) ማዳቀል ዘዴ ይጠቀሙ፤ የዛፉ የውስጥ ህያው ሽፋን (Cambium) በትክክል እንዲገጣጠም ያድርጉ።\n` +
-        `2. ተስማሚ ወቅት፡ በደጋማ አካባቢዎች (ለምሳሌ ወሎ፣ ደብረ ብርሃን፣ ቼንቻ) ዛፉ ቅጠል አፍስሶ እረፍት ላይ ሲሆን ከጥር አጋማሽ እስከ የካቲት (የበልግ ዝናብ መጀመሪያ) ይተገበራል።\n` +
-        `3. የማዳቀያ ቅርንጫፍ (Scion) እና ስር (Rootstock)፡ ጤናማ ከሆኑ የተሻሻሉ ዝርያዎች (ለምሳሌ አና፣ ዶርሴት ጎልደን) የተወሰዱ የደረጁ ቅርንጫፎችን ከ MM106 ወይም M9 ስር ጋር ያዳቅሉ።\n` +
-        `4. ጥበቃና እንክብካቤ፡ የማዳቀያ ቦታውን በማዳቀያ ፕላስቲክ (Grafting tape) አጥብቀው ይጠቅልሉ፤ አየርና እርጥበት እንዳይገባ የዛፍ ሰም (Wax) ይቀቡ፤ ከስር የሚወጡ ተጨማሪ ቡቃያዎችን ይቁረጡ።`;
+      responseEn = `### 🍏 Expert Apple Tree Propagation & Grafting Advisory (Highlands):\n\n` +
+        `**1. Grafting Technique:**\n` +
+        `• Use Cleft Grafting (for top-working older trees) or Whip-and-Tongue Grafting (for nursery rootstocks 1-2 cm diameter). Ensure exact cambium alignment.\n\n` +
+        `**2. Timing & Season:**\n` +
+        `• Best performed during tree dormancy before bud break (late January to February, or early Belg season) in highland zones (e.g., Wollo, Debre Birhan, Chencha).\n\n` +
+        `**3. Scion & Rootstock Selection:**\n` +
+        `• Select mature, pencil-thick, dormant scion wood from virus-free mother trees (Anna, Dorsett Golden). Use semi-dwarfing rootstocks (MM106 or M9).\n\n` +
+        `**4. Sealing & Aftercare:**\n` +
+        `• Wrap tightly with grafting tape and apply pruning sealant to prevent desiccation. Keep root zone moist and remove rootstock suckers below the union.`;
+      responseAm = `### 🍏 የፖም ዛፍ ማዳቀል (Grafting) እና የፍራፍሬ ችግኝ እንክብካቤ ባለሙያ መመሪያ፡\n\n` +
+        `**1. የማዳቀል ዘዴ፡**\n` +
+        `• በችግኝ ላይ የጅራትና ምላስ (Whip & Tongue) ወይም በጎለመሱ ዛፎች ላይ የስንጥቅ (Cleft) ማዳቀል ዘዴ ይጠቀሙ፤ የዛፉ የውስጥ ህያው ሽፋን (Cambium) በትክክል እንዲገጣጠም ያድርጉ።\n\n` +
+        `**2. ተስማሚ ወቅት፡**\n` +
+        `• በደጋማ አካባቢዎች (ለምሳሌ ወሎ፣ ደብረ ብርሃን፣ ቼንቻ) ዛፉ ቅጠል አፍስሶ እረፍት ላይ ሲሆን ከጥር አጋማሽ እስከ የካቲት (የበልግ ዝናብ መጀመሪያ) ይተገበራል።\n\n` +
+        `**3. የማዳቀያ ቅርንጫፍ (Scion) እና ስር (Rootstock)፡**\n` +
+        `• ጤናማ ከሆኑ የተሻሻሉ ዝርያዎች (አና፣ ዶርሴት ጎልደን) የተወሰዱ ቅርንጫፎችን ከ MM106 ወይም M9 ስር ጋር ያዳቅሉ።\n\n` +
+        `**4. ጥበቃና እንክብካቤ፡**\n` +
+        `• የማዳቀያ ቦታውን በማዳቀያ ፕላስቲክ አጥብቀው ይጠቅልሉ፤ አየርና እርጥበት እንዳይገባ የዛፍ ሰም (Wax) ይቀቡ።`;
       action = 'Select disease-free scion wood, align cambium layers tightly, and seal grafting union with waterproof tape.';
     } else if (isAvocadoOrMango) {
-      responseEn = `Highland Avocado (Hass/Fuerte) & Mango Management:\n` +
-        `1. Grafting & Planting: Plant grafted seedlings at 6x6 m or 7x7 m spacing in deep, well-draining loamy soil with 50 cm hole enriched with 20 kg cured compost.\n` +
-        `2. Phytophthora Root Rot Prevention: Avoid waterlogging; plant on raised mounds and apply Ridomil Gold MZ if root rot symptoms (dieback, wilting) appear.\n` +
-        `3. Harvesting & Post-Harvest: Harvest when fruit reaches mature size and changes luster; clip with small stem attached to avoid fungal entry.`;
-      responseAm = `የተሻሻለ አቮካዶ (ሃስ/ፉኤርቴ) እና ማንጎ አመራረት መመሪያ፡\n` +
-        `1. ተከላና ክፍተት፡ የተዳቀሉ ችግኞችን ከ6x6 እስከ 7x7 ሜትር ርቀት በደንብ በተዘጋጀ 50 ሳ.ሜ ጉድጓድ ውስጥ ከ20 ኪ.ግ ኮምፖስት ጋር ቀላቅለው ይትከሉ።\n` +
-        `2. የስር መበስበስ (Phytophthora) መከላከል፡ ውሃ እንዳይተኛ ከፍታ ባለው አፈር ላይ ይትከሉ፤ ምልክቱ ከታየ ሪዶሚል ጎልድ ፀረ-ፈንገስ ይጠቀሙ።\n` +
-        `3. አሰባሰብ፡ ፍሬው በሚገባ ሲደርጅ በትንሽ ግንዱ በመቁረጥ ይሰብስቡ፤ ፍሬውን እንዳይጎዳ በጥንቃቄ ይያዙ።`;
+      responseEn = `### 🥑 Highland Avocado (Hass/Fuerte) & Mango Management:\n\n` +
+        `**1. Grafting & Spacing:**\n` +
+        `• Plant grafted seedlings at 6x6 m or 7x7 m spacing in deep, well-draining loamy soil with 50 cm hole enriched with 20 kg cured compost.\n\n` +
+        `**2. Phytophthora Root Rot Prevention:**\n` +
+        `• Avoid waterlogging; plant on raised mounds and apply Ridomil Gold MZ (2.5 kg/ha) if root rot symptoms (dieback, wilting) appear.\n\n` +
+        `**3. Harvesting Standards:**\n` +
+        `• Harvest when fruit reaches mature size and changes luster; clip with small stem attached to avoid fungal entry.`;
+      responseAm = `### 🥑 የተሻሻለ አቮካዶ (ሃስ/ፉኤርቴ) እና ማንጎ አመራረት መመሪያ፡\n\n` +
+        `**1. ተከላና ክፍተት፡**\n` +
+        `• የተዳቀሉ ችግኞችን ከ6x6 እስከ 7x7 ሜትር ርቀት በደንብ በተዘጋጀ 50 ሳ.ሜ ጉድጓድ ውስጥ ከ20 ኪ.ግ ኮምፖስት ጋር ቀላቅለው ይትከሉ።\n\n` +
+        `**2. የስር መበስበስ (Phytophthora) መከላከል፡**\n` +
+        `• ውሃ እንዳይተኛ ከፍታ ባለው አፈር ላይ ይትከሉ፤ ምልክቱ ከታየ ሪዶሚል ጎልድ ፀረ-ፈንገስ ይጠቀሙ።\n\n` +
+        `**3. አሰባሰብ፡**\n` +
+        `• ፍሬው በሚገባ ሲደርጅ በትንሽ ግንዱ በመቁረጥ ይሰብስቡ፤ ፍሬውን እንዳይጎዳ በጥንቃቄ ይያዙ።`;
       action = 'Plant on raised beds to avoid root waterlogging and apply mulch around tree drip-line.';
     } else if (isTomato || (isVegetable && isDisease)) {
-      responseEn = `Tomato & Horticultural Disease Management (Late Blight & Bacterial Wilt):\n` +
-        `1. Late Blight (Phytophthora infestans): Spray systemic fungicide Ridomil Gold MZ (2.5 kg/ha) or Mancozeb 80% WP (2.5-3 kg/ha) every 7-10 days during cool, humid weather.\n` +
-        `2. Early Blight (Alternaria solani): Apply Bravo 500 or Score 250 EC when concentric dark rings appear on lower leaves.\n` +
-        `3. Cultural Sanitation: Water exclusively at root level (drip or furrow); prune bottom leaves touching the soil and burn infected plant debris immediately.`;
-      responseAm = `የቲማቲም እና አትክልት በሽታዎች (የቅጠል መድረቅ/Late Blight) መከላከያ መመሪያ፡\n` +
-        `1. የቅጠል መድረቅ (Late Blight)፡ ከፍተኛ እርጥበት በሚኖርበት ጊዜ ሪዶሚል ጎልድ (Ridomil Gold MZ - 2.5 ኪ.ግ/ሄ) ወይም ማንኮዜብ በየ 7-10 ቀኑ ይርጩ።\n` +
-        `2. የቅጠል ነጠብጣብ (Early Blight)፡ ብራቮ 500 ወይም ስኮር 250 ኢሲ የተባሉትን ፀረ-ፈንገሶች በቅጠሉ ላይ ጥቁር ክብ ነጠብጣብ ሲታይ ይርጩ።\n` +
-        `3. የባህል እንክብካቤ፡ ውሃ ከስር በአፈር ላይ ብቻ ያጠጡ፤ አፈር የነካቸውን የታችኛውን ቅጠሎች ይቁረጡ፤ የታመሙትን ቅሪቶች ያቃጥሉ።`;
+      responseEn = `### 🍅 Tomato & Vegetable Disease Management (Late Blight & Bacterial Wilt):\n\n` +
+        `**1. Late Blight (Phytophthora infestans):**\n` +
+        `• Spray systemic fungicide Ridomil Gold MZ (2.5 kg/ha) or Mancozeb 80% WP (2.5-3 kg/ha) every 7-10 days during cool, humid weather.\n\n` +
+        `**2. Early Blight (Alternaria solani):**\n` +
+        `• Apply Bravo 500 or Score 250 EC when concentric dark rings appear on lower leaves.\n\n` +
+        `**3. Cultural Sanitation:**\n` +
+        `• Water exclusively at root level (drip or furrow); prune bottom leaves touching the soil and burn infected plant debris immediately.`;
+      responseAm = `### 🍅 የቲማቲም እና አትክልት በሽታዎች (የቅጠል መድረቅ/Late Blight) መከላከያ መመሪያ፡\n\n` +
+        `**1. የቅጠል መድረቅ (Late Blight)፡**\n` +
+        `• ከፍተኛ እርጥበት በሚኖርበት ጊዜ ሪዶሚል ጎልድ (Ridomil Gold MZ - 2.5 ኪ.ግ/ሄ) ወይም ማንኮዜብ በየ 7-10 ቀኑ ይርጩ።\n\n` +
+        `**2. የቅጠል ነጠብጣብ (Early Blight)፡**\n` +
+        `• ብራቮ 500 ወይም ስኮር 250 ኢሲ የተባሉትን ፀረ-ፈንገሶች በቅጠሉ ላይ ጥቁር ክብ ነጠብጣብ ሲታይ ይርጩ።\n\n` +
+        `**3. የባህል እንክብካቤ፡**\n` +
+        `• ውሃ ከስር በአፈር ላይ ብቻ ያጠጡ፤ አፈር የነካቸውን የታችኛውን ቅጠሎች ይቁረጡ፤ የታመሙትን ቅሪቶች ያቃጥሉ።`;
       action = 'Spray Ridomil Gold MZ fungicide immediately during humid weather and irrigate only at soil base.';
     } else if (isOnion) {
-      responseEn = `Onion Agronomy & Purple Blotch (Alternaria porri) Control:\n` +
-        `1. Spacing & Aeration: Transplant seedlings at 10-15 cm spacing between plants and 20 cm between rows to allow canopy air circulation and lower humidity.\n` +
-        `2. Disease Control: Spray Cabrio Duo (2 L/ha) or Mancozeb preventative spray when purplish-brown sunken lesions appear on leaves.\n` +
-        `3. Bulb Maturation: Cut off irrigation 2-3 weeks before harvest when 50% of tops fall over to ensure proper neck closure and long shelf life.`;
-      responseAm = `የሽንኩርት እንክብካቤ እና የወይንጠጅ ነጠብጣብ (Purple Blotch) መከላከያ መመሪያ፡\n` +
-        `1. የችግኝ ክፍተት፡ አየር እንዲዘዋወር በችግኞች መካከል ከ10-15 ሳ.ሜ፣ በመስመሮች መካከል 20 ሳ.ሜ ርቀት ጠብቀው ይትከሉ።\n` +
-        `2. የበሽታ መከላከያ፡ በቅጠሎች ላይ ወይንጠጅ ነጠብጣብ ከታየ ካብሪዮ ዱኦ (Cabrio Duo - 2 ሊ/ሄ) ወይም ማንኮዜብ ፀረ-ፈንገስ ይርጩ።\n` +
-        `3. የውሃ ማቆም፡ 50% የሽንኩርቱ አናት ሲተኛ ውሃ ማጠጣት ያቁሙ፤ ይህም ሽንኩርቱ በሚገባ እንዲደርቅ ያደርጋል።`;
+      responseEn = `### 🧅 Onion Agronomy & Purple Blotch (Alternaria porri) Control:\n\n` +
+        `**1. Spacing & Aeration:**\n` +
+        `• Transplant seedlings at 10-15 cm spacing between plants and 20 cm between rows to allow canopy air circulation and lower humidity.\n\n` +
+        `**2. Disease Control:**\n` +
+        `• Spray Cabrio Duo (2 L/ha) or Mancozeb preventative spray when purplish-brown sunken lesions appear on leaves.\n\n` +
+        `**3. Bulb Maturation:**\n` +
+        `• Cut off irrigation and stop nitrogen top-dressing 3-4 weeks before harvest when 50% of tops fall over to ensure proper neck closure and long shelf life.`;
+      responseAm = `### 🧅 የሽንኩርት እንክብካቤ እና የወይንጠጅ ነጠብጣብ (Purple Blotch) መከላከያ መመሪያ፡\n\n` +
+        `**1. የችግኝ ክፍተት፡**\n` +
+        `• አየር እንዲዘዋወር በችግኞች መካከል ከ10-15 ሳ.ሜ፣ በመስመሮች መካከል 20 ሳ.ሜ ርቀት ጠብቀው ይትከሉ።\n\n` +
+        `**2. የበሽታ መከላከያ፡**\n` +
+        `• በቅጠሎች ላይ ወይንጠጅ ነጠብጣብ ከታየ ካብሪዮ ዱኦ (Cabrio Duo - 2 ሊ/ሄ) ወይም ማንኮዜብ ፀረ-ፈንገስ ይርጩ።\n\n` +
+        `**3. የውሃ ማቆም፡**\n` +
+        `• 50% የሽንኩርቱ አናት ሲተኛ ውሃ ማጠጣትና ዩሪያ ያቁሙ፤ ይህም ሽንኩርቱ በመጋዘን እንዳይበሰብስ ያደርጋል።`;
       action = 'Maintain 10-15 cm plant spacing and spray Cabrio Duo at first symptom of purple blotch.';
     } else if (isWheat || isBarley || ((isCereal || cleanText.includes('ዋግ') || cleanText.includes('ዝገት')) && isDisease)) {
-      responseEn = `Wheat & Cereal Rust Early Warning & Fungicide Protocol:\n` +
-        `1. Stem/Yellow Rust (Puccinia spp.): Scout fields every 3-5 days. High humidity triggers rapid spore multiplication.\n` +
-        `2. Systemic Fungicide: Apply Tilt 250 EC (Propiconazole) or Rex Duo at 0.5 L/ha immediately upon observing orange/yellow pustules. Do not delay beyond 5% canopy infection.\n` +
-        `3. Drainage & Varieties: Plant certified rust-tolerant varieties (Kakaba, Ogolcho, Danda'a). Use BBM furrows to prevent waterlogging on vertisols.`;
-      responseAm = `የስንዴ እና ገብስ ሰብል የዋግ (ዝገት) መከላከያ መመሪያ፡\n` +
-        `1. የዋግ በሽታ (Stem/Yellow Rust)፡ በየ 3-5 ቀኑ እርሻዎን ይፈትሹ፤ ከፍተኛ እርጥበት የበሽታውን ስርጭት ያፋጥነዋል።\n` +
-        `2. ፀረ-ፈንገስ መድኃኒት፡ በቅጠሎች ላይ ብጫ ወይም ቀይ-ቡናማ አረፋ እንደታየ ቲልት 250 ኢሲ (Tilt 250 EC) ወይም ሬክስ ዱኦ በሄክታር 0.5 ሊትር ይርጩ።\n` +
-        `3. የተሻሻሉ ዝርያዎች፡ ዋግን የሚቋቋሙ የስንዴ ዝርያዎችን (ለምሳሌ ካካባ፣ ኦጎልቾ) ይጠቀሙ፤ በወላካ አፈር ላይ የውሃ ማስተላለፊያ ቦይ ያዘጋጁ።`;
+      responseEn = `### 🌾 Wheat & Cereal Rust Early Warning & Fungicide Protocol:\n\n` +
+        `**1. Stem & Yellow Rust (Puccinia spp.):**\n` +
+        `• Scout fields every 3-5 days. Cool night temperatures with high humidity trigger rapid spore multiplication.\n\n` +
+        `**2. Systemic Fungicide Intervention:**\n` +
+        `• Apply Tilt 250 EC (Propiconazole) or Rex Duo at 0.5 L/ha immediately upon observing orange/yellow pustules. Do not delay beyond 5% canopy infection.\n\n` +
+        `**3. Drainage & Certified Seed:**\n` +
+        `• Plant certified rust-tolerant varieties (Kakaba, Ogolcho, Danda'a). Use BBM furrows to prevent waterlogging on vertisols.`;
+      responseAm = `### 🌾 የስንዴ እና ገብስ ሰብል የዋግ (ዝገት) መከላከያ መመሪያ፡\n\n` +
+        `**1. የዋግ በሽታ (Stem/Yellow Rust)፡**\n` +
+        `• በየ 3-5 ቀኑ እርሻዎን ይፈትሹ፤ ከፍተኛ እርጥበት የበሽታውን ስርጭት ያፋጥነዋል።\n\n` +
+        `**2. ፀረ-ፈንገስ መድኃኒት፡**\n` +
+        `• በቅጠሎች ላይ ብጫ ወይም ቀይ-ቡናማ አረፋ እንደታየ ቲልት 250 ኢሲ (Tilt 250 EC) ወይም ሬክስ ዱኦ በሄክታር 0.5 ሊትር ይርጩ።\n\n` +
+        `**3. የተሻሻሉ ዝርያዎች፡**\n` +
+        `• ዋግን የሚቋቋሙ የስንዴ ዝርያዎችን (ካካባ፣ ኦጎልቾ) ይጠቀሙ፤ በወላካ አፈር ላይ የውሃ ማስተላለፊያ ቦይ ያዘጋጁ።`;
       action = 'Scout lower canopy for rust pustules and apply Tilt 250 EC fungicide immediately.';
     } else if (isMaize && (isPest || cleanText.includes('አባጨጓሬ') || cleanText.includes('ትል'))) {
-      responseEn = `Maize Fall Armyworm (FAW - Spodoptera frugiperda) Integrated Control:\n` +
-        `1. Scouting Protocol: Inspect 20 plants across 5 spots in your plot weekly. Look for window-pane leaf damage and sawdust-like frass in the central whorl.\n` +
-        `2. Chemical Control: Spray Ampligo 150 ZC (0.2-0.3 L/ha) or Coragen (0.15 L/ha) directly targeted into the plant whorls during early morning or late afternoon.\n` +
-        `3. Biological & Cultural Methods: Place bio-pesticide neem seed cake extract or fine wood ash into whorls. Practice push-pull companion planting with Desmodium.`;
-      responseAm = `የበቆሎ ሰብል እና የመኸር ሰራዊት አባጨጓሬ (ፎል አርሚዎርም) መከላከያ መመሪያ፡\n` +
-        `1. የክትትል ዘዴ፡ በየሳምንቱ በእርሻዎ ውስጥ የበቆሎውን እምብርት ይፈትሹ፤ የተቦረቦሩ ቅጠሎችና የአባጨጓሬ እዳሪ መኖሩን ያረጋግጡ።\n` +
-        `2. የኬሚካል መርጫ፡ አባጨጓሬው ከታየ አምፕሊጎ 150 ዜድሲ (Ampligo - 0.2-0.3 ሊ/ሄ) ወይም ኮራጅን ማለዳ ወይም ምሽት ላይ በቀጥታ ወደ እምብርቱ ይርጩ።\n` +
-        `3. የተፈጥሮ ዘዴ፡ የኒም ፍሬ ዱቄት ወይም የእንጨት አመድ በእምብርቱ ላይ ያድርጉ፤ ከዴስሞዲየም ሳር ጋር አሰባጥረው ይዝሩ።`;
+      responseEn = `### 🌽 Maize Fall Armyworm (FAW - Spodoptera frugiperda) Integrated Control:\n\n` +
+        `**1. Scouting Protocol:**\n` +
+        `• Inspect 20 plants across 5 spots in your plot weekly. Look for window-pane leaf damage and sawdust-like frass in the central whorl.\n\n` +
+        `**2. Chemical Control:**\n` +
+        `• Spray Ampligo 150 ZC (0.2-0.3 L/ha) or Coragen (0.15 L/ha) directly targeted into the plant whorls during early morning or late afternoon.\n\n` +
+        `**3. Biological & Cultural Methods:**\n` +
+        `• Place bio-pesticide neem seed cake extract or fine wood ash into whorls. Practice push-pull companion planting with Desmodium.`;
+      responseAm = `### 🌽 የበቆሎ ሰብል እና የመኸር ሰራዊት አባጨጓሬ (ፎል አርሚዎርም) መከላከያ መመሪያ፡\n\n` +
+        `**1. የክትትል ዘዴ፡**\n` +
+        `• በየሳምንቱ በእርሻዎ ውስጥ የበቆሎውን እምብርት ይፈትሹ፤ የተቦረቦሩ ቅጠሎችና የአባጨጓሬ እዳሪ መኖሩን ያረጋግጡ።\n\n` +
+        `**2. የኬሚካል መርጫ፡**\n` +
+        `• አባጨጓሬው ከታየ አምፕሊጎ 150 ዜድሲ (Ampligo - 0.2-0.3 ሊ/ሄ) ወይም ኮራጅን ማለዳ ወይም ምሽት ላይ በቀጥታ ወደ እምብርቱ ይርጩ።\n\n` +
+        `**3. የተፈጥሮ ዘዴ፡**\n` +
+        `• የኒም ፍሬ ዱቄት ወይም የእንጨት አመድ በእምብርቱ ላይ ያድርጉ፤ ከዴስሞዲየም ሳር ጋር አሰባጥረው ይዝሩ።`;
       action = 'Scout maize whorls for armyworm frass and spray Ampligo into whorls early morning.';
     } else if (isSoilOrLime) {
-      responseEn = `Soil Health, Acidity Remediation & Vertisol Management:\n` +
-        `1. Soil Acidity & Lime Application: For acidic soils (pH < 5.5 in Gojjam, Wollega, Sidama), broadcast agricultural lime (CaCO3) at 2-4 tons/ha 1 month before sowing and plow into top 15 cm.\n` +
-        `2. Heavy Clay / Vertisol Drainage: Use the Broad Bed and Furrow (BBM) system with 80 cm beds and 40 cm furrows to drain excess water and eliminate waterlogging.\n` +
-        `3. Integrated Fertility: Combine mineral fertilizers (NPS + Urea) with 5 tons/ha well-rotted farmyard compost to replenish organic matter and trace minerals.`;
-      responseAm = `የአፈር ጤና፣ የአሲድ ማከሚያ ኖራ እና የወላካ አፈር መመሪያ፡\n` +
-        `1. የአፈር አሲዳማነትና የኖራ አጠቃቀም፡ አሲዳማ በሆኑ አፈሮች ላይ (ለምሳሌ ጎጃም፣ ወለጋ፣ ሲዳማ) በሄክታር ከ2-4 ቶን የግብርና ኖራ ከመዝራት 1 ወር በፊት በተኑና አፈሩን እሹት።\n` +
-        `2. የወላካ (ደለል) አፈር የውሃ ፍሳሽ፡ ውሃ እንዳይተኛ የቦይና እርከን ማስተላለፊያ (BBM) በመጠቀም ከመጠን በላይ የሆነውን የዝናብ ውሃ ያስወግዱ።\n` +
-        `3. የተቀናጀ ማዳበሪያ፡ NPS እና ዩሪያን ከ 5 ቶን የበሰበሰ የተፈጥሮ ኮምፖስት ጋር አቀናጅተው በመጠቀም የአፈሩን ለምነት ያሳድጉ።`;
+      responseEn = `### 🧪 Soil Health, Acidity Remediation & Vertisol Management:\n\n` +
+        `**1. Soil Acidity & Lime Application:**\n` +
+        `• For acidic soils (pH < 5.5 in Gojjam, Wollega, Sidama), broadcast agricultural lime (CaCO3) at 2-4 tons/ha 1 month before sowing and plow into top 15 cm.\n\n` +
+        `**2. Heavy Clay / Vertisol Drainage:**\n` +
+        `• Use the Broad Bed and Furrow (BBM) system with 80 cm beds and 40 cm furrows to drain excess water and eliminate waterlogging.\n\n` +
+        `**3. Integrated Fertility:**\n` +
+        `• Combine mineral fertilizers (NPS + Urea) with 5 tons/ha well-rotted farmyard compost to replenish organic matter and trace minerals.`;
+      responseAm = `### 🧪 የአፈር ጤና፣ የአሲድ ማከሚያ ኖራ እና የወላካ አፈር መመሪያ፡\n\n` +
+        `**1. የአፈር አሲዳማነትና የኖራ አጠቃቀም፡**\n` +
+        `• አሲዳማ በሆኑ አፈሮች ላይ (ለምሳሌ ጎጃም፣ ወለጋ፣ ሲዳማ) በሄክታር ከ2-4 ቶን የግብርና ኖራ ከመዝራት 1 ወር በፊት በተኑና አፈሩን እሹት።\n\n` +
+        `**2. የወላካ (ደለል) አፈር የውሃ ፍሳሽ፡**\n` +
+        `• ውሃ እንዳይተኛ የቦይና እርከን ማስተላለፊያ (BBM) በመጠቀም ከመጠን በላይ የሆነውን የዝናብ ውሃ ያስወግዱ።\n\n` +
+        `**3. የተቀናጀ ማዳበሪያ፡**\n` +
+        `• NPS እና ዩሪያን ከ 5 ቶን የበሰበሰ የተፈጥሮ ኮምፖስት ጋር አቀናጅተው በመጠቀም የአፈሩን ለምነት ያሳድጉ።`;
       action = 'Apply agricultural lime at 2-4 t/ha for acidic soils and construct BBM drainage furrows on vertisols.';
     } else if (isWater) {
-      responseEn = `Climate-Smart Soil Moisture & Irrigation Management:\n` +
-        `1. Moisture Conservation: Spread 3-5 cm crop residue mulch (teff straw or dry grass) to suppress evaporation by up to 40% and regulate soil temperature.\n` +
-        `2. Water Harvesting: Implement tied ridges and contour bunds across slopes to capture runoff and enhance in-situ soil infiltration.\n` +
-        `3. Supplemental Irrigation: Prioritize watering during critical flowering and grain filling stages to protect against yield penalties during dry spells.`;
-      responseAm = `የአፈር እርጥበት ጥበቃ እና የመስኖ አጠቃቀም መመሪያ፡\n` +
-        `1. እርጥበትን ማቆየት፡ የአፈርን እርጥበት ለመጠበቅ በደረቅ ገለባ/ሳር አፈሩን ከ3-5 ሳ.ሜ ይሸፍኑ (Mulching)፤ ይህም የውሃ ትነትን በ40% ይቀንሳል።\n` +
-        `2. ዝናብን መያዝ፡ በዳገታማ መሬት ላይ እርከን እና የውሃ መያዣ ጉድጓዶችን (Tied ridges) በማዘጋጀት የዝናብ ውሃን አፈር ውስጥ እንዲሰርግ ያድርጉ።\n` +
-        `3. የመስኖ ጊዜ፡ በሰብሉ የአበባና የፍሬ መያዣ ወቅት ተጨማሪ የመስኖ ውሃ በማቅረብ ድርቅን ይከላከሉ።`;
+      responseEn = `### 💧 Climate-Smart Soil Moisture & Irrigation Management:\n\n` +
+        `**1. Moisture Conservation:**\n` +
+        `• Spread 3-5 cm crop residue mulch (teff straw or dry grass) to suppress evaporation by up to 40% and regulate soil temperature.\n\n` +
+        `**2. In-Situ Water Harvesting:**\n` +
+        `• Implement tied ridges and contour bunds across slopes to capture runoff and enhance in-situ soil infiltration.\n\n` +
+        `**3. Critical Growth Stages:**\n` +
+        `• Prioritize watering during critical flowering and grain filling stages to protect against yield penalties during dry spells.`;
+      responseAm = `### 💧 የአፈር እርጥበት ጥበቃ እና የመስኖ አጠቃቀም መመሪያ፡\n\n` +
+        `**1. እርጥበትን ማቆየት፡**\n` +
+        `• የአፈርን እርጥበት ለመጠበቅ በደረቅ ገለባ/ሳር አፈሩን ከ3-5 ሳ.ሜ ይሸፍኑ (Mulching)፤ ይህም የውሃ ትነትን በ40% ይቀንሳል።\n\n` +
+        `**2. ዝናብን መያዝ፡**\n` +
+        `• በዳገታማ መሬት ላይ እርከን እና የውሃ መያዣ ጉድጓዶችን (Tied ridges) በማዘጋጀት የዝናብ ውሃን አፈር ውስጥ እንዲሰርግ ያድርጉ።\n\n` +
+        `**3. የመስኖ ጊዜ፡**\n` +
+        `• በሰብሉ የአበባና የፍሬ መያዣ ወቅት ተጨማሪ የመስኖ ውሃ በማቅረብ ድርቅን ይከላከሉ።`;
       action = 'Apply straw mulching and maintain tied ridges to preserve root-zone soil moisture.';
     } else if (isFertilizer) {
-      responseEn = `Balanced Fertilizer Schedule for Ethiopian Soils:\n` +
-        `1. Basal Application (At Sowing): Apply 100 kg/ha NPS-Boron/Zinc based on Ethiopian Soil Information System (EthioSIS) soil fertility maps.\n` +
-        `2. Top-Dressing (Split Urea): Apply 50-100 kg/ha Urea in two splits: 50% at active tillering/knee-high and 50% prior to booting/flowering.\n` +
-        `3. Organic Integration: Supplement with 5-8 tons/ha well-decomposed compost or farmyard manure to enhance soil organic carbon and micro-nutrient uptake.`;
-      responseAm = `ለኢትዮጵያ አፈር የተመጣጠነ የማዳበሪያ አጠቃቀም መመሪያ፡\n` +
-        `1. በመዝሪያ ወቅት (መሰረታዊ)፡ በሄክታር 100 ኪ.ግ NPS-B በማዳበሪያ ካርታ (EthioSIS) መሰረት ከዘሩ ስር ያድርጉ።\n` +
-        `2. ዩሪያ (ናይትሮጂን) አጠቃቀም፡ በሄክታር 100 ኪ.ግ ዩሪያ ለሁለት ከፍለው በብቅለት ወቅት እና ሰብሉ አበባ ከመያዙ በፊት አፈሩ እርጥብ ሲሆን ይጨምሩ።\n` +
-        `3. የተፈጥሮ ማዳበሪያ፡ በሄክታር ከ5-8 ቶን የበሰበሰ ኮምፖስት በማከል የአፈሩን ለምነትና የውሃ የመያዝ አቅም ያሳድጉ።`;
+      responseEn = `### 🧪 Balanced Fertilizer Schedule for Ethiopian Soils:\n\n` +
+        `**1. Basal Application (At Sowing):**\n` +
+        `• Apply 100 kg/ha NPS-Boron/Zinc based on Ethiopian Soil Information System (EthioSIS) soil fertility maps.\n\n` +
+        `**2. Top-Dressing (Split Urea):**\n` +
+        `• Apply 50-100 kg/ha Urea in two splits: 50% at active tillering/knee-high and 50% prior to booting/flowering.\n\n` +
+        `**3. Organic Integration:**\n` +
+        `• Supplement with 5-8 tons/ha well-decomposed compost or farmyard manure to enhance soil organic carbon and micro-nutrient uptake.`;
+      responseAm = `### 🧪 ለኢትዮጵያ አፈር የተመጣጠነ የማዳበሪያ አጠቃቀም መመሪያ፡\n\n` +
+        `**1. በመዝሪያ ወቅት (መሰረታዊ)፡**\n` +
+        `• በሄክታር 100 ኪ.ግ NPS-B በማዳበሪያ ካርታ (EthioSIS) መሰረት ከዘሩ ስር ያድርጉ።\n\n` +
+        `**2. ዩሪያ (ናይትሮጂን) አጠቃቀም፡**\n` +
+        `• በሄክታር 100 ኪ.ግ ዩሪያ ለሁለት ከፍለው በብቅለት ወቅት እና ሰብሉ አበባ ከመያዙ በፊት አፈሩ እርጥብ ሲሆን ይጨምሩ።\n\n` +
+        `**3. የተፈጥሮ ማዳበሪያ፡**\n` +
+        `• በሄክታር ከ5-8 ቶን የበሰበሰ ኮምፖስት በማከል የአፈሩን ለምነትና የውሃ የመያዝ አቅም ያሳድጉ።`;
       action = 'Apply basal NPS-B fertilizer at planting and split Urea application when soil is moist.';
     } else if (isTeff) {
-      responseEn = `Comprehensive Teff (Eragrostis tef) Agronomic Advisory:\n` +
-        `1. Sowing & Planting: Sow 10-15 kg/ha with row spacing of 20 cm for lodging reduction, or broadcast on well-pulverized, firm seedbeds during late July to early August (Meher season).\n` +
-        `2. Nutrient Management: Apply 100 kg/ha NPS-Boron at planting. Top-dress with 50 kg/ha Urea at first tillering (30-35 days after planting) when soil has good moisture.\n` +
-        `3. Weed & Rust Control: Hand-weed at 25-30 days or apply 2,4-D amine salt. For Teff leaf rust (Uromyces eragrostidis), spray Tilt 250 EC (Propiconazole) at 0.5 L/ha if brown pustules emerge.\n` +
-        `4. Lodging Mitigation: Avoid excessive nitrogen and roll seedbed firmly before and after seeding.`;
-      responseAm = `የጤፍ (Eragrostis tef) የተሟላ የግብርናና የሰብል እንክብካቤ መመሪያ፡\n` +
-        `1. የመዝሪያ ወቅትና ዘዴ፡ በመኸር ወቅት ከሐምሌ አጋማሽ እስከ ነሐሴ መጀመሪያ፤ በመስመር ሲዘራ በሄክታር ከ10-15 ኪ.ግ ዘር ከ20 ሳ.ሜ ርቀት ጋር ይጠቀሙ።\n` +
-        `2. የማዳበሪያ አጠቃቀም፡ በመዝሪያ ወቅት 100 ኪ.ግ/ሄ NPS-B፤ በብቅለት ወቅት (ዘር ከተዘራ ከ30-35 ቀናት በኋላ አፈሩ እርጥብ ሲሆን) 50 ኪ.ግ/ሄ ዩሪያ ይጨምሩ።\n` +
-        `3. አረም እና በሽታ መከላከል፡ በመጀመሪያው ወር አረም ያርሙ። የጤፍ ዝገት/ዋግ ምልክት ከታየ ፀረ-ፈንገስ ቲልት 250 ኢሲ (Tilt) በሄክታር 0.5 ሊትር ይርጩ።\n` +
-        `4. መተኛትን (Lodging) መከላከል፡ ከመጠን በላይ ናይትሮጂን አይጠቀሙ፤ መሬቱን በሚገባ በማለስለስና በማደላደል ዘሩን ይዝሩ።`;
+      responseEn = `### 🌾 Comprehensive Teff (Eragrostis tef) Agronomic Advisory:\n\n` +
+        `**1. Sowing & Planting Specifications:**\n` +
+        `• Sow 10-15 kg/ha with row spacing of 20 cm for lodging reduction, or broadcast on well-pulverized, firm seedbeds during late July to early August (Meher season).\n\n` +
+        `**2. Nutrient Management:**\n` +
+        `• Apply 100 kg/ha NPS-Boron at planting. Top-dress with 50 kg/ha Urea at first tillering (30-35 days after planting) when soil has good moisture.\n\n` +
+        `**3. Weed & Rust Control:**\n` +
+        `• Hand-weed at 25-30 days or apply 2,4-D amine salt. For Teff leaf rust (Uromyces eragrostidis), spray Tilt 250 EC (Propiconazole) at 0.5 L/ha if brown pustules emerge.\n\n` +
+        `**4. Lodging Mitigation:**\n` +
+        `• Avoid excessive nitrogen and roll seedbed firmly before and after seeding.`;
+      responseAm = `### 🌾 የጤፍ (Eragrostis tef) የተሟላ የግብርናና የሰብል እንክብካቤ መመሪያ፡\n\n` +
+        `**1. የመዝሪያ ወቅትና ዘዴ፡**\n` +
+        `• በመኸር ወቅት ከሐምሌ አጋማሽ እስከ ነሐሴ መጀመሪያ፤ በመስመር ሲዘራ በሄክታር ከ10-15 ኪ.ግ ዘር ከ20 ሳ.ሜ ርቀት ጋር ይጠቀሙ።\n\n` +
+        `**2. የማዳበሪያ አጠቃቀም፡**\n` +
+        `• በመዝሪያ ወቅት 100 ኪ.ግ/ሄ NPS-B፤ በብቅለት ወቅት (ዘር ከተዘራ ከ30-35 ቀናት በኋላ አፈሩ እርጥብ ሲሆን) 50 ኪ.ግ/ሄ ዩሪያ ይጨምሩ።\n\n` +
+        `**3. አረም እና በሽታ መከላከል፡**\n` +
+        `• በመጀመሪያው ወር አረም ያርሙ። የጤፍ ዝገት/ዋግ ምልክት ከታየ ፀረ-ፈንገስ ቲልት 250 ኢሲ (Tilt) በሄክታር 0.5 ሊትር ይርጩ።\n\n` +
+        `**4. መተኛትን (Lodging) መከላከል፡**\n` +
+        `• ከመጠን በላይ ናይትሮጂን አይጠቀሙ፤ መሬቱን በሚገባ በማለስለስና በማደላደል ዘሩን ይዝሩ።`;
       action = 'Follow recommended Teff row-planting spacing (20cm) and apply top-dressing Urea at tillering.';
     } else if (isMaize) {
-      responseEn = `Maize (Zea mays) High-Yield Cultivation Advisory:\n` +
-        `1. Planting Specifications: Sow 25 kg/ha certified hybrid seed (e.g., BH661, BH540) with 75 cm row spacing and 25 cm plant spacing at onset of main rains.\n` +
-        `2. Fertilization: Apply 100 kg/ha NPS at planting; top-dress 100 kg/ha Urea split equally at knee-high and tasseling stages.\n` +
-        `3. Weed & Pest Management: Keep field weed-free during first 45 days. Scout weekly for Fall Armyworm and stem borers.`;
-      responseAm = `የበቆሎ (Zea mays) የተሻሻለ የአመራረት መመሪያ፡\n` +
-        `1. የመዝሪያ ዝርዝር፡ በሄክታር 25 ኪ.ግ የተሻሻለ ዝርያ (BH661፣ BH540) በመስመሮች መካከል 75 ሳ.ሜ፣ በቡቃያዎች መካከል 25 ሳ.ሜ ርቀት ጠብቀው ይዝሩ።\n` +
-        `2. የማዳበሪያ አጠቃቀም፡ 100 ኪ.ግ NPS በመዝሪያ ወቅት፤ 100 ኪ.ግ ዩሪያ ለሁለት ከፍለው በጉልበት እና በአበባ ወቅት ይጨምሩ።\n` +
-        `3. አረም እና ተባይ፡ በመጀመሪያዎቹ 45 ቀናት አረም እንዳይበቅል ያድርጉ፤ የአባጨጓሬ ክትትል ያድርጉ።`;
+      responseEn = `### 🌽 Maize (Zea mays) High-Yield Cultivation Advisory:\n\n` +
+        `**1. Planting Specifications:**\n` +
+        `• Sow 25 kg/ha certified hybrid seed (BH661, BH540) with 75 cm row spacing and 25 cm plant spacing at onset of main rains.\n\n` +
+        `**2. Fertilization:**\n` +
+        `• Apply 100 kg/ha NPS at planting; top-dress 100 kg/ha Urea split equally at knee-high and tasseling stages.\n\n` +
+        `**3. Weed & Pest Management:**\n` +
+        `• Keep field weed-free during first 45 days. Scout weekly for Fall Armyworm and stem borers.`;
+      responseAm = `### 🌽 የበቆሎ (Zea mays) የተሻሻለ የአመራረት መመሪያ፡\n\n` +
+        `**1. የመዝሪያ ዝርዝር፡**\n` +
+        `• በሄክታር 25 ኪ.ግ የተሻሻለ ዝርያ (BH661፣ BH540) በመስመሮች መካከል 75 ሳ.ሜ፣ በቡቃያዎች መካከል 25 ሳ.ሜ ርቀት ጠብቀው ይዝሩ።\n\n` +
+        `**2. የማዳበሪያ አጠቃቀም፡**\n` +
+        `• 100 ኪ.ግ NPS በመዝሪያ ወቅት፤ 100 ኪ.ግ ዩሪያ ለሁለት ከፍለው በጉልበት እና በአበባ ወቅት ይጨምሩ።\n\n` +
+        `**3. አረም እና ተባይ፡**\n` +
+        `• በመጀመሪያዎቹ 45 ቀናት አረም እንዳይበቅል ያድርጉ፤ የአባጨጓሬ ክትትል ያድርጉ።`;
       action = 'Plant certified hybrid maize at 75x25 cm spacing and follow split Urea schedule.';
     } else if (isLegumes) {
-      responseEn = `Grain Legumes & Pulses (Faba Bean, Chickpea, Lentil, Field Pea):\n` +
-        `1. Chocolate Spot (Botrytis fabae): On faba beans, spray Mancozeb 80% WP or Tilt 250 EC immediately upon observing reddish-brown circular spots.\n` +
-        `2. Inoculation & Nitrogen Fixation: Inoculate seed with Rhizobium bio-fertilizer before sowing to enhance biological nitrogen fixation; apply 100 kg/ha NPS at planting.\n` +
-        `3. Crop Rotation Benefit: Rotating cereals (Wheat/Teff) with legumes breaks root rot disease cycles and leaves up to 40 kg/ha residual nitrogen in the soil.`;
-      responseAm = `የጥራጥሬ ሰብሎች (ባቄላ፣ ሽምብራ፣ ምስር፣ አተር) እንክብካቤ መመሪያ፡\n` +
-        `1. የባቄላ ቸኮሌት ነጠብጣብ (Chocolate Spot)፡ ቀይ-ቡናማ ነጠብጣብ በቅጠሎች ላይ ሲታይ ማንኮዜብ 80% ደብሊውፒ ወይም ቲልት ፀረ-ፈንገስ በአፋጣኝ ይርጩ።\n` +
-        `2. ባዮ-ማዳበሪያና ናይትሮጂን፡ ናይትሮጂን ከአየር እንዲስብ የራይዞቢየም (Rhizobium) ባዮ-ማዳበሪያ ከዘሩ ጋር ቀላቅለው ይዝሩ፤ 100 ኪ.ግ NPS ይጠቀሙ።\n` +
-        `3. ሰብል ማፈራረቅ፡ ስንዴን ወይም ጤፍን ከጥራጥሬ ጋር ማፈራረቅ የአፈር ለምነትን ይጨምራል፤ የአፈር ወለድ በሽታዎችን ያጠፋል።`;
+      responseEn = `### 🫘 Grain Legumes & Pulses (Faba Bean, Chickpea, Lentil, Field Pea):\n\n` +
+        `**1. Chocolate Spot (Botrytis fabae):**\n` +
+        `• On faba beans, spray Mancozeb 80% WP or Tilt 250 EC immediately upon observing reddish-brown circular spots.\n\n` +
+        `**2. Inoculation & Nitrogen Fixation:**\n` +
+        `• Inoculate seed with Rhizobium bio-fertilizer before sowing to enhance biological nitrogen fixation; apply 100 kg/ha NPS at planting.\n\n` +
+        `**3. Crop Rotation Benefit:**\n` +
+        `• Rotating cereals (Wheat/Teff) with legumes breaks root rot disease cycles and leaves up to 40 kg/ha residual nitrogen in the soil.`;
+      responseAm = `### 🫘 የጥራጥሬ ሰብሎች (ባቄላ፣ ሽምብራ፣ ምስር፣ አተር) እንክብካቤ መመሪያ፡\n\n` +
+        `**1. የባቄላ ቸኮሌት ነጠብጣብ (Chocolate Spot)፡**\n` +
+        `• ቀይ-ቡናማ ነጠብጣብ በቅጠሎች ላይ ሲታይ ማንኮዜብ 80% ደብሊውፒ ወይም ቲልት ፀረ-ፈንገስ በአፋጣኝ ይርጩ።\n\n` +
+        `**2. ባዮ-ማዳበሪያና ናይትሮጂን፡**\n` +
+        `• ናይትሮጂን ከአየር እንዲስብ የራይዞቢየም (Rhizobium) ባዮ-ማዳበሪያ ከዘሩ ጋር ቀላቅለው ይዝሩ፤ 100 ኪ.ግ NPS ይጠቀሙ።\n\n` +
+        `**3. ሰብል ማፈራረቅ፡**\n` +
+        `• ስንዴን ወይም ጤፍን ከጥራጥሬ ጋር ማፈራረቅ የአፈር ለምነትን ይጨምራል፤ የአፈር ወለድ በሽታዎችን ያጠፋል።`;
       action = 'Inoculate legume seeds with Rhizobium and spray Mancozeb early against Chocolate Spot.';
     } else if (isCoffee) {
-      responseEn = `Coffee (Coffea arabica) Agronomy & Shade Management:\n` +
-        `1. Coffee Berry Disease (Colletotrichum kahawae): Spray Copper Hydroxide (Kocide) or Cabrio Duo at pinhead berry stage with 3-4 repeat applications during main rainy season.\n` +
-        `2. Shade & Soil Management: Maintain 30-40% canopy shade with leguminous trees (Cordia africana, Millettia ferruginea, Albizia gummifera). Apply 10-15 tons/ha organic mulch.\n` +
-        `3. Quality Harvesting: Selectively pick only uniform, deep-red cherries (cherries at peak sucrose density) to maximize specialty cupping score.`;
-      responseAm = `የቡና (Coffea arabica) እንክብካቤ፣ ጥላና የጥራት መመሪያ፡\n` +
-        `1. የቡና ፍሬ በሽታ (CBD)፡ ፍሬው በሚይዝበት ወቅት የኮፐር ሃይድሮክሳይድ (Kocide) ወይም ካብሪዮ ዱኦ ፀረ-ፈንገስ በዝናብ ወቅት በየ 4 ሳምንቱ ይርጩ።\n` +
-        `2. የጥላ ዛፎችና አፈር፡ ከ30-40% ጥላ የሚሰጡ ዛፎችን (ለምሳሌ ዋንዛ፣ ብርብራ) በእርሻው ውስጥ ይትከሉ፤ የአፈር እርጥበትን በደረቅ ገለባ/ቅጠል ይሸፍኑ።\n` +
-        `3. ምርት አሰባሰብ፡ የቀይ ወርቅ (ሙሉ በሙሉ የበሰሉ ቀይ ፍሬዎችን) ብቻ ለይተው በመልቀም የቡናውን ጥራትና ዋጋ ያሳድጉ።`;
+      responseEn = `### ☕ Coffee (Coffea arabica) Agronomy & Shade Management:\n\n` +
+        `**1. Coffee Berry Disease (Colletotrichum kahawae):**\n` +
+        `• Spray Copper Hydroxide (Kocide) or Cabrio Duo at pinhead berry stage with 3-4 repeat applications during main rainy season.\n\n` +
+        `**2. Shade & Soil Management:**\n` +
+        `• Maintain 30-40% canopy shade with leguminous trees (Cordia africana, Millettia ferruginea, Albizia gummifera). Apply 10-15 tons/ha organic mulch.\n\n` +
+        `**3. Quality Harvesting:**\n` +
+        `• Selectively pick only uniform, deep-red cherries (cherries at peak sucrose density) to maximize specialty cupping score.`;
+      responseAm = `### ☕ የቡና (Coffea arabica) እንክብካቤ፣ ጥላና የጥራት መመሪያ፡\n\n` +
+        `**1. የቡና ፍሬ በሽታ (CBD)፡**\n` +
+        `• ፍሬው በሚይዝበት ወቅት የኮፐር ሃይድሮክሳይድ (Kocide) ወይም ካብሪዮ ዱኦ ፀረ-ፈንገስ በዝናብ ወቅት በየ 4 ሳምንቱ ይርጩ።\n\n` +
+        `**2. የጥላ ዛፎችና አፈር፡**\n` +
+        `• ከ30-40% ጥላ የሚሰጡ ዛፎችን (ዋንዛ፣ ብርብራ) በእርሻው ውስጥ ይትከሉ፤ የአፈር እርጥበትን በደረቅ ገለባ/ቅጠል ይሸፍኑ።\n\n` +
+        `**3. ምርት አሰባሰብ፡**\n` +
+        `• የቀይ ወርቅ (ሙሉ በሙሉ የበሰሉ ቀይ ፍሬዎችን) ብቻ ለይተው በመልቀም የቡናውን ጥራትና ዋጋ ያሳድጉ።`;
       action = 'Apply Copper Hydroxide spray at berry expansion stage and harvest only ripe red cherries.';
     } else {
       // Dynamic contextual agronomy handler
-      responseEn = `Agronomic Advisory regarding "${cleanText}":\n` +
-        `1. Scientific Analysis: For optimal crop performance, ensure timely field inspection every 3-5 days to monitor soil moisture, vegetative growth stages, and initial stress symptoms.\n` +
-        `2. Integrated Management: Balance soil nutrition using basal NPS and top-dressed nitrogen according to local woreda fertility maps. Implement proactive drainage to prevent root hypoxia.\n` +
-        `3. Advisory & Follow-up: Follow local kebele development agent recommendations and consult EthioFarm risk bulletins for downscaled weather and pest forecasts.`;
-      responseAm = `ስለ ጥያቄዎ "${cleanText}" የተሰጠ የግብርና ባለሙያ መመሪያ፡\n` +
-        `1. ሳይንሳዊ ክትትል፡ ከፍተኛ ምርት ለማግኘት በየ 3-5 ቀኑ እርሻዎን በመፈተሽ የአፈር እርጥበትን፣ የሰብል እድገትንና የጭንቀት ምልክቶችን በጊዜ ይከታተሉ።\n` +
-        `2. የተቀናጀ እንክብካቤ፡ በአካባቢዎ የአፈር ለምነት ካርታ መሰረት የተመጣጠነ ማዳበሪያ (NPS እና ዩሪያ) ይጠቀሙ፤ ውሃ በእርሻው እንዳይተኛ የፍሳሽ ቦይ ያዘጋጁ።\n` +
-        `3. ተጨማሪ ምክር፡ ከአካባቢዎ የቀበሌ ግብርና ባለሙያ ጋር ይመካከሩ፤ በአግሪቴክ መተግበሪያ የሚተላለፉ የአየር ሁኔታ እና የተባይ ቅድመ ማስጠንቀቂያዎችን ይከታተሉ።`;
-      action = 'Conduct field scouting, maintain soil drainage, and consult extension advisories.';
+      responseEn = `### 🌾 Comprehensive Agronomic Advisory regarding "${cleanText}":\n\n` +
+        `**1. 🔍 Scientific Field Diagnosis & Inspection:**\n` +
+        `• Regularly inspect crops and soil every 3-5 days across all field corners. Monitor soil moisture tension, leaf color variations, and early onset of pest colonization.\n\n` +
+        `**2. 📋 Step-by-Step Management Protocol:**\n` +
+        `• Plant certified, disease-screened seed suited to your agro-ecological altitude (Highland/Dega, Midland/Weyna Dega, Lowland/Kolla).\n` +
+        `• Follow recommended row planting spacing to ensure canopy aeration and optimize plant population density.\n\n` +
+        `**3. 💊 Soil Fertility & Crop Protection:**\n` +
+        `• Apply basal compound fertilizer (100 kg/ha NPS-Boron/Zinc) placed at sowing and split top-dress nitrogen (Urea) when soil has optimal moisture.\n` +
+        `• For insect pests, scout early and apply targeted EPA-registered bio-pesticides or approved synthetic chemistries during early mornings to protect pollinators.\n\n` +
+        `**4. 🛡️ Sustainable Farm Resilience:**\n` +
+        `• Maintain Broad Bed & Furrows (BBM) on heavy clay soils to prevent waterlogging, and mulch with dry teff/wheat straw to protect soil microbes.`;
+      responseAm = `### 🌾 ስለ ጥያቄዎ "${cleanText}" የተሰጠ የተሟላ የግብርና ባለሙያ መመሪያ፡\n\n` +
+        `**1. 🔍 ሳይንሳዊ ምርመራና ክትትል፡**\n` +
+        `• በየ 3-5 ቀኑ እርሻዎን በመፈተሽ የአፈር እርጥበትን፣ የቅጠሎችን ቀለምና የሰብል እድገት ደረጃ በንቃት ይከታተሉ።\n\n` +
+        `**2. 📋 ደረጃ በደረጃ የሚተገበሩ ተግባራት፡**\n` +
+        `• ለአካባቢዎ ከፍታ (ደጋ፣ ወይና ደጋ፣ ቆላ) ተስማሚ የሆኑ የተመሰከረላቸውን ምርጥ ዘሮች ይጠቀሙ።\n` +
+        `• አየር እንዲዘዋወር እና ምርታማነት እንዲጨምር በመስመር የመዝራት ዘዴን ይከተሉ።\n\n` +
+        `**3. 💊 የአፈር ማዳበሪያና ሰብል ጥበቃ፡**\n` +
+        `• በመዝሪያ ወቅት 100 ኪ.ግ/ሄ NPS-B፤ በብቅለትና ማደጊያ ወቅት ደግሞ ዩሪያ አፈሩ እርጥብ በሆነበት ጊዜ ይጨምሩ።\n` +
+        `• ተባዮች ከታዩ በጊዜ በመለየት ንቦች በማይበሩበት በማለዳ ወቅት የሚመከሩ ፀረ-ተባዮችን ይርጩ።\n\n` +
+        `**4. 🛡️ ዘላቂ የአፈርና እርሻ ጥበቃ፡**\n` +
+        `• ውሃ በሚተኛበት አፈር ላይ የፍሳሽ ቦይ ያዘጋጁ፤ አፈሩ እንዳይደርቅ በደረቅ ገለባ ይሸፍኑ። ከአካባቢዎ የልማት ጣቢያ ባለሙያ ጋር ይመካከሩ።`;
+      action = 'Conduct field scouting, apply balanced NPS/Urea fertilizer, and maintain drainage furrows.';
     }
 
     return {

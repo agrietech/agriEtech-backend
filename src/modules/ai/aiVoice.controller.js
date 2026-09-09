@@ -33,6 +33,9 @@ async function handleVoiceInquiry(req, res, next) {
       }
     }
 
+    const host = req.get('host');
+    const baseUrl = host ? `${req.protocol}://${host}` : null;
+
     const result = await aiVoiceService.processVoiceInquiry({
       userQuestion,
       audioTranscript,
@@ -40,6 +43,7 @@ async function handleVoiceInquiry(req, res, next) {
       language: lang,
       farmContext,
       userId: req.user?.id || null,
+      baseUrl,
     });
 
     res.status(200).json({
@@ -56,10 +60,13 @@ async function handleTextToSpeech(req, res, next) {
   try {
     const { text, language } = req.body || {};
     const lang = language || req.query.lang || 'am';
+    const host = req.get('host');
+    const baseUrl = host ? `${req.protocol}://${host}` : null;
 
     const result = await aiVoiceService.synthesizeSpeech({
       text: text || req.query.text,
       language: lang,
+      baseUrl,
     });
 
     res.status(200).json({
