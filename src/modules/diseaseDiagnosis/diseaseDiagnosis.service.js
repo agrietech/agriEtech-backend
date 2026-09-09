@@ -603,12 +603,68 @@ async function getDiagnosesByFarm(farmId, user) {
   return getAllDiagnoses({ farmId, user });
 }
 
+/**
+ * Get single diagnosis by ID with farm and jurisdictional context
+ */
+async function getDiagnosisById(id, user) {
+  if (!id) {
+    throw new NotFoundError('Diagnosis ID is required');
+  }
+
+  const diagnosis = await prisma.diseaseDiagnosis.findUnique({
+    where: { id },
+    include: {
+      farm: {
+        select: {
+          id: true,
+          farmName: true,
+          primaryCrop: true,
+          userId: true,
+          woredaId: true,
+          woreda: {
+            select: {
+              id: true,
+              nameEn: true,
+              nameAm: true,
+              zoneId: true,
+              zone: {
+                select: {
+                  id: true,
+                  nameEn: true,
+                  nameAm: true,
+                  regionId: true,
+                  region: { select: { id: true, nameEn: true, nameAm: true } },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!diagnosis) {
+    throw new NotFoundError(`Diagnosis with ID '${id}' not found`);
+  }
+
+  // Jurisdictional check for scoped users
+  if (user && isConnected() && diagnosis.farm) {
+    const role = (user.role || 'FARMER').toUpperCase();
+    if (role === 'FARMER' && diagnosis.farm.userId && diagnosis.farm.userId !== user.id && diagnosis.farmId !== 'farm_demo_01') {
+      throw new ForbiddenError('Access denied: You can only view diagnoses for your own farm');
+    }
+  }
+
+  return diagnosis;
+}
+
 module.exports = {
   diagnoseCropImage,
   submitAsyncDiagnosis,
   getDiagnosisJobStatus,
   getAllDiagnoses,
   getDiagnosesByFarm,
+  getDiagnosisById,
   getDiagnosisJobState,
 };
 

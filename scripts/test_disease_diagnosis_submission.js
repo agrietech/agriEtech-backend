@@ -65,15 +65,42 @@ async function testDiseaseDiagnosisSubmission() {
   // Test 3: Retrieve Diagnosis Records List
   totalTests++;
   console.log('[Test 3] Testing retrieval of diagnosis records...');
+  let latestId = null;
   try {
     const records = await diseaseService.getAllDiagnoses({});
     console.log(`   Records retrieved: ${records.length}`);
+    if (records.length > 0) {
+      latestId = records[0].id;
+    }
 
     if (Array.isArray(records)) {
       console.log('✅ PASS: Diagnosis records list retrieved successfully!\n');
       passedTests++;
     } else {
       console.log('❌ FAIL: Diagnosis records retrieval failed!\n');
+    }
+  } catch (err) {
+    console.log(`❌ ERROR: ${err.message}\n`);
+  }
+
+  // Test 4: Retrieve Single Diagnosis by ID
+  totalTests++;
+  console.log(`[Test 4] Testing retrieval of single diagnosis record by ID (${latestId})...`);
+  try {
+    if (latestId) {
+      const singleRecord = await diseaseService.getDiagnosisById(latestId, { role: 'ADMIN' });
+      console.log('   Retrieved Single ID:', singleRecord.id);
+      console.log('   Retrieved Crop:', singleRecord.cropIdentified || singleRecord.cropType);
+      console.log('   Retrieved Disease:', singleRecord.diseaseName);
+
+      if (singleRecord && singleRecord.id === latestId) {
+        console.log('✅ PASS: Single diagnosis record fetched cleanly by ID!\n');
+        passedTests++;
+      } else {
+        console.log('❌ FAIL: Retrieved record does not match requested ID!\n');
+      }
+    } else {
+      console.log('⚠️ SKIP: No records available to test single ID retrieval\n');
     }
   } catch (err) {
     console.log(`❌ ERROR: ${err.message}\n`);

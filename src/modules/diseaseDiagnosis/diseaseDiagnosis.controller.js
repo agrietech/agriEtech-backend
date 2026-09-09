@@ -73,10 +73,20 @@ async function getDiagnosesByFarm(req, res, next) {
   }
 }
 
+async function getDiagnosisById(req, res, next) {
+  try {
+    const data = await diseaseService.getDiagnosisById(req.params.id, req.user);
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   diagnose,
   getJobStatus,
   getAllDiagnoses,
   getDiagnosesByFarm,
+  getDiagnosisById,
 };
 

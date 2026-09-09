@@ -10,6 +10,7 @@ router.get('/', authenticate, controller.getAllDiagnoses);
 router.get('/farm/:farmId', authenticate, controller.getDiagnosesByFarm);
 router.get('/jobs/:jobId', authenticate, controller.getJobStatus);
 router.get('/status/:jobId', authenticate, controller.getJobStatus);
+router.get('/:id', authenticate, controller.getDiagnosisById);
 router.post('/diagnose', authenticate, aiLimiter, upload.single('image'), controller.diagnose);
 
 module.exports = router;
