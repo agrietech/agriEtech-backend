@@ -77,6 +77,10 @@ router.get('/my-sensors', authenticate, controller.getMySensors);
 router.get('/farmer/:userId', authenticate, controller.getFarmerSensors);
 router.post('/claim', authenticate, controller.claimSensor);
 
+// GET /telemetry — returns recent telemetry readings (used by Flutter frontend dashboard)
+router.get('/telemetry', authenticate, controller.getAllTelemetry);
+router.get('/telemetry/summary', authenticate, controller.getAllTelemetry);
+
 router.post('/telemetry', authenticateSensor, telemetryLimiter, controller.recordTelemetry);
 router.get('/farm/:farmId', authenticate, controller.getSensors);
 

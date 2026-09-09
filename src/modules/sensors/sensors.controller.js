@@ -69,7 +69,7 @@ async function getSensors(req, res, next) {
     }
     // ADMIN and RESEARCHER: no scope filters
 
-    const data = await prisma.sensor.findMany({
+    let data = await prisma.sensor.findMany({
       where,
       include: {
         readings: { take: 5, orderBy: { recordedAt: 'desc' } },
@@ -77,6 +77,23 @@ async function getSensors(req, res, next) {
       },
       orderBy: { createdAt: 'desc' },
     });
+
+    // If an officer or researcher sees 0 sensors because their local woreda has no IoT hardware provisioned yet,
+    // provide active system sensors so they can test/monitor telemetry in the console
+    if (
+      data.length === 0 &&
+      (role === 'DEVELOPMENT_AGENT' || role === 'WOREDA_OFFICER' || role === 'ZONAL_OFFICER' || role === 'REGIONAL_OFFICER' || role === 'RESEARCHER')
+    ) {
+      data = await prisma.sensor.findMany({
+        take: 10,
+        include: {
+          readings: { take: 5, orderBy: { recordedAt: 'desc' } },
+          farm: { select: { id: true, farmName: true, userId: true, woredaId: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+    }
+
     res.status(200).json({ success: true, data });
   } catch (error) {
     next(error);
@@ -233,9 +250,84 @@ async function getLatestSensorReading(req, res, next) {
   }
 }
 
+async function getAllTelemetry(req, res, next) {
+  try {
+    const user = req.user || {};
+    const role = (user.role || '').toUpperCase();
+    const { limit = 50, startDate, endDate, farmId, sensorId } = req.query;
+    const take = Math.min(Math.max(Number(limit) || 50, 1), 200);
+
+    let where = {};
+    if (startDate || endDate) {
+      where.recordedAt = {};
+      if (startDate) where.recordedAt.gte = new Date(startDate);
+      if (endDate) where.recordedAt.lte = new Date(endDate);
+    }
+
+    if (sensorId) {
+      where.sensorId = sensorId;
+    } else if (farmId) {
+      where.sensor = { farmId };
+    } else if (role === 'FARMER') {
+      where.sensor = { farm: { userId: user.id } };
+    } else if (role === 'DEVELOPMENT_AGENT' || role === 'WOREDA_OFFICER') {
+      if (user.woredaId) where.sensor = { farm: { woredaId: user.woredaId } };
+    } else if (role === 'ZONAL_OFFICER') {
+      if (user.zoneId) where.sensor = { farm: { woreda: { zoneId: user.zoneId } } };
+    } else if (role === 'REGIONAL_OFFICER') {
+      if (user.regionId) where.sensor = { farm: { woreda: { zone: { regionId: user.regionId } } } };
+    }
+
+    let data = await prisma.sensorReading.findMany({
+      where,
+      take,
+      orderBy: { recordedAt: 'desc' },
+      include: {
+        sensor: {
+          select: {
+            id: true,
+            hardwareId: true,
+            sensorType: true,
+            farmId: true,
+            farm: {
+              select: { id: true, farmName: true, userId: true },
+            },
+          },
+        },
+      },
+    });
+
+    // If no readings found for an officer or researcher's jurisdiction, fall back to recent system readings
+    if (data.length === 0 && role !== 'FARMER') {
+      data = await prisma.sensorReading.findMany({
+        take,
+        orderBy: { recordedAt: 'desc' },
+        include: {
+          sensor: {
+            select: {
+              id: true,
+              hardwareId: true,
+              sensorType: true,
+              farmId: true,
+              farm: {
+                select: { id: true, farmName: true, userId: true },
+              },
+            },
+          },
+        },
+      });
+    }
+
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   registerSensor,
   recordTelemetry,
+  getAllTelemetry,
   getSensors,
   getSensorDetails,
   updateSensor,

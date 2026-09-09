@@ -57,12 +57,14 @@ async function getAgronomicAdvisories(req, res, next) {
 
 async function getAiInsights(req, res, next) {
   try {
-    const { woredaId, timeframe, language, metrics } = req.body;
+    const params = req.method === 'GET' ? req.query : (req.body || {});
+    const { woredaId, timeframe, language, metrics } = params;
+    const parsedMetrics = typeof metrics === 'string' ? metrics.split(',').map(m => m.trim()) : metrics;
     const data = await analyticsService.getAiInsights({
       woredaId,
       timeframe,
       language,
-      metrics,
+      metrics: parsedMetrics,
     });
     res.status(200).json({ success: true, data });
   } catch (error) {

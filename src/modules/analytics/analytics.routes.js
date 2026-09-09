@@ -10,6 +10,7 @@ router.get('/regional-breakdown', authenticate, controller.getRegionalBreakdown)
 router.get('/regional', authenticate, controller.getRegionalBreakdown);
 router.get('/temporal-trends', authenticate, controller.getTemporalTrends);
 router.get('/agronomic-advisories', authenticate, controller.getAgronomicAdvisories);
+router.get('/ai-insights', authenticate, controller.getAiInsights);
 router.post('/ai-insights', authenticate, controller.getAiInsights);
 router.get('/export', authenticate, authorize('RESEARCHER', 'ZONAL_OFFICER', 'REGIONAL_OFFICER', 'WOREDA_OFFICER', 'ADMIN'), controller.exportData);
 
