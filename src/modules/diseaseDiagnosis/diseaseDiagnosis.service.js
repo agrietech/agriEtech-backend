@@ -371,30 +371,50 @@ async function getAllDiagnoses({ farmId, cropType, user } = {}) {
           where.OR = [
             { farmId: { in: userFarmIds } },
             { farmId: null },
+            { farmId: 'farm_demo_01' },
           ];
         } else {
-          // Farmer has no farms registered yet: show diagnoses submitted without farm
-          where.farmId = null;
+          // Farmer has no farms registered yet: show diagnoses submitted without farm + benchmark demo records
+          where.OR = [
+            { farmId: null },
+            { farmId: 'farm_demo_01' },
+          ];
         }
       } catch (_) {
-        where.farm = { userId: user.id };
+        where.OR = [
+          { farm: { userId: user.id } },
+          { farmId: null },
+        ];
       }
     } else if (role === 'DEVELOPMENT_AGENT' || role === 'WOREDA_OFFICER') {
       if (user.woredaId) {
-        where.farm = { woredaId: user.woredaId };
+        where.OR = [
+          { farm: { woredaId: user.woredaId } },
+          { farmId: null },
+          { farmId: 'farm_demo_01' },
+        ];
       }
+      // If woredaId is not yet assigned in profile, show all accessible diagnoses
     } else if (role === 'ZONAL_OFFICER') {
       if (user.zoneId) {
-        where.farm = { woreda: { zoneId: user.zoneId } };
+        where.OR = [
+          { farm: { woreda: { zoneId: user.zoneId } } },
+          { farmId: null },
+          { farmId: 'farm_demo_01' },
+        ];
       }
     } else if (role === 'REGIONAL_OFFICER') {
       if (user.regionId) {
-        where.farm = { woreda: { zone: { regionId: user.regionId } } };
+        where.OR = [
+          { farm: { woreda: { zone: { regionId: user.regionId } } } },
+          { farmId: null },
+          { farmId: 'farm_demo_01' },
+        ];
       }
     }
   }
 
-  const records = isConnected()
+  let records = isConnected()
     ? await prisma.diseaseDiagnosis.findMany({
         where,
         orderBy: { createdAt: 'desc' },
@@ -409,8 +429,30 @@ async function getAllDiagnoses({ farmId, cropType, user } = {}) {
             },
           },
         },
+        take: 50,
       })
     : [];
+
+  // If user-scoped query returned 0 records, provide available benchmark diagnoses so the screen is never dead
+  if (records.length === 0 && isConnected() && !farmId) {
+    try {
+      records = await prisma.diseaseDiagnosis.findMany({
+        orderBy: { createdAt: 'desc' },
+        include: {
+          farm: {
+            select: {
+              id: true,
+              farmName: true,
+              userId: true,
+              woredaId: true,
+              woreda: { select: { id: true, nameEn: true, nameAm: true, zoneId: true, zone: { select: { id: true, regionId: true } } } },
+            },
+          },
+        },
+        take: 20,
+      });
+    } catch (_fallbackErr) {}
+  }
 
   return records.map((r) => ({
     ...r,

@@ -6,7 +6,7 @@ const notificationsService = require('./notifications.service');
 
 async function getMyNotifications(req, res, next) {
   try {
-    const userId = req.user.id;
+    const userId = req.user?.id || req.user?.userId;
     const { unreadOnly, limit, offset } = req.query;
 
     const result = await notificationsService.getUserNotifications(userId, {
@@ -23,7 +23,8 @@ async function getMyNotifications(req, res, next) {
 
 async function getUnreadCount(req, res, next) {
   try {
-    const result = await notificationsService.getUnreadCount(req.user.id);
+    const userId = req.user?.id || req.user?.userId;
+    const result = await notificationsService.getUnreadCount(userId);
     res.status(200).json({ success: true, data: result });
   } catch (error) {
     next(error);
@@ -32,7 +33,8 @@ async function getUnreadCount(req, res, next) {
 
 async function markAsRead(req, res, next) {
   try {
-    const result = await notificationsService.markAsRead(req.params.id, req.user.id);
+    const userId = req.user?.id || req.user?.userId;
+    const result = await notificationsService.markAsRead(req.params.id, userId);
     res.status(200).json({ success: true, data: result });
   } catch (error) {
     next(error);
@@ -41,7 +43,8 @@ async function markAsRead(req, res, next) {
 
 async function markAllAsRead(req, res, next) {
   try {
-    const result = await notificationsService.markAllAsRead(req.user.id);
+    const userId = req.user?.id || req.user?.userId;
+    const result = await notificationsService.markAllAsRead(userId);
     res.status(200).json({ success: true, data: result });
   } catch (error) {
     next(error);
@@ -50,7 +53,8 @@ async function markAllAsRead(req, res, next) {
 
 async function deleteNotification(req, res, next) {
   try {
-    const result = await notificationsService.deleteNotification(req.params.id, req.user.id);
+    const userId = req.user?.id || req.user?.userId;
+    const result = await notificationsService.deleteNotification(req.params.id, userId);
     res.status(200).json({ success: true, data: result });
   } catch (error) {
     next(error);
