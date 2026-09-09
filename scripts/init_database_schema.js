@@ -23,6 +23,9 @@ DO $$ BEGIN
     CREATE TYPE "RequestableRole" AS ENUM ('DEVELOPMENT_AGENT', 'WOREDA_OFFICER', 'ZONAL_OFFICER', 'REGIONAL_OFFICER', 'RESEARCHER');
 EXCEPTION WHEN duplicate_object THEN null; END $$;
 
+ALTER TYPE "RequestableRole" ADD VALUE IF NOT EXISTS 'ZONAL_OFFICER';
+ALTER TYPE "RequestableRole" ADD VALUE IF NOT EXISTS 'REGIONAL_OFFICER';
+
 DO $$ BEGIN
     CREATE TYPE "AgroZone" AS ENUM ('WURCH', 'DEGA', 'WEINA_DEGA', 'KOLLA', 'BEREHA');
 EXCEPTION WHEN duplicate_object THEN null; END $$;
@@ -396,6 +399,7 @@ CREATE TABLE IF NOT EXISTS "RoleRequest" (
     "kebeleName" TEXT,
     "staffIdNumber" TEXT NOT NULL,
     "organizationName" TEXT NOT NULL,
+    "justification" TEXT,
     "status" "RoleRequestStatus" NOT NULL DEFAULT 'PENDING',
     "rejectionReason" TEXT,
     "reviewedById" TEXT REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE,

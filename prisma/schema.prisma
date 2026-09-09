@@ -419,6 +419,7 @@ model RoleRequest {
   kebeleName        String?
   staffIdNumber     String            // Required employee badge/staff ID
   organizationName  String            // Required organization name
+  justification     String?           // Applicant's stated reason for the request
   status            RoleRequestStatus @default(PENDING)
   rejectionReason   String?
   reviewedById      String?
