@@ -432,20 +432,174 @@
     }
     .form-textarea { resize: vertical; min-height: 80px; }
 
-    /* Map Tab */
-    #mapContainer {
-      height: 560px;
+    /* Map Tab & Expert GIS Command Center */
+    .gis-command-card {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1rem;
+      color: #f8fafc;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    }
+    .gis-filter-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: center;
+      margin-bottom: 0.75rem;
+    }
+    .gis-select-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      min-width: 150px;
+      flex: 1;
+    }
+    .gis-select-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #94a3b8;
+    }
+    .gis-select, .gis-search-input {
+      background: #1e293b;
+      border: 1px solid #475569;
+      color: #f8fafc;
+      border-radius: 6px;
+      padding: 0.45rem 0.65rem;
+      font-size: 0.82rem;
+      font-weight: 500;
+      outline: none;
+      transition: all 0.15s;
+    }
+    .gis-select:focus, .gis-search-input:focus {
+      border-color: #38bdf8;
+      box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+    }
+    .gis-actions-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      padding-top: 0.75rem;
+    }
+    .gis-toggles {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+      flex-wrap: wrap;
+      font-size: 0.78rem;
+    }
+    .gis-toggle-label {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      cursor: pointer;
+      color: #cbd5e1;
+      font-weight: 500;
+    }
+    .gis-toggle-label input[type="checkbox"] {
+      cursor: pointer;
+      accent-color: #10b981;
+    }
+    .gis-presets {
+      display: flex;
+      gap: 0.4rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .gis-preset-btn {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #e2e8f0;
+      border-radius: 20px;
+      padding: 0.25rem 0.65rem;
+      font-size: 0.74rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .gis-preset-btn:hover {
+      background: rgba(56, 189, 248, 0.2);
+      border-color: #38bdf8;
+      color: #38bdf8;
+    }
+    #mapWrapper {
+      position: relative;
       width: 100%;
       border-radius: var(--radius);
+      overflow: hidden;
       border: 1px solid var(--border);
     }
-
-    .map-controls-bar {
+    #mapContainer {
+      height: 600px;
+      width: 100%;
+    }
+    .gis-hud-overlay {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      z-index: 999;
+      background: rgba(15, 23, 42, 0.88);
+      backdrop-filter: blur(4px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 8px;
+      padding: 0.5rem 0.85rem;
+      color: white;
+      font-size: 0.78rem;
       display: flex;
-      gap: 0.5rem;
-      margin-bottom: 1rem;
-      flex-wrap: wrap;
       align-items: center;
+      gap: 0.6rem;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+      max-width: 90%;
+      pointer-events: auto;
+    }
+    .gis-hud-pill {
+      background: rgba(16, 185, 129, 0.2);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      color: #34d399;
+      padding: 0.15rem 0.5rem;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 0.72rem;
+    }
+    .gis-legend-overlay {
+      position: absolute;
+      bottom: 20px;
+      right: 14px;
+      z-index: 999;
+      background: rgba(15, 23, 42, 0.9);
+      backdrop-filter: blur(4px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 8px;
+      padding: 0.6rem 0.85rem;
+      color: white;
+      font-size: 0.72rem;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+      pointer-events: auto;
+    }
+    .gis-legend-title {
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 0.68rem;
+      color: #94a3b8;
+      margin-bottom: 0.4rem;
+      letter-spacing: 0.5px;
+    }
+    .gis-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      margin-bottom: 0.25rem;
+    }
+    .gis-legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
     }
 
     /* Grid for Pipeline Controls */
@@ -494,9 +648,72 @@
 
     .toast.show { display: block; }
 
-    @keyframes slideUp {
-      from { transform: translateY(10px); opacity: 0; }
-      to { transform: translateY(0); opacity: 1; }
+    /* USSD & SMS Broadcast Hub Styling */
+    .broadcast-hub-card {
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      color: #f8fafc;
+      box-shadow: var(--shadow-md);
+    }
+    .broadcast-hub-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 1.25rem;
+    }
+    .broadcast-hub-title {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .broadcast-icon-box {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #10b981, #047857);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+    }
+    .broadcast-hub-meta {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .audience-pill {
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: #34d399;
+      padding: 0.4rem 0.85rem;
+      border-radius: 20px;
+      font-size: 0.825rem;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .quick-preset-btn {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #e2e8f0;
+      border-radius: 6px;
+      padding: 0.4rem 0.75rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .quick-preset-btn:hover {
+      background: rgba(255, 255, 255, 0.18);
+      border-color: #38bdf8;
+      color: white;
     }
   </style>
 </head>
@@ -595,6 +812,11 @@
             <div class="stat-value" id="statAlerts">0</div>
             <div class="stat-subtext">Drought & Frost Warnings</div>
           </div>
+          <div class="stat-card purple">
+            <div class="stat-label">USSD / SMS Reachable</div>
+            <div class="stat-value" id="statReachableFarmers">0</div>
+            <div class="stat-subtext">Farmers with Phone Verified</div>
+          </div>
         </div>
 
         <div class="panel">
@@ -627,19 +849,138 @@
       <div id="map" class="tab">
         <div class="panel">
           <div class="panel-header">
-            <div class="panel-title">🗺️ Ethiopia Agricultural GIS Spatial Command</div>
-            <button class="btn btn-primary btn-sm" onclick="fitAllMapFeatures()">✨ Fit All Entities</button>
-          </div>
-          <div class="panel-body">
-            <div class="map-controls-bar">
-              <button class="btn btn-primary btn-sm" onclick="plotFarmsOnMap()">🚜 Plot All Farms</button>
-              <button class="btn btn-edit btn-sm" onclick="plotSensorsOnMap()">📡 Plot IoT Sensors</button>
-              <button class="btn btn-warning btn-sm" onclick="plotAlertsOnMap()">📢 Plot Hazard Zones</button>
-              <button class="btn btn-secondary btn-sm" onclick="loadBoundaries('regions')">🗺️ Regions Layer</button>
-              <button class="btn btn-secondary btn-sm" onclick="loadBoundaries('woredas')">📍 Woredas Layer</button>
-              <button class="btn btn-secondary btn-sm" onclick="clearMapLayers()">🧹 Clear Layers</button>
+            <div class="panel-title">🗺️ Ethiopia Agricultural GIS Spatial Command & Hazard Intelligence</div>
+            <div style="display:flex;gap:0.5rem;">
+              <button class="btn btn-secondary btn-sm" onclick="fitAllMapFeatures()">✨ Reset National View</button>
+              <button class="btn btn-primary btn-sm" onclick="applyMapSpatialFilters()">🔄 Refresh Map</button>
             </div>
-            <div id="mapContainer"></div>
+          </div>
+          <div class="panel-body" style="padding:1.25rem;">
+            <!-- Expert GIS Command Bar -->
+            <div class="gis-command-card">
+              <div class="gis-filter-row">
+                <!-- Place Filter: Region -->
+                <div class="gis-select-group">
+                  <label class="gis-select-label" for="mapRegionFilter">🇪🇹 Region Filter</label>
+                  <select id="mapRegionFilter" class="gis-select" onchange="onMapRegionChange()">
+                    <option value="ALL">All Ethiopia (National Overview)</option>
+                    <option value="Oromia">Oromia (ኦሮሚያ)</option>
+                    <option value="Amhara">Amhara (አማራ)</option>
+                    <option value="Tigray">Tigray (ትግራይ)</option>
+                    <option value="Sidama">Sidama (ሲዳማ)</option>
+                    <option value="Somali">Somali (ሶማሌ)</option>
+                    <option value="Afar">Afar (አፋር)</option>
+                    <option value="South Ethiopia">South Ethiopia / SNNP (ደቡብ)</option>
+                    <option value="Benishangul-Gumuz">Benishangul-Gumuz (ቤኒሻንጉል)</option>
+                    <option value="Gambella">Gambella (ጋምቤላ)</option>
+                    <option value="Harari">Harari (ሐረሪ)</option>
+                    <option value="Dire Dawa">Dire Dawa (ድሬዳዋ)</option>
+                  </select>
+                </div>
+
+                <!-- Place Filter: Woreda -->
+                <div class="gis-select-group">
+                  <label class="gis-select-label" for="mapWoredaFilter">📍 Woreda Filter</label>
+                  <select id="mapWoredaFilter" class="gis-select" onchange="applyMapSpatialFilters()">
+                    <option value="ALL">All Woredas in Region</option>
+                    <option value="woreda_adama_01">Adama Zuria (Oromia)</option>
+                    <option value="woreda_bahir_dar_01">Bahir Dar Zuria (Amhara)</option>
+                    <option value="woreda_hawassa_01">Hawassa Zuria (Sidama)</option>
+                    <option value="woreda_mekelle_01">Mekelle / Enderta (Tigray)</option>
+                    <option value="woreda_semara_01">Semara / Dubti (Afar)</option>
+                    <option value="woreda_debre_berhan_01">Debre Berhan Zuria (Amhara)</option>
+                    <option value="woreda_jijiga_01">Jijiga Zuria (Somali)</option>
+                    <option value="woreda_sodo_01">Wolaita Sodo (South)</option>
+                    <option value="woreda_gondar_01">Gondar Zuria (Amhara)</option>
+                    <option value="woreda_jimma_01">Jimma / Mana (Oromia)</option>
+                  </select>
+                </div>
+
+                <!-- Hazard Type Filter -->
+                <div class="gis-select-group">
+                  <label class="gis-select-label" for="mapHazardTypeFilter">🚨 Hazard Type</label>
+                  <select id="mapHazardTypeFilter" class="gis-select" onchange="applyMapSpatialFilters()">
+                    <option value="ALL">All Hazards (ሁሉም አደጋዎች)</option>
+                    <option value="DROUGHT">☀️ Drought / SPI Deficit (ድርቅ)</option>
+                    <option value="FLOOD">🌊 Riverine & Flash Flood (ጎርፍ)</option>
+                    <option value="LOCUST_PEST">🦗 Desert Locust & Pest (የበረሃ አንበጣ)</option>
+                    <option value="FROST">❄️ Highland Nocturnal Frost (ውርጭ)</option>
+                    <option value="VEGETATION_STRESS">🔬 Crop Disease & Stress (የሰብል በሽታ)</option>
+                  </select>
+                </div>
+
+                <!-- Severity Level Filter -->
+                <div class="gis-select-group" style="max-width:160px;">
+                  <label class="gis-select-label" for="mapSeverityFilter">⚡ Severity Scale</label>
+                  <select id="mapSeverityFilter" class="gis-select" onchange="applyMapSpatialFilters()">
+                    <option value="ALL">All Severities</option>
+                    <option value="CRITICAL">🔴 Critical (እጅግ ከፍተኛ)</option>
+                    <option value="HIGH">🟠 High (ከፍተኛ)</option>
+                    <option value="MODERATE">🟡 Moderate (መካከለኛ)</option>
+                    <option value="LOW">🟢 Low / Safe (ዝቅተኛ)</option>
+                  </select>
+                </div>
+
+                <!-- Search Input -->
+                <div class="gis-select-group" style="min-width:180px;">
+                  <label class="gis-select-label" for="mapPlaceSearch">🔍 Quick Search Place</label>
+                  <input type="text" id="mapPlaceSearch" class="gis-search-input" placeholder="Search woreda or region..." oninput="onMapPlaceSearch(this.value)">
+                </div>
+              </div>
+
+              <div class="gis-actions-row">
+                <!-- Layer switches -->
+                <div class="gis-toggles">
+                  <span style="color:#94a3b8;font-weight:700;text-transform:uppercase;font-size:0.7rem;">Layers:</span>
+                  <label class="gis-toggle-label">
+                    <input type="checkbox" id="layerToggleHazards" checked onchange="applyMapSpatialFilters()"> Hazard Zones
+                  </label>
+                  <label class="gis-toggle-label">
+                    <input type="checkbox" id="layerToggleFarms" checked onchange="applyMapSpatialFilters()"> Farm Plots
+                  </label>
+                  <label class="gis-toggle-label">
+                    <input type="checkbox" id="layerToggleSensors" checked onchange="applyMapSpatialFilters()"> IoT Sensors
+                  </label>
+                  <label class="gis-toggle-label">
+                    <input type="checkbox" id="layerToggleRegions" onchange="applyMapSpatialFilters()"> Region Borders
+                  </label>
+                  <label class="gis-toggle-label">
+                    <input type="checkbox" id="layerToggleWoredas" onchange="applyMapSpatialFilters()"> Woreda Borders
+                  </label>
+                </div>
+
+                <!-- Quick Presets -->
+                <div class="gis-presets">
+                  <span style="color:#94a3b8;font-weight:700;text-transform:uppercase;font-size:0.7rem;">Presets:</span>
+                  <button class="gis-preset-btn" onclick="applyHazardPreset('DROUGHT')">☀️ Drought Hotspots</button>
+                  <button class="gis-preset-btn" onclick="applyHazardPreset('FLOOD')">🌊 Flood Basins</button>
+                  <button class="gis-preset-btn" onclick="applyHazardPreset('LOCUST')">🦗 Locust Pathway</button>
+                  <button class="gis-preset-btn" onclick="applyHazardPreset('FROST')">❄️ Frost Highlands</button>
+                  <button class="gis-preset-btn" style="background:#dc2626;color:white;border-color:#b91c1c;" onclick="broadcastToFilteredPlace()">📢 Broadcast USSD to Place</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Map Viewport with HUD & Legend -->
+            <div id="mapWrapper">
+              <div id="mapHud" class="gis-hud-overlay">
+                <span class="gis-hud-pill" id="mapHudPlace">All Ethiopia</span>
+                <span id="mapHudHazard">All Hazards Monitored</span>
+                <span style="color:#94a3b8;">|</span>
+                <span id="mapHudStats" style="font-weight:600;">Loading live telemetry...</span>
+              </div>
+
+              <div id="mapLegend" class="gis-legend-overlay">
+                <div class="gis-legend-title">GIS Legend & Risk Scale</div>
+                <div class="gis-legend-item"><div class="gis-legend-dot" style="background:#ef4444;"></div><span>Critical Threat Zone</span></div>
+                <div class="gis-legend-item"><div class="gis-legend-dot" style="background:#f97316;"></div><span>High Risk Zone</span></div>
+                <div class="gis-legend-item"><div class="gis-legend-dot" style="background:#f59e0b;"></div><span>Moderate / Warning</span></div>
+                <div class="gis-legend-item"><div class="gis-legend-dot" style="background:#10b981;"></div><span>Registered Farm Plot</span></div>
+                <div class="gis-legend-item"><div class="gis-legend-dot" style="background:#3b82f6;"></div><span>Active IoT Sensor</span></div>
+              </div>
+
+              <div id="mapContainer"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -783,12 +1124,57 @@
         </div>
       </div>
 
-      <!-- 7. Alerts Tab (CRUD) -->
+      <!-- 7. Alerts Tab (CRUD & USSD Farmer Broadcast Hub) -->
       <div id="alerts" class="tab">
+        <!-- USSD & SMS Farmer Mass Broadcast Hub -->
+        <div class="broadcast-hub-card">
+          <div class="broadcast-hub-header">
+            <div class="broadcast-hub-title">
+              <div class="broadcast-icon-box">📢</div>
+              <div>
+                <h3 style="margin: 0; font-size: 1.15rem; font-weight: 800; color: white;">USSD *212# & SMS Emergency Broadcast Gateway</h3>
+                <p style="margin: 0.2rem 0 0; font-size: 0.8rem; color: #94a3b8;">
+                  Direct push broadcast engine notifying registered smallholder farmers across Ethiopian woredas without requiring mobile data.
+                </p>
+              </div>
+            </div>
+            <div class="broadcast-hub-meta">
+              <div class="audience-pill" id="liveAudienceBadge">
+                <span class="status-dot" style="background:#10b981;box-shadow:0 0 0 2px rgba(16,185,129,0.3);"></span>
+                <span id="liveAudienceText">Signed-Up Farmers Reach: Calculating...</span>
+              </div>
+              <button class="btn btn-danger" onclick="openAlertBroadcastModal()">📢 Broadcast New Alert</button>
+            </div>
+          </div>
+
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1);">
+            <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+              <span style="font-size: 0.75rem; font-weight: 700; color: #cbd5e1; text-transform: uppercase;">Quick Hazard Presets:</span>
+              <button type="button" class="quick-preset-btn" onclick="prefillAndOpenAlert('DROUGHT')">☀️ Drought / ድርቅ</button>
+              <button type="button" class="quick-preset-btn" onclick="prefillAndOpenAlert('FLOOD')">🌊 Awash Flood / ጎርፍ</button>
+              <button type="button" class="quick-preset-btn" onclick="prefillAndOpenAlert('LOCUST')">🦗 Desert Locust / አንበጣ</button>
+              <button type="button" class="quick-preset-btn" onclick="prefillAndOpenAlert('FROST')">❄️ Highlands Frost / ውርጭ</button>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <span style="font-size: 0.75rem; color: #94a3b8;">Filter by Target Woreda:</span>
+              <select class="form-select" id="hubWoredaFilter" onchange="onHubWoredaFilterChange()" style="background: rgba(15,23,42,0.8); color: white; border-color: #475569; padding: 0.3rem 0.6rem; font-size: 0.8rem; width: auto;">
+                <option value="">All Regions & Woredas</option>
+                <option value="ET030701">Bahir Dar Zuria (ባሕር ዳር)</option>
+                <option value="ET040101">Adama Zuria (አዳማ)</option>
+                <option value="ET100201">Hawassa Zuria (ሐዋሳ)</option>
+                <option value="ET010601">Mekelle / Enderta (መቐለ)</option>
+                <option value="ET030401">Gondar Zuria (ጎንደር)</option>
+                <option value="ET041601">Jimma / Mana (ጅማ)</option>
+                <option value="ET030601">Debre Markos (ደብረ ማርቆስ)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
         <div class="panel">
           <div class="panel-header">
-            <div class="panel-title">📢 Smart Farmings & Emergency Broadcast</div>
-            <button class="btn btn-danger" onclick="openModal('alertModal')">📢 Broadcast New Alert</button>
+            <div class="panel-title">📢 Broadcast History & Emergency Alert Log</div>
+            <button class="btn btn-secondary btn-sm" onclick="loadAlerts()">🔄 Refresh Alerts</button>
           </div>
           <div class="panel-body">
             <div class="table-container">
@@ -800,13 +1186,14 @@
                     <th>Hazard</th>
                     <th>Severity</th>
                     <th>Target Woreda</th>
+                    <th>Channels</th>
                     <th>Status</th>
                     <th>Broadcasted</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody id="alertsTable">
-                  <tr><td colspan="8">Loading early warning alerts...</td></tr>
+                  <tr><td colspan="9">Loading early warning alerts...</td></tr>
                 </tbody>
               </table>
             </div>
@@ -1170,58 +1557,113 @@
     </div>
   </div>
 
-  <!-- Alert Broadcast Modal -->
+  <!-- Alert Broadcast Modal (USSD & SMS Farmer Gateway) -->
   <div id="alertModal" class="modal">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h3 class="modal-title">Broadcast Emergency Hazard Alert</h3>
-        <button class="modal-close" onclick="closeModal('alertModal')">&times;</button>
+    <div class="modal-content" style="max-width: 620px;">
+      <div class="modal-header" style="background: linear-gradient(135deg, #1e293b, #0f172a); color: white;">
+        <div>
+          <h3 class="modal-title" style="color: white; display: flex; align-items: center; gap: 0.5rem;">
+            <span>📢</span> USSD & SMS Farmer Emergency Alert Broadcast
+          </h3>
+          <p style="font-size: 0.775rem; color: #94a3b8; margin-top: 0.2rem;">
+            Direct push broadcast engine notifying registered smallholder farmers across Ethiopian woredas without internet
+          </p>
+        </div>
+        <button class="modal-close" style="color: white;" onclick="closeModal('alertModal')">&times;</button>
       </div>
       <div class="modal-body">
+        <div id="modalAudienceInfo" style="background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: var(--radius); padding: 0.75rem 1rem; margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between;">
+          <div style="font-size: 0.85rem; color: #065f46;">
+            👥 Target Audience: <strong><span id="modalAudienceCount">Querying signed-up farmers...</span></strong>
+          </div>
+          <span class="badge badge-success" id="modalAudiencePct">USSD / SMS Active</span>
+        </div>
+
         <form id="alertForm" onsubmit="event.preventDefault(); submitAlert();">
           <div class="form-group">
-            <label class="form-label">Alert Headline (English) *</label>
-            <input type="text" class="form-input" id="alertTitle" placeholder="e.g. Severe Dry Spell Warning" required>
+            <label class="form-label">Target Woreda Jurisdiction *</label>
+            <select class="form-select" id="alertWoreda" onchange="updateModalAudienceReach()" required>
+              <option value="">National (All Registered Smallholder Farmers)</option>
+              <option value="ET030701">Bahir Dar Zuria (ባሕር ዳር - Amhara)</option>
+              <option value="ET040101" selected>Adama Zuria (አዳማ - Oromia)</option>
+              <option value="ET100201">Hawassa Zuria (ሐዋሳ - Sidama)</option>
+              <option value="ET010601">Mekelle / Enderta (መቐለ - Tigray)</option>
+              <option value="ET030401">Gondar Zuria (ጎንደር - Amhara)</option>
+              <option value="ET041601">Jimma / Mana (ጅማ - Oromia)</option>
+              <option value="ET030601">Debre Markos (ደብረ ማርቆስ - Amhara)</option>
+              <option value="ET030101">Debre Berhan (ደብረ ብርሃን - Amhara)</option>
+              <option value="ET030201">Dessie Zuria (ደሴ - Amhara)</option>
+              <option value="ET070401">Wolaita Sodo (ወላይታ ሶዶ - South)</option>
+            </select>
           </div>
+
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
             <div class="form-group">
               <label class="form-label">Hazard Type *</label>
-              <select class="form-select" id="alertHazardType" required>
-                <option value="DROUGHT">Drought</option>
-                <option value="FLOOD">Flood</option>
-                <option value="PEST">Pest Outbreak</option>
-                <option value="DISEASE">Crop Disease</option>
-                <option value="FROST">Frost</option>
+              <select class="form-select" id="alertHazardType" onchange="onModalHazardTypeChange()" required>
+                <option value="DROUGHT">Drought / ድርቅ</option>
+                <option value="FLOOD">Flood / ጎርፍ</option>
+                <option value="PEST">Pest / Locust / አንበጣ</option>
+                <option value="DISEASE">Crop Disease / ሰብል በሽታ</option>
+                <option value="FROST">Frost / ውርጭ</option>
               </select>
             </div>
             <div class="form-group">
-              <label class="form-label">Severity *</label>
+              <label class="form-label">Severity Level *</label>
               <select class="form-select" id="alertSeverity" required>
-                <option value="CRITICAL">Critical</option>
-                <option value="HIGH">High</option>
-                <option value="WARNING">Warning</option>
-                <option value="MODERATE">Moderate</option>
-                <option value="LOW">Low</option>
+                <option value="CRITICAL">🔴 Critical (Immediate Action)</option>
+                <option value="HIGH">🟠 High (Elevated Risk)</option>
+                <option value="WARNING">🟡 Warning (Advisory)</option>
+                <option value="MODERATE">🔵 Moderate</option>
+                <option value="LOW">🟢 Low</option>
               </select>
             </div>
           </div>
-          <div class="form-group">
-            <label class="form-label">Target Woreda Location</label>
-            <select class="form-select" id="alertWoreda">
-              <option value="ET030701">Bahir Dar Zuria</option>
-              <option value="ET040101">Adama Zuria</option>
-              <option value="ET100201">Hawassa Zuria</option>
-              <option value="ET010601">Mekelle / Enderta</option>
-              <option value="ET030401">Gondar Zuria</option>
-              <option value="ET041601">Jimma / Mana</option>
-              <option value="ET030601">Debre Markos</option>
-            </select>
+
+          <!-- Dispatch Communication Channels -->
+          <div class="form-group" style="background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius); padding: 0.75rem 1rem;">
+            <label class="form-label" style="margin-bottom: 0.5rem;">Dispatch Communication Channels *</label>
+            <div style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
+              <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; font-weight: 600; cursor: pointer;">
+                <input type="checkbox" id="alertSendUssd" checked style="accent-color: var(--primary); width: 16px; height: 16px;">
+                <span>📲 USSD Flash Alert (*212#)</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; font-weight: 600; cursor: pointer;">
+                <input type="checkbox" id="alertSendSms" checked style="accent-color: var(--primary); width: 16px; height: 16px;">
+                <span>💬 SMS Broadcast (Ethio Telecom)</span>
+              </label>
+            </div>
           </div>
+
           <div class="form-group">
-            <label class="form-label">Advisory Message *</label>
-            <textarea class="form-textarea" id="alertMessage" placeholder="Urgent agronomic guidance for farmers..." required></textarea>
+            <label class="form-label">Alert Headline (English) *</label>
+            <input type="text" class="form-input" id="alertTitle" placeholder="e.g. Severe Dry Spell Warning - Awash Basin" required>
           </div>
-          <button type="submit" class="btn btn-danger" style="width:100%">📢 Broadcast Alert Immediately</button>
+
+          <div class="form-group">
+            <label class="form-label">Alert Headline (Amharic - አማርኛ) *</label>
+            <input type="text" class="form-input" id="alertTitleAm" placeholder="e.g. የአስቸኳይ ድርቅ ማስጠንቀቂያ - አዳማና አካባቢው" required>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Advisory Guidance (Amharic - አማርኛ) *</label>
+            <textarea class="form-textarea" id="alertMessageAm" placeholder="ለአርሶ አደሮች የሚተላለፍ አስቸኳይ የግብርና እርምጃ መመሪያ..." required></textarea>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Advisory Guidance (English) *</label>
+            <textarea class="form-textarea" id="alertMessage" placeholder="Actionable agronomic guidance for farmers..." required></textarea>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Afaan Oromoo Headline & Guidance (Optional)</label>
+            <input type="text" class="form-input" id="alertTitleOm" placeholder="Akeakkachiisa Cikkaa - Godina Shawaa Bahaa" style="margin-bottom: 0.5rem;">
+            <textarea class="form-textarea" id="alertMessageOm" placeholder="Odeeffannoo qonnaan bultootaaf..."></textarea>
+          </div>
+
+          <button type="submit" id="broadcastSubmitBtn" class="btn btn-danger" style="width:100%; padding: 0.75rem; font-weight: 700; justify-content: center; font-size: 0.95rem;">
+            📢 Dispatch USSD & SMS Broadcast Immediately
+          </button>
         </form>
       </div>
     </div>
@@ -1583,6 +2025,17 @@
             </tr>
           `).join('') || '<tr><td colspan="5">No recent emergency alerts broadcasted</td></tr>';
         }
+
+        // Also fetch reachable farmer audience statistics
+        fetch('/api/v1/admin/farmers/audience', { headers: getAuthHeaders() })
+          .then(r => r.json())
+          .then(audJson => {
+            if (audJson.success && audJson.data) {
+              const el = document.getElementById('statReachableFarmers');
+              if (el) el.textContent = `${audJson.data.phoneReachableFarmers} (${audJson.data.reachabilityPercentage}%)`;
+            }
+          })
+          .catch(() => {});
       } catch (e) {
         console.error('Failed to load overview', e);
       }
@@ -1803,10 +2256,11 @@
       }
     }
 
-    // 6. Alerts API (CRUD)
-    async function loadAlerts() {
+    // 6. Alerts API (CRUD & USSD Farmer Broadcast Hub)
+    async function loadAlerts(filterWoredaId = null) {
       try {
-        const res = await fetch('/api/v1/admin/alerts', { headers: getAuthHeaders() });
+        const url = filterWoredaId ? `/api/v1/admin/alerts?woredaId=${filterWoredaId}` : '/api/v1/admin/alerts';
+        const res = await fetch(url, { headers: getAuthHeaders() });
         const json = await res.json();
         if (json.success) {
           currentData.alerts = json.data.alerts || [];
@@ -1814,20 +2268,30 @@
           tbody.innerHTML = currentData.alerts.map(a => `
             <tr>
               <td><small>${(a.id || '').substring(0, 10)}</small></td>
-              <td><strong>${a.headline || a.titleEn || 'Hazard Warning'}</strong></td>
+              <td>
+                <strong>${a.headline || a.titleEn || 'Hazard Warning'}</strong>
+                ${a.titleAm ? `<br><small style="color:var(--text-muted);">${a.titleAm}</small>` : ''}
+              </td>
               <td><span class="badge badge-info">${a.hazardType || 'DROUGHT'}</span></td>
               <td><span class="badge badge-${getSeverityBadge(a.severity)}">${a.severity || 'LOW'}</span></td>
-              <td>${a.woreda?.nameEn || 'Bahir Dar Zuria'}</td>
+              <td>${a.woreda?.nameEn || (a.woredaId ? a.woredaId : 'National Broadcast')}</td>
+              <td>
+                <span class="badge badge-purple" title="Broadcasted via USSD (*212#) & SMS">
+                  📱 USSD + SMS
+                </span>
+              </td>
               <td><span class="badge badge-success">${a.status || 'ACTIVE'}</span></td>
               <td>${formatDate(a.createdAt)}</td>
               <td>
                 <div class="actions">
+                  <button class="btn btn-warning btn-sm" onclick="resendAlertUssd('${a.id}')" title="Re-dispatch USSD push to farmers">📲 Resend</button>
                   <button class="btn btn-danger btn-sm" onclick="deleteAlert('${a.id}')">Delete</button>
                 </div>
               </td>
             </tr>
-          `).join('') || '<tr><td colspan="8">No alerts found</td></tr>';
+          `).join('') || '<tr><td colspan="9">No alerts found</td></tr>';
         }
+        updateLiveAudienceHub(filterWoredaId);
       } catch (e) {
         showToast('Failed to load alerts', 'error');
       }
@@ -1917,14 +2381,121 @@
       }
     }
 
-    // 9. Interactive Map Functions
+    // 9. Interactive GIS Spatial Command Center & Map Functions
+    const ETHIOPIA_REGION_CENTROIDS = {
+      'ALL': { center: [9.145, 40.489], zoom: 6.2, name: 'All Ethiopia' },
+      'Oromia': { center: [8.54, 39.27], zoom: 7.8, name: 'Oromia Region' },
+      'Amhara': { center: [11.59, 37.39], zoom: 7.8, name: 'Amhara Region' },
+      'Tigray': { center: [13.50, 39.47], zoom: 8.0, name: 'Tigray Region' },
+      'Sidama': { center: [7.05, 38.48], zoom: 8.5, name: 'Sidama Region' },
+      'Somali': { center: [7.35, 44.28], zoom: 7.2, name: 'Somali Region' },
+      'Afar': { center: [11.79, 41.01], zoom: 7.5, name: 'Afar Region' },
+      'South Ethiopia': { center: [6.86, 37.76], zoom: 8.0, name: 'South Ethiopia' },
+      'Benishangul-Gumuz': { center: [10.06, 34.53], zoom: 7.8, name: 'Benishangul-Gumuz' },
+      'Gambella': { center: [8.25, 34.58], zoom: 8.2, name: 'Gambella Region' },
+      'Harari': { center: [9.31, 42.12], zoom: 10.0, name: 'Harari Region' },
+      'Dire Dawa': { center: [9.60, 41.86], zoom: 9.8, name: 'Dire Dawa Administration' },
+    };
+
+    const REGION_WOREDAS_MAP = {
+      'ALL': [
+        { id: 'ALL', name: 'All Woredas in Ethiopia' },
+        { id: 'woreda_adama_01', name: 'Adama Zuria (Oromia)' },
+        { id: 'woreda_bahir_dar_01', name: 'Bahir Dar Zuria (Amhara)' },
+        { id: 'woreda_hawassa_01', name: 'Hawassa Zuria (Sidama)' },
+        { id: 'woreda_mekelle_01', name: 'Mekelle / Enderta (Tigray)' },
+        { id: 'woreda_semara_01', name: 'Semara / Dubti (Afar)' },
+        { id: 'woreda_debre_berhan_01', name: 'Debre Berhan Zuria (Amhara)' },
+        { id: 'woreda_jijiga_01', name: 'Jijiga Zuria (Somali)' },
+        { id: 'woreda_sodo_01', name: 'Wolaita Sodo (South)' },
+        { id: 'woreda_gondar_01', name: 'Gondar Zuria (Amhara)' },
+        { id: 'woreda_jimma_01', name: 'Jimma / Mana (Oromia)' },
+      ],
+      'Oromia': [
+        { id: 'ALL', name: 'All Woredas in Oromia' },
+        { id: 'woreda_adama_01', name: 'Adama Zuria' },
+        { id: 'woreda_jimma_01', name: 'Jimma / Mana' },
+        { id: 'woreda_shashemene_01', name: 'Shashemene Zuria' },
+        { id: 'woreda_ambo_01', name: 'Ambo Zuria' },
+        { id: 'woreda_bale_robe_01', name: 'Bale Robe' },
+        { id: 'woreda_borena_01', name: 'Borena / Yabelo' },
+      ],
+      'Amhara': [
+        { id: 'ALL', name: 'All Woredas in Amhara' },
+        { id: 'woreda_bahir_dar_01', name: 'Bahir Dar Zuria' },
+        { id: 'woreda_debre_berhan_01', name: 'Debre Berhan Zuria' },
+        { id: 'woreda_gondar_01', name: 'Gondar Zuria' },
+        { id: 'woreda_debre_markos_01', name: 'Debre Markos Zuria' },
+        { id: 'woreda_dessie_01', name: 'Dessie Zuria' },
+      ],
+      'Tigray': [
+        { id: 'ALL', name: 'All Woredas in Tigray' },
+        { id: 'woreda_mekelle_01', name: 'Mekelle / Enderta' },
+        { id: 'woreda_shire_01', name: 'Shire Indaselassie' },
+        { id: 'woreda_axum_01', name: 'Axum Zuria' },
+      ],
+      'Sidama': [
+        { id: 'ALL', name: 'All Woredas in Sidama' },
+        { id: 'woreda_hawassa_01', name: 'Hawassa Zuria' },
+        { id: 'woreda_dale_01', name: 'Dale Woreda' },
+        { id: 'woreda_aleta_01', name: 'Aleta Wondo' },
+      ],
+      'Somali': [
+        { id: 'ALL', name: 'All Woredas in Somali' },
+        { id: 'woreda_jijiga_01', name: 'Jijiga Zuria' },
+        { id: 'woreda_gode_01', name: 'Gode Woreda' },
+        { id: 'woreda_degehabur_01', name: 'Degehabur' },
+      ],
+      'Afar': [
+        { id: 'ALL', name: 'All Woredas in Afar' },
+        { id: 'woreda_semara_01', name: 'Semara / Dubti' },
+        { id: 'woreda_awash_01', name: 'Awash Fentale' },
+        { id: 'woreda_asayita_01', name: 'Asayita Woreda' },
+      ],
+      'South Ethiopia': [
+        { id: 'ALL', name: 'All Woredas in South Ethiopia' },
+        { id: 'woreda_sodo_01', name: 'Wolaita Sodo' },
+        { id: 'woreda_arbaminch_01', name: 'Arba Minch Zuria' },
+        { id: 'woreda_dilla_01', name: 'Dilla Zuria' },
+      ],
+      'Benishangul-Gumuz': [
+        { id: 'ALL', name: 'All Woredas in Benishangul' },
+        { id: 'woreda_asosa_01', name: 'Asosa Zuria' },
+        { id: 'woreda_bambasi_01', name: 'Bambasi Woreda' },
+      ],
+      'Gambella': [
+        { id: 'ALL', name: 'All Woredas in Gambella' },
+        { id: 'woreda_gambella_01', name: 'Gambella Zuria' },
+        { id: 'woreda_itang_01', name: 'Itang Special Woreda' },
+      ],
+      'Harari': [
+        { id: 'ALL', name: 'All Woredas in Harari' },
+        { id: 'woreda_harar_01', name: 'Harar Zuria' },
+      ],
+      'Dire Dawa': [
+        { id: 'ALL', name: 'All Administrations in Dire Dawa' },
+        { id: 'woreda_diredawa_01', name: 'Dire Dawa Administration' },
+      ],
+    };
+
     function initMap() {
       try {
-        map = L.map('mapContainer').setView([9.145, 40.489], 6);
+        if (map) return;
+        map = L.map('mapContainer', {
+          maxBounds: [[3.0, 32.5], [15.5, 48.5]],
+          maxBoundsViscosity: 1.0,
+          minZoom: 5.8,
+          maxZoom: 14,
+        }).setView([9.145, 40.489], 6.2);
+
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '© OpenStreetMap | EthioFarm GIS Spatial Command'
+          attribution: '© OpenStreetMap contributors | EthioFarm Expert GIS Command'
         }).addTo(map);
+
         mapLayerGroup = L.layerGroup().addTo(map);
+
+        // Populate initial map display with active spatial filters
+        applyMapSpatialFilters();
       } catch (e) {
         console.error('Map init error:', e);
       }
@@ -1932,159 +2503,337 @@
 
     function clearMapLayers() {
       if (mapLayerGroup) mapLayerGroup.clearLayers();
-      showToast('Map layers cleared');
     }
 
-    async function plotFarmsOnMap() {
-      clearMapLayers();
-      showToast('Plotting registered farm plots...');
-      try {
-        const res = await fetch('/api/v1/admin/farms?limit=100', { headers: getAuthHeaders() });
-        const json = await res.json();
-        const farms = json.data?.farms || [];
+    function onMapRegionChange() {
+      const reg = document.getElementById('mapRegionFilter').value;
+      const woredaSelect = document.getElementById('mapWoredaFilter');
+      const woredas = REGION_WOREDAS_MAP[reg] || REGION_WOREDAS_MAP['ALL'];
 
-        const bounds = [];
-        farms.forEach(f => {
-          const lat = f.latitude || 11.5936;
-          const lng = f.longitude || 37.3908;
-          bounds.push([lat, lng]);
+      woredaSelect.innerHTML = woredas.map(w => `<option value="${w.id}">${w.name}</option>`).join('');
+      woredaSelect.value = 'ALL';
 
-          const farmMarker = L.circleMarker([lat, lng], {
-            radius: 8,
-            fillColor: '#10b981',
-            color: '#065f46',
-            weight: 2,
-            opacity: 1,
-            fillOpacity: 0.85
-          });
+      // Fly camera to the region centroid
+      const centroidInfo = ETHIOPIA_REGION_CENTROIDS[reg] || ETHIOPIA_REGION_CENTROIDS['ALL'];
+      if (map && centroidInfo) {
+        map.flyTo(centroidInfo.center, centroidInfo.zoom, { duration: 1.2 });
+      }
 
-          farmMarker.bindPopup(`
-            <div style="font-family:Inter,sans-serif;padding:4px;">
-              <h4 style="margin:0 0 4px;color:#065f46;">🚜 ${f.farmName || 'Model Farm'}</h4>
-              <p style="margin:0;font-size:12px;"><strong>Crop:</strong> ${f.primaryCrop || 'Teff'}</p>
-              <p style="margin:0;font-size:12px;"><strong>Area:</strong> ${f.areaHectares || 2.5} Ha</p>
-              <p style="margin:0;font-size:12px;"><strong>Owner:</strong> ${f.user?.fullName || 'Farmer'}</p>
-              <p style="margin:0;font-size:12px;"><strong>GPS:</strong> ${lat.toFixed(4)}, ${lng.toFixed(4)}</p>
-            </div>
-          `);
-          mapLayerGroup.addLayer(farmMarker);
-        });
+      applyMapSpatialFilters();
+    }
 
-        if (bounds.length > 0) map.fitBounds(bounds, { padding: [40, 40] });
-        showToast(`Plotted ${farms.length} farm plots on map`);
-      } catch (e) {
-        showToast('Error plotting farms on map', 'error');
+    function onMapPlaceSearch(query) {
+      if (!query || query.trim().length < 2) return;
+      const q = query.trim().toLowerCase();
+
+      // Check regions
+      for (const [regKey, info] of Object.entries(ETHIOPIA_REGION_CENTROIDS)) {
+        if (regKey.toLowerCase().includes(q) || info.name.toLowerCase().includes(q)) {
+          document.getElementById('mapRegionFilter').value = regKey;
+          onMapRegionChange();
+          return;
+        }
+      }
+
+      // Check woredas
+      for (const [regKey, list] of Object.entries(REGION_WOREDAS_MAP)) {
+        const found = list.find(w => w.name.toLowerCase().includes(q));
+        if (found && found.id !== 'ALL') {
+          document.getElementById('mapRegionFilter').value = regKey;
+          onMapRegionChange();
+          document.getElementById('mapWoredaFilter').value = found.id;
+          applyMapSpatialFilters();
+          return;
+        }
       }
     }
 
-    async function plotSensorsOnMap() {
-      clearMapLayers();
-      showToast('Plotting IoT sensor stations...');
-      try {
-        const res = await fetch('/api/v1/admin/sensors', { headers: getAuthHeaders() });
-        const json = await res.json();
-        const sensors = json.data?.sensors || [];
+    function applyHazardPreset(type) {
+      const hazardSelect = document.getElementById('mapHazardTypeFilter');
+      const regionSelect = document.getElementById('mapRegionFilter');
 
-        const bounds = [];
-        sensors.forEach(s => {
-          const lat = s.farm?.latitude || 11.5936;
-          const lng = s.farm?.longitude || 37.3908;
-          bounds.push([lat, lng]);
+      if (type === 'DROUGHT') {
+        hazardSelect.value = 'DROUGHT';
+        regionSelect.value = 'Somali';
+      } else if (type === 'FLOOD') {
+        hazardSelect.value = 'FLOOD';
+        regionSelect.value = 'Amhara';
+      } else if (type === 'LOCUST') {
+        hazardSelect.value = 'LOCUST_PEST';
+        regionSelect.value = 'Afar';
+      } else if (type === 'FROST') {
+        hazardSelect.value = 'FROST';
+        regionSelect.value = 'Amhara';
+      }
 
-          const sensorMarker = L.circleMarker([lat, lng], {
-            radius: 9,
-            fillColor: '#3b82f6',
-            color: '#1e40af',
-            weight: 2,
-            opacity: 1,
-            fillOpacity: 0.85
-          });
+      onMapRegionChange();
+      showToast(`Applied preset: ${type} hotspots`);
+    }
 
-          sensorMarker.bindPopup(`
-            <div style="font-family:Inter,sans-serif;padding:4px;">
-              <h4 style="margin:0 0 4px;color:#1e40af;">📡 ${s.hardwareId || 'IoT Node'}</h4>
-              <p style="margin:0;font-size:12px;"><strong>Type:</strong> ${s.sensorType || 'Soil Telemetry'}</p>
-              <p style="margin:0;font-size:12px;"><strong>Status:</strong> ${s.isActive !== false ? '🟢 Active' : '🔴 Inactive'}</p>
-              <p style="margin:0;font-size:12px;"><strong>Location:</strong> ${s.farm?.farmName || 'Bahir Dar Plot'}</p>
-            </div>
-          `);
-          mapLayerGroup.addLayer(sensorMarker);
-        });
+    function broadcastToFilteredPlace() {
+      const woredaId = document.getElementById('mapWoredaFilter').value;
+      const hazardType = document.getElementById('mapHazardTypeFilter').value;
 
-        if (bounds.length > 0) map.fitBounds(bounds, { padding: [40, 40] });
-        showToast(`Plotted ${sensors.length} IoT telemetry stations`);
-      } catch (e) {
-        showToast('Error plotting sensors on map', 'error');
+      openModal('broadcastModal');
+
+      if (woredaId && woredaId !== 'ALL') {
+        const modalWoreda = document.getElementById('broadcastWoredaId');
+        if (modalWoreda) {
+          modalWoreda.value = woredaId;
+          updateBroadcastAudienceCount(woredaId);
+        }
+      }
+      if (hazardType && hazardType !== 'ALL') {
+        const modalHazard = document.getElementById('broadcastHazardType');
+        if (modalHazard) modalHazard.value = hazardType;
       }
     }
 
-    async function plotAlertsOnMap() {
+    async function applyMapSpatialFilters() {
       clearMapLayers();
-      showToast('Plotting active hazard warnings...');
-      try {
-        const res = await fetch('/api/v1/admin/alerts', { headers: getAuthHeaders() });
-        const json = await res.json();
-        const alerts = json.data?.alerts || [];
 
-        const bounds = [];
-        alerts.forEach(a => {
-          const lat = a.woreda?.centerLat || 11.5936;
-          const lng = a.woreda?.centerLng || 37.3908;
-          bounds.push([lat, lng]);
+      const region = document.getElementById('mapRegionFilter')?.value || 'ALL';
+      const woredaId = document.getElementById('mapWoredaFilter')?.value || 'ALL';
+      const hazardType = document.getElementById('mapHazardTypeFilter')?.value || 'ALL';
+      const severity = document.getElementById('mapSeverityFilter')?.value || 'ALL';
 
-          const alertColor = a.severity === 'CRITICAL' ? '#ef4444' : (a.severity === 'HIGH' ? '#f97316' : '#f59e0b');
-          const alertCircle = L.circle([lat, lng], {
-            radius: 18000,
-            fillColor: alertColor,
-            color: alertColor,
-            weight: 2,
-            opacity: 0.8,
-            fillOpacity: 0.25
+      const showHazards = document.getElementById('layerToggleHazards')?.checked !== false;
+      const showFarms = document.getElementById('layerToggleFarms')?.checked !== false;
+      const showSensors = document.getElementById('layerToggleSensors')?.checked !== false;
+      const showRegions = document.getElementById('layerToggleRegions')?.checked === true;
+      const showWoredas = document.getElementById('layerToggleWoredas')?.checked === true;
+
+      const bounds = [];
+      let hazardCount = 0;
+      let farmCount = 0;
+      let sensorCount = 0;
+
+      // 1. Plot Filtered Hazard Threat Zones
+      if (showHazards) {
+        try {
+          const params = new URLSearchParams();
+          if (hazardType !== 'ALL') params.set('hazardType', hazardType);
+          if (severity !== 'ALL') params.set('severity', severity);
+          if (woredaId !== 'ALL') params.set('woredaId', woredaId);
+          if (region !== 'ALL') params.set('regionId', region);
+
+          const res = await fetch(`/api/v1/admin/alerts?${params.toString()}`, { headers: getAuthHeaders() });
+          const json = await res.json();
+          const alerts = json.data?.alerts || [];
+          hazardCount = alerts.length;
+
+          alerts.forEach(a => {
+            const lat = a.woreda?.centerLat || 9.145;
+            const lng = a.woreda?.centerLng || 40.489;
+            bounds.push([lat, lng]);
+
+            const color = a.severity === 'CRITICAL' ? '#ef4444' : (a.severity === 'HIGH' ? '#f97316' : (a.severity === 'MODERATE' ? '#f59e0b' : '#10b981'));
+            const hazardRadius = a.severity === 'CRITICAL' ? 24000 : (a.severity === 'HIGH' ? 18000 : 12000);
+
+            // Exterior buffer zone circle
+            const hazardCircle = L.circle([lat, lng], {
+              radius: hazardRadius,
+              fillColor: color,
+              color: color,
+              weight: 2,
+              opacity: 0.85,
+              fillOpacity: 0.28,
+            });
+
+            // Center pulse marker
+            const centerMarker = L.circleMarker([lat, lng], {
+              radius: 9,
+              fillColor: color,
+              color: '#ffffff',
+              weight: 2,
+              opacity: 1,
+              fillOpacity: 0.95,
+            });
+
+            const popupContent = `
+              <div style="font-family:Inter,sans-serif;padding:6px;min-width:240px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                  <span style="background:${color};color:white;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;">
+                    ${a.severity || 'CRITICAL'}
+                  </span>
+                  <span style="font-size:11px;color:#64748b;font-weight:600;">
+                    ${a.hazardType || 'DROUGHT'}
+                  </span>
+                </div>
+                <h4 style="margin:0 0 4px;font-size:13px;color:#0f172a;">${a.headline || a.titleEn || 'Emergency Hazard'}</h4>
+                <p style="margin:0 0 6px;font-size:11.5px;color:#334155;">${a.titleAm || ''}</p>
+                <div style="background:#f8fafc;padding:6px;border-radius:6px;border:1px solid #e2e8f0;font-size:11px;margin-bottom:8px;">
+                  <div><strong>Jurisdiction:</strong> ${a.woreda?.nameEn || 'Woreda'} (${a.woreda?.zone?.region?.nameEn || region})</div>
+                  <div><strong>Threat Zone:</strong> ${(hazardRadius / 1000).toFixed(0)} km radius</div>
+                  <div><strong>Advisory:</strong> ${a.messageEn ? a.messageEn.substring(0, 110) + '...' : 'Implement crop protection protocols.'}</div>
+                </div>
+                <button class="btn btn-warning btn-sm" style="width:100%;font-size:11px;padding:4px 8px;" onclick="triggerDirectUssdForHazard('${a.woredaId || 'woreda_adama_01'}', '${a.hazardType || 'DROUGHT'}', '${a.woreda?.nameEn || 'Adama Zuria'}')">
+                  🚀 Broadcast USSD/SMS to this Woreda
+                </button>
+              </div>
+            `;
+
+            hazardCircle.bindPopup(popupContent);
+            centerMarker.bindPopup(popupContent);
+
+            mapLayerGroup.addLayer(hazardCircle);
+            mapLayerGroup.addLayer(centerMarker);
           });
+        } catch (e) {
+          console.error('Error plotting hazard zones:', e);
+        }
+      }
 
-          alertCircle.bindPopup(`
-            <div style="font-family:Inter,sans-serif;padding:4px;">
-              <h4 style="margin:0 0 4px;color:${alertColor};">📢 ${a.headline || a.titleEn || 'Emergency Alert'}</h4>
-              <p style="margin:0;font-size:12px;"><strong>Hazard:</strong> ${a.hazardType || 'DROUGHT'}</p>
-              <p style="margin:0;font-size:12px;"><strong>Severity:</strong> ${a.severity || 'MODERATE'}</p>
-              <p style="margin:0;font-size:12px;"><strong>Woreda:</strong> ${a.woreda?.nameEn || 'Bahir Dar Zuria'}</p>
-            </div>
-          `);
-          mapLayerGroup.addLayer(alertCircle);
-        });
+      // 2. Plot Registered Farm Plots
+      if (showFarms) {
+        try {
+          const res = await fetch('/api/v1/admin/farms?limit=100', { headers: getAuthHeaders() });
+          const json = await res.json();
+          let farms = json.data?.farms || [];
 
-        if (bounds.length > 0) map.fitBounds(bounds, { padding: [40, 40] });
-        showToast(`Plotted ${alerts.length} active hazard zones`);
-      } catch (e) {
-        showToast('Error plotting alerts on map', 'error');
+          if (region !== 'ALL') {
+            farms = farms.filter(f => !f.woreda || f.woreda.zone?.region?.nameEn?.toLowerCase() === region.toLowerCase());
+          }
+          if (woredaId !== 'ALL') {
+            farms = farms.filter(f => f.woredaId === woredaId);
+          }
+          farmCount = farms.length;
+
+          farms.forEach(f => {
+            const lat = f.latitude || 9.145;
+            const lng = f.longitude || 40.489;
+            bounds.push([lat, lng]);
+
+            const farmMarker = L.circleMarker([lat, lng], {
+              radius: 7,
+              fillColor: '#10b981',
+              color: '#065f46',
+              weight: 2,
+              opacity: 1,
+              fillOpacity: 0.85
+            });
+
+            farmMarker.bindPopup(`
+              <div style="font-family:Inter,sans-serif;padding:4px;">
+                <h4 style="margin:0 0 4px;color:#065f46;">🚜 ${f.farmName || 'Model Farm'}</h4>
+                <p style="margin:0;font-size:11.5px;"><strong>Crop:</strong> ${f.primaryCrop || 'Teff'}</p>
+                <p style="margin:0;font-size:11.5px;"><strong>Size:</strong> ${f.areaHectares || 2.5} Ha</p>
+                <p style="margin:0;font-size:11.5px;"><strong>Owner:</strong> ${f.user?.fullName || 'Farmer'}</p>
+                <p style="margin:0;font-size:11.5px;"><strong>GPS:</strong> ${lat.toFixed(4)}, ${lng.toFixed(4)}</p>
+              </div>
+            `);
+            mapLayerGroup.addLayer(farmMarker);
+          });
+        } catch (e) {
+          console.error('Error plotting farms:', e);
+        }
+      }
+
+      // 3. Plot Active IoT Telemetry Stations
+      if (showSensors) {
+        try {
+          const res = await fetch('/api/v1/admin/sensors', { headers: getAuthHeaders() });
+          const json = await res.json();
+          const sensors = json.data?.sensors || [];
+          sensorCount = sensors.length;
+
+          sensors.forEach(s => {
+            const lat = s.farm?.latitude || 11.5936;
+            const lng = s.farm?.longitude || 37.3908;
+            bounds.push([lat, lng]);
+
+            const sensorMarker = L.circleMarker([lat, lng], {
+              radius: 8,
+              fillColor: '#3b82f6',
+              color: '#1e40af',
+              weight: 2,
+              opacity: 1,
+              fillOpacity: 0.85
+            });
+
+            sensorMarker.bindPopup(`
+              <div style="font-family:Inter,sans-serif;padding:4px;">
+                <h4 style="margin:0 0 4px;color:#1e40af;">📡 ${s.hardwareId || 'IoT Node'}</h4>
+                <p style="margin:0;font-size:11.5px;"><strong>Type:</strong> ${s.sensorType || 'Soil Telemetry'}</p>
+                <p style="margin:0;font-size:11.5px;"><strong>Status:</strong> ${s.isActive !== false ? '🟢 Active' : '🔴 Inactive'}</p>
+                <p style="margin:0;font-size:11.5px;"><strong>Holding:</strong> ${s.farm?.farmName || 'Bahir Dar Plot'}</p>
+              </div>
+            `);
+            mapLayerGroup.addLayer(sensorMarker);
+          });
+        } catch (e) {
+          console.error('Error plotting sensors:', e);
+        }
+      }
+
+      // 4. Regional or Woreda Boundary GeoJSON Layers
+      if (showRegions) {
+        loadBoundariesLayer('regions');
+      }
+      if (showWoredas) {
+        loadBoundariesLayer('woredas');
+      }
+
+      // Update Floating HUD Overlay
+      const hudPlace = document.getElementById('mapHudPlace');
+      const hudHazard = document.getElementById('mapHudHazard');
+      const hudStats = document.getElementById('mapHudStats');
+
+      if (hudPlace) hudPlace.innerText = region === 'ALL' ? 'All Ethiopia' : region;
+      if (hudHazard) hudHazard.innerText = hazardType === 'ALL' ? 'All Hazard Vectors' : `Hazard: ${hazardType}`;
+      if (hudStats) {
+        hudStats.innerText = `${hazardCount} Hazard Threat Zones • ${farmCount} Farm Plots • ${sensorCount} IoT Nodes Active`;
+      }
+
+      // Smooth camera framing
+      if (bounds.length > 0 && map) {
+        map.flyToBounds(bounds, { padding: [45, 45], maxZoom: 9, duration: 1.0 });
+      } else if (region !== 'ALL' && ETHIOPIA_REGION_CENTROIDS[region] && map) {
+        const c = ETHIOPIA_REGION_CENTROIDS[region];
+        map.flyTo(c.center, c.zoom, { duration: 1.0 });
       }
     }
 
-    async function loadBoundaries(type) {
-      showToast(`Loading Ethiopia ${type} layer...`);
+    async function loadBoundariesLayer(type) {
       try {
         const res = await fetch(`/api/v1/boundaries/${type}`, { headers: getAuthHeaders() });
         const json = await res.json();
         if (json.success && json.data) {
-          clearMapLayers();
           const data = Array.isArray(json.data) ? json.data : [json.data];
           data.forEach(item => {
             if (item.geojson || item.boundary) {
               const boundaryLayer = L.geoJSON(item.geojson || item.boundary, {
-                style: { color: '#10b981', weight: 2, fillOpacity: 0.12 }
+                style: {
+                  color: type === 'regions' ? '#3b82f6' : '#10b981',
+                  weight: type === 'regions' ? 2.5 : 1.5,
+                  fillOpacity: 0.08,
+                }
               }).bindPopup(`<strong>${item.nameEn || item.name || 'Boundary'}</strong><br>${item.nameAm || ''}`);
               mapLayerGroup.addLayer(boundaryLayer);
             }
           });
-          showToast(`${type.toUpperCase()} boundaries rendered successfully`);
         }
       } catch (e) {
-        showToast(`Failed to load ${type}`, 'error');
+        console.warn(`Could not load ${type} boundaries:`, e);
       }
     }
 
+    function triggerDirectUssdForHazard(woredaId, hazardType, woredaName) {
+      openModal('broadcastModal');
+      const modalWoreda = document.getElementById('broadcastWoredaId');
+      const modalHazard = document.getElementById('broadcastHazardType');
+      if (modalWoreda) {
+        modalWoreda.value = woredaId;
+        updateBroadcastAudienceCount(woredaId);
+      }
+      if (modalHazard) modalHazard.value = hazardType;
+      showToast(`Loaded USSD broadcaster for ${woredaName}`);
+    }
+
     function fitAllMapFeatures() {
-      map.setView([9.145, 40.489], 6);
+      document.getElementById('mapRegionFilter').value = 'ALL';
+      onMapRegionChange();
+      map.setView([9.145, 40.489], 6.2);
       showToast('Centered map on Ethiopia');
     }
 
@@ -2293,13 +3042,170 @@ Active real records preserved: ${json.data.current.users} users, ${json.data.cur
       }
     }
 
+    async function updateLiveAudienceHub(woredaId = '') {
+      try {
+        const query = woredaId ? `?woredaId=${woredaId}` : '';
+        const res = await fetch(`/api/v1/admin/farmers/audience${query}`, { headers: getAuthHeaders() });
+        const json = await res.json();
+        if (json.success && json.data) {
+          const d = json.data;
+          const label = woredaId ? (d.woredaName || 'Selected Woreda') : 'National Coverage';
+          const el = document.getElementById('liveAudienceText');
+          if (el) {
+            el.textContent = `${label}: ${d.phoneReachableFarmers} of ${d.totalSignedUpFarmers} Farmers Reachable via USSD/SMS (${d.reachabilityPercentage}%)`;
+          }
+        }
+      } catch (_e) {}
+    }
+
+    function onHubWoredaFilterChange() {
+      const woredaId = document.getElementById('hubWoredaFilter').value;
+      loadAlerts(woredaId);
+    }
+
+    function openAlertBroadcastModal() {
+      openModal('alertModal');
+      updateModalAudienceReach();
+    }
+
+    async function updateModalAudienceReach() {
+      const woredaId = document.getElementById('alertWoreda').value;
+      const countEl = document.getElementById('modalAudienceCount');
+      const pctEl = document.getElementById('modalAudiencePct');
+      if (countEl) countEl.textContent = 'Calculating signed-up farmers...';
+
+      try {
+        const query = woredaId ? `?woredaId=${woredaId}` : '';
+        const res = await fetch(`/api/v1/admin/farmers/audience${query}`, { headers: getAuthHeaders() });
+        const json = await res.json();
+        if (json.success && json.data) {
+          const d = json.data;
+          const scope = woredaId ? (d.woredaName || 'Woreda') : 'Nationwide';
+          if (countEl) countEl.textContent = `${d.phoneReachableFarmers} farmers in ${scope}`;
+          if (pctEl) pctEl.textContent = `${d.reachabilityPercentage}% Reachable via USSD/SMS`;
+        }
+      } catch (_e) {
+        if (countEl) countEl.textContent = 'Active registered farmers';
+      }
+    }
+
+    const HAZARD_PRESETS = {
+      DROUGHT: {
+        titleEn: 'Severe Dry Spell & Moisture Deficit Advisory',
+        titleAm: 'የከፍተኛ ድርቅና የአፈር እርጥበት እጥረት ማስጠንቀቂያ',
+        titleOm: 'Akeakkachiisa Hongee fi Hanqina Jiidhina Biyyoo',
+        messageAm: '[አስቸኳይ] በአካባቢው ዝናብ ባለመኖሩ የሰብል ማድረቅ ስጋት ተከስቷል። በአፋጣኝ የውሃ ማቆርና የመስኖ ስልቶችን ተግባራዊ ያድርጉ። በስልክዎ *212# ይደውሉ።',
+        messageEn: 'Severe drought stress detected. Employ conservation agriculture, supplementary micro-irrigation, and mulching immediately. Dial *212# for woreda guidance.',
+        messageOm: 'Balaan hongee waan mudateef qonnaan bultoonni teeknoolojii bishaanii fi fooyya\'aa akka fayyadaman hubachiifna.',
+        severity: 'HIGH',
+      },
+      FLOOD: {
+        titleEn: 'Riverbank Inundation & Flash Flood Hazard Alert',
+        titleAm: 'የወንዝ ሙላትና የጎርፍ አደጋ አስቸኳይ ማስጠንቀቂያ',
+        titleOm: 'Akeakkachiisa Balaa Lolaa Lagaa fi Dhiqama Biyyoo',
+        messageAm: '[አስቸኳይ] ከፍተኛ የዝናብ ውርጅብኝና የውሃ ሙላት በመኖሩ የእንስሳትና የሰብል ደህንነት ይጠብቁ፤ ወደ ከፍታ ቦታዎች ያፈግፍጉ። በስልክዎ *212# ይደውሉ።',
+        messageEn: 'Torrential rainfall upstream resulting in flash flood surges. Evacuate livestock and harvestable crops from lowland floodplains immediately.',
+        messageOm: 'Rooba cimaa dhufeen lolaan waan uumameef beelladoota bakka olka\'aatti dabarsaa.',
+        severity: 'CRITICAL',
+      },
+      LOCUST: {
+        titleEn: 'Desert Locust / Fall Armyworm Swarm Threat',
+        titleAm: 'የበረሃ አንበጣና የሰብል ተባይ ወረርሽኝ ማስጠንቀቂያ',
+        titleOm: 'Akeakkachiisa Hawannisa Gammoojjii fi Raammoo Hojjaa',
+        messageAm: '[አስቸኳይ] የተባይ መንጋ ስጋት ስለተስተዋለ ማሳዎን በንቃት ይቆጣጠሩ፤ መንጋውን ሲያዩ ወዲያውኑ ለልማት ጣቢያ ባለሙያ ያሳውቁ ወይም በ*212# ሪፖርት ያድርጉ።',
+        messageEn: 'Pest infestation radar active. Inspect crops morning and evening. Report coordinates via USSD hotline *212# or to local Development Agents.',
+        messageOm: 'Balballi hojjaa fi hawannisi waan mul\'ateef yeroodhaan qorichi akka biifamu gabaasa godhaa.',
+        severity: 'HIGH',
+      },
+      FROST: {
+        titleEn: 'Highland Ground Frost & Low Temperature Advisory',
+        titleAm: 'የደጋማ አካባቢዎች የብርድና የውርጭ አደጋ ማስጠንቀቂያ',
+        titleOm: 'Akeakkachiisa Qorra Cimaa fi Cabbiin Biyyootti Bu\'uu',
+        messageAm: '[ማስጠንቀቂያ] በሌሊት የሙቀት መጠን በከፍተኛ ሁኔታ ስለሚቀንስ ሰብልን ከውርጭ ለመከላከል የማጨሻና የጭስ ማሞቂያ ዘዴዎችን ይጠቀሙ።',
+        messageEn: 'Sub-zero temperatures anticipated tonight in highland parcels. Implement smoking or ground covering to protect sensitive vegetables.',
+        messageOm: 'Qorri cimaan qe\'eetti waan dhufuuf midhaaniifi beelladoota eegaa.',
+        severity: 'WARNING',
+      }
+    };
+
+    function prefillAndOpenAlert(hazardKey) {
+      const preset = HAZARD_PRESETS[hazardKey] || HAZARD_PRESETS.DROUGHT;
+      openAlertBroadcastModal();
+      document.getElementById('alertHazardType').value = hazardKey === 'LOCUST' ? 'PEST' : hazardKey;
+      document.getElementById('alertSeverity').value = preset.severity;
+      document.getElementById('alertTitle').value = preset.titleEn;
+      document.getElementById('alertTitleAm').value = preset.titleAm;
+      document.getElementById('alertMessage').value = preset.messageEn;
+      document.getElementById('alertMessageAm').value = preset.messageAm;
+      if (document.getElementById('alertTitleOm')) document.getElementById('alertTitleOm').value = preset.titleOm || '';
+      if (document.getElementById('alertMessageOm')) document.getElementById('alertMessageOm').value = preset.messageOm || '';
+    }
+
+    function onModalHazardTypeChange() {
+      const type = document.getElementById('alertHazardType').value;
+      const key = type === 'PEST' ? 'LOCUST' : type;
+      if (HAZARD_PRESETS[key]) {
+        const p = HAZARD_PRESETS[key];
+        document.getElementById('alertSeverity').value = p.severity;
+        if (!document.getElementById('alertTitle').value) document.getElementById('alertTitle').value = p.titleEn;
+        if (!document.getElementById('alertTitleAm').value) document.getElementById('alertTitleAm').value = p.titleAm;
+        if (!document.getElementById('alertMessage').value) document.getElementById('alertMessage').value = p.messageEn;
+        if (!document.getElementById('alertMessageAm').value) document.getElementById('alertMessageAm').value = p.messageAm;
+      }
+    }
+
+    async function resendAlertUssd(alertId) {
+      const alert = currentData.alerts.find(a => a.id === alertId);
+      if (!alert) return;
+      if (!confirm(`Re-broadcast USSD (*212#) & SMS notification for "${alert.headline || alert.titleEn}"?`)) return;
+
+      try {
+        const res = await fetch('/api/v1/admin/broadcast-alert', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({
+            titleEn: alert.headline || alert.titleEn,
+            titleAm: alert.titleAm || alert.headline,
+            messageEn: alert.messageEn || alert.advisory || 'Action required immediately.',
+            messageAm: alert.messageAm || alert.advisoryAm || 'አስቸኳይ የጥንቃቄ እርምጃ ይውሰዱ።',
+            hazardType: alert.hazardType || 'DROUGHT',
+            severity: alert.severity || 'HIGH',
+            woredaId: alert.woredaId || '',
+            sendUssd: true,
+            sendSms: true,
+          }),
+        });
+        const json = await res.json();
+        if (json.success) {
+          showToast(`📲 USSD & SMS Alert re-broadcasted to ${json.data.recipientsCount || 0} farmers!`);
+          loadAlerts();
+        } else {
+          showToast(json.message || 'Failed to re-broadcast', 'error');
+        }
+      } catch (e) {
+        showToast('Error re-broadcasting alert', 'error');
+      }
+    }
+
     async function submitAlert() {
+      const submitBtn = document.getElementById('broadcastSubmitBtn');
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = '⏳ Dispatching USSD & SMS Alerts...';
+      }
+
       const payload = {
         titleEn: document.getElementById('alertTitle').value,
+        titleAm: document.getElementById('alertTitleAm').value,
+        titleOm: document.getElementById('alertTitleOm')?.value || '',
         hazardType: document.getElementById('alertHazardType').value,
         severity: document.getElementById('alertSeverity').value,
-        woredaId: document.getElementById('alertWoreda').value,
+        woredaId: document.getElementById('alertWoreda').value || undefined,
         messageEn: document.getElementById('alertMessage').value,
+        messageAm: document.getElementById('alertMessageAm').value,
+        messageOm: document.getElementById('alertMessageOm')?.value || '',
+        sendUssd: document.getElementById('alertSendUssd')?.checked ?? true,
+        sendSms: document.getElementById('alertSendSms')?.checked ?? true,
       };
 
       try {
@@ -2312,7 +3218,9 @@ Active real records preserved: ${json.data.current.users} users, ${json.data.cur
         const json = await res.json();
         if (json.success) {
           closeModal('alertModal');
-          showToast('Emergency alert broadcasted successfully');
+          const reachCount = json.data?.recipientsCount ?? 0;
+          const channels = json.data?.channels?.join(' & ') || 'USSD (*212#) & SMS';
+          showToast(`📢 Emergency Broadcast Dispatched to ${reachCount} Farmers via ${channels}!`);
           loadAlerts();
           loadOverview();
           document.getElementById('alertForm').reset();
@@ -2321,6 +3229,11 @@ Active real records preserved: ${json.data.current.users} users, ${json.data.cur
         }
       } catch (e) {
         showToast('Error broadcasting alert', 'error');
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = '📢 Dispatch USSD & SMS Broadcast Immediately';
+        }
       }
     }
 

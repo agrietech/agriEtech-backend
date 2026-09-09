@@ -88,7 +88,18 @@ describe('Admin Module & Operations Suite', () => {
     expect(res.body.data.jobType).toBe('pullChirpsRainfall');
   });
 
-  it('POST /api/v1/admin/broadcast-alert - should dispatch emergency alert', async () => {
+  it('GET /api/v1/admin/farmers/audience - should return audience reach metrics for target woreda', async () => {
+    const res = await request(app).get('/api/v1/admin/farmers/audience?woredaId=woreda_adama_01');
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.totalSignedUpFarmers).toBeDefined();
+    expect(res.body.data.phoneReachableFarmers).toBeDefined();
+    expect(res.body.data.reachabilityPercentage).toBeDefined();
+    expect(Array.isArray(res.body.data.cropDistribution)).toBe(true);
+  });
+
+  it('POST /api/v1/admin/broadcast-alert - should dispatch emergency alert with USSD and SMS channels', async () => {
     const res = await request(app)
       .post('/api/v1/admin/broadcast-alert')
       .send({
@@ -99,11 +110,17 @@ describe('Admin Module & Operations Suite', () => {
         titleAm: 'የአዋሽ ተፋሰስ የጎርፍ አደጋ ማስጠንቀቂያ',
         messageEn: 'Severe upstream discharge observed. Relocate livestock from riverbanks.',
         messageAm: 'ከፍተኛ የጎርፍ መጠን ስለታየ ከወንዝ ዳርቻ እንስሳትን ያርቁ።',
+        sendSms: true,
+        sendUssd: true,
       });
 
     expect(res.status).toBe(201);
     expect(res.body.success).toBe(true);
     expect(res.body.data.titleEn).toContain('Flash Flood Warning');
+    expect(res.body.data.channels).toBeDefined();
+    expect(res.body.data.channels).toContain('USSD (*212#)');
+    expect(res.body.data.channels).toContain('SMS');
+    expect(res.body.data.recipientsCount).toBeGreaterThanOrEqual(0);
   });
 
   it('GET /api/v1/admin/audit-logs - should return audit trail entries', async () => {

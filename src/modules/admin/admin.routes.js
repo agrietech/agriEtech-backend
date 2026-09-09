@@ -246,10 +246,11 @@ router.get('/sensors/:id', adminAuth, controller.getSensorDetails);
 router.post('/sensors', adminAuth, controller.createSensor);
 router.delete('/sensors/:id', adminAuth, controller.deleteSensor);
 
-// Alert Management & Emergency Broadcast
+// Alert Management & Emergency Broadcast & Farmer USSD Messaging
 router.get('/alerts', adminAuth, controller.getAlerts);
 router.get('/alerts/:id', adminAuth, controller.getAlertDetails);
 router.post('/broadcast-alert', adminAuth, controller.broadcastEmergencyAlert);
+router.get('/farmers/audience', adminAuth, controller.getFarmerAudienceStats);
 router.delete('/alerts/:id', adminAuth, controller.deleteAlert);
 
 // Disease Diagnosis Management

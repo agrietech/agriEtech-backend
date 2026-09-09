@@ -154,8 +154,8 @@ async function deleteSensor(req, res, next) {
 
 async function getAlerts(req, res, next) {
     try {
-        const { page, limit } = req.query;
-        const data = await adminService.getAlerts({ page, limit });
+        const { page, limit, hazardType, severity, woredaId, regionId } = req.query;
+        const data = await adminService.getAlerts({ page, limit, hazardType, severity, woredaId, regionId });
         return res.status(200).json({ success: true, data });
     } catch (error) {
         next(error);
@@ -219,6 +219,16 @@ async function broadcastEmergencyAlert(req, res, next) {
         const adminContext = { id: req.user?.id, email: req.user?.email, ip: req.ip };
         const data = await adminService.broadcastEmergencyAlert(req.body, adminContext);
         return res.status(201).json({ success: true, data });
+    } catch (error) {
+        next(error);
+    }
+}
+
+async function getFarmerAudienceStats(req, res, next) {
+    try {
+        const { woredaId, regionId, cropType } = req.query;
+        const data = await adminService.getFarmerAudienceStats({ woredaId, regionId, cropType });
+        return res.status(200).json({ success: true, data });
     } catch (error) {
         next(error);
     }
@@ -650,6 +660,7 @@ module.exports = {
     getSystemHealth,
     triggerIngestion,
     broadcastEmergencyAlert,
+    getFarmerAudienceStats,
     getAuditLogs,
     renderDashboard,
     renderLogin,
