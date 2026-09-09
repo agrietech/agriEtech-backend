@@ -80,6 +80,8 @@ const env = {
   OPENROUTER_BASE_URL: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
   OPENROUTER_SITE_URL: process.env.OPENROUTER_SITE_URL || process.env.APP_URL || 'https://ethiofarm.et',
   OPENROUTER_SITE_NAME: process.env.OPENROUTER_SITE_NAME || 'EthioFarm Smart Farming Platform',
+  GEMINI_API_KEY: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.GOOGLE_AI_KEY || '',
+  GROQ_API_KEY: process.env.GROQ_API_KEY || '',
   FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID || '',
   FIREBASE_SERVICE_ACCOUNT_PATH: process.env.FIREBASE_SERVICE_ACCOUNT_PATH || '',
   SMTP_HOST: process.env.SMTP_HOST || '',
