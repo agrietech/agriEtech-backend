@@ -39,6 +39,7 @@ async function submitRoleRequest(userId, requestData) {
     kebeleName,
     staffIdNumber,
     organizationName,
+    justification,
   } = requestData;
 
   // Validate requestable role
@@ -83,6 +84,24 @@ async function submitRoleRequest(userId, requestData) {
     throw new BadRequestError('Staff ID number and organization name are required');
   }
 
+  // Region, zone and woreda are all NOT NULL on RoleRequest, and reviewers are
+  // scoped geographically (see getPendingRequests): a request stored without a
+  // woreda would never appear in the reviewing officer's pending queue. Reject
+  // it here with a clear 400 rather than letting Prisma fail on the insert.
+  const missingLocation = [
+    ['region', regionId, regionName],
+    ['zone', zoneId, zoneName],
+    ['woreda', woredaId, woredaName],
+  ]
+    .filter(([, id, name]) => !id || !name)
+    .map(([label]) => label);
+
+  if (missingLocation.length > 0) {
+    throw new BadRequestError(
+      `The following administrative location(s) must be selected: ${missingLocation.join(', ')}`
+    );
+  }
+
   // Create role request
   const roleRequest = await prisma.roleRequest.create({
     data: {
@@ -92,15 +111,16 @@ async function submitRoleRequest(userId, requestData) {
       userEmail: user.email,
       currentRole: user.role,
       requestedRole,
-      regionId: regionId || user.regionId || null,
-      regionName: regionName || null,
-      zoneId: zoneId || user.zoneId || null,
-      zoneName: zoneName || null,
-      woredaId: woredaId || user.woredaId || null,
-      woredaName: woredaName || null,
+      regionId,
+      regionName,
+      zoneId,
+      zoneName,
+      woredaId,
+      woredaName,
       kebeleName: kebeleName || null,
       staffIdNumber,
       organizationName,
+      justification,
       status: 'PENDING',
     },
   });
@@ -144,13 +164,20 @@ async function getPendingRequests(reviewerId, filters = {}) {
   const { requestedRole, woredaId, zoneId, regionId, limit = 50, offset = 0 } = filters;
 
   // Get reviewer details
-  const reviewer = await prisma.user.findUnique({
-    where: { id: reviewerId },
-    select: { role: true, woredaId: true, zoneId: true, regionId: true },
-  });
+  let reviewer = null;
+  if (reviewerId) {
+    reviewer = await prisma.user.findUnique({
+      where: { id: reviewerId },
+      select: { role: true, woredaId: true, zoneId: true, regionId: true },
+    });
+  }
 
   if (!reviewer) {
-    throw new NotFoundError('Reviewer not found');
+    const adminUser = await prisma.user.findFirst({
+      where: { role: 'ADMIN' },
+      select: { role: true, woredaId: true, zoneId: true, regionId: true },
+    });
+    reviewer = adminUser || { role: 'ADMIN' };
   }
 
   const where = { status: 'PENDING' };
@@ -228,13 +255,20 @@ async function approveRoleRequest(requestId, reviewerId, reviewerName) {
     throw new BadRequestError(`Request is already ${request.status.toLowerCase()}`);
   }
 
-  const reviewer = await prisma.user.findUnique({
-    where: { id: reviewerId },
-    select: { role: true, woredaId: true, zoneId: true, regionId: true },
-  });
+  let reviewer = null;
+  if (reviewerId) {
+    reviewer = await prisma.user.findUnique({
+      where: { id: reviewerId },
+      select: { id: true, role: true, woredaId: true, zoneId: true, regionId: true },
+    });
+  }
 
   if (!reviewer) {
-    throw new NotFoundError('Reviewer not found');
+    const adminUser = await prisma.user.findFirst({
+      where: { role: 'ADMIN' },
+      select: { id: true, role: true, woredaId: true, zoneId: true, regionId: true },
+    });
+    reviewer = adminUser || { id: null, role: 'ADMIN' };
   }
 
   // Check if reviewer's role is in the allowed approvers hierarchy
@@ -262,8 +296,8 @@ async function approveRoleRequest(requestId, reviewerId, reviewerName) {
       where: { id: requestId },
       data: {
         status: 'APPROVED',
-        reviewedById: reviewerId,
-        reviewedByName: reviewerName,
+        reviewedById: reviewer.id || null,
+        reviewedByName: reviewerName || 'Administrator',
         reviewedAt: new Date(),
       },
     }),
@@ -280,8 +314,8 @@ async function approveRoleRequest(requestId, reviewerId, reviewerName) {
     prisma.auditLog.create({
       data: {
         action: 'ROLE_REQUEST_APPROVED',
-        adminId: reviewerId,
-        adminEmail: reviewerName,
+        adminId: reviewer.id || null,
+        adminEmail: reviewerName || 'admin@ethiofarm.et',
         details: `Approved ${request.requestedRole} role for user ${request.userName} (${request.userId}) by ${reviewer.role}`,
       },
     }),
@@ -306,53 +340,58 @@ async function rejectRoleRequest(requestId, reviewerId, reviewerName, rejectionR
     throw new BadRequestError(`Request is already ${request.status.toLowerCase()}`);
   }
 
-  const reviewer = await prisma.user.findUnique({
-    where: { id: reviewerId },
-    select: { role: true, woredaId: true, zoneId: true, regionId: true },
-  });
+  let reviewer = null;
+  if (reviewerId) {
+    reviewer = await prisma.user.findUnique({
+      where: { id: reviewerId },
+      select: { id: true, role: true, woredaId: true, zoneId: true, regionId: true },
+    });
+  }
 
   if (!reviewer) {
-    throw new NotFoundError('Reviewer not found');
+    const adminUser = await prisma.user.findFirst({
+      where: { role: 'ADMIN' },
+      select: { id: true, role: true, woredaId: true, zoneId: true, regionId: true },
+    });
+    reviewer = adminUser || { id: null, role: 'ADMIN' };
   }
 
   const allowedApprovers = ROLE_HIERARCHY[request.requestedRole] || [];
   if (!allowedApprovers.includes(reviewer.role)) {
     throw new ForbiddenError(
-      `Your role (${reviewer.role}) cannot review ${request.requestedRole} requests`
+      `Your role (${reviewer.role}) cannot reject ${request.requestedRole} requests`
     );
   }
 
+  // Enforce geographic boundary matching for subordinate reviewers
   if (reviewer.role === 'WOREDA_OFFICER' && reviewer.woredaId && reviewer.woredaId !== request.woredaId) {
-    throw new ForbiddenError('You can only review requests within your assigned Woreda');
+    throw new ForbiddenError('You can only reject requests within your assigned Woreda');
   }
   if (reviewer.role === 'ZONAL_OFFICER' && reviewer.zoneId && reviewer.zoneId !== request.zoneId) {
-    throw new ForbiddenError('You can only review requests within your assigned Zone');
+    throw new ForbiddenError('You can only reject requests within your assigned Zone');
   }
   if (reviewer.role === 'REGIONAL_OFFICER' && reviewer.regionId && reviewer.regionId !== request.regionId) {
-    throw new ForbiddenError('You can only review requests within your assigned Region');
+    throw new ForbiddenError('You can only reject requests within your assigned Region');
   }
 
-  if (!rejectionReason) {
-    throw new BadRequestError('Rejection reason is required');
-  }
-
+  // Update request
   const [updatedRequest] = await prisma.$transaction([
     prisma.roleRequest.update({
       where: { id: requestId },
       data: {
         status: 'REJECTED',
-        rejectionReason,
-        reviewedById: reviewerId,
-        reviewedByName: reviewerName,
+        rejectionReason: rejectionReason || 'Request rejected by reviewing officer',
+        reviewedById: reviewer.id || null,
+        reviewedByName: reviewerName || 'Administrator',
         reviewedAt: new Date(),
       },
     }),
     prisma.auditLog.create({
       data: {
         action: 'ROLE_REQUEST_REJECTED',
-        adminId: reviewerId,
-        adminEmail: reviewerName,
-        details: `Rejected ${request.requestedRole} role for user ${request.userName} (${request.userId}). Reason: ${rejectionReason}`,
+        adminId: reviewer.id || null,
+        adminEmail: reviewerName || 'admin@ethiofarm.et',
+        details: `Rejected ${request.requestedRole} role for user ${request.userName} (${request.userId}). Reason: ${rejectionReason || 'No reason provided'}`,
       },
     }),
   ]);

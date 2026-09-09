@@ -1692,7 +1692,7 @@
               <td><strong>${r.user?.fullName || 'Extension Officer'}</strong></td>
               <td>${r.user?.email || r.user?.phoneNumber || 'N/A'}</td>
               <td><span class="badge badge-purple">${r.requestedRole || 'DEVELOPMENT_AGENT'}</span></td>
-              <td><small>${r.reason || r.justification || 'Official district agronomy verification'}</small></td>
+              <td><small>${r.justification ? escapeHtml(r.justification) : '<em>Not provided</em>'}</small></td>
               <td><span class="badge badge-warning">${r.status || 'PENDING'}</span></td>
               <td>${formatDate(r.createdAt)}</td>
               <td>
@@ -2554,6 +2554,20 @@ Active real records preserved: ${json.data.current.users} users, ${json.data.cur
     }
 
     // Formatting Helpers
+    // Escape user-authored text before it is interpolated into innerHTML.
+    // Role-request justifications are free text written by the applicant, so
+    // rendering them raw would let any authenticated user run script in an
+    // admin's session (stored XSS) from the role-requests tab.
+    function escapeHtml(value) {
+      if (value === null || value === undefined) return '';
+      return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
     function formatDate(dateString) {
       if (!dateString) return 'N/A';
       const date = new Date(dateString);
