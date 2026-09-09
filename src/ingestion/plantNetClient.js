@@ -33,7 +33,7 @@ class PlantNetClient {
         const response = await axios.get(imageUrl, {
           responseType: 'arraybuffer',
           headers: { 'User-Agent': 'EthioFarm-PlantNetClient/1.0' },
-          timeout: 10000,
+          timeout: process.env.NODE_ENV === 'test' ? 1500 : 8000,
         });
         return Buffer.from(response.data);
       } catch (fetchErr) {

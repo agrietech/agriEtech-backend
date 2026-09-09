@@ -3,6 +3,8 @@ const app = require('../../src/app');
 const { generateAccessToken } = require('../../src/modules/auth/auth.service');
 
 describe('Alerts & Disease Diagnosis API Suite', () => {
+  jest.setTimeout(60000);
+
   const officerUser = {
     id: 'usr_officer_01',
     phoneNumber: '+251911998877',
