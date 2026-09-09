@@ -52,8 +52,10 @@ function errorHandler(err, req, res, _next) {
       default:
         statusCode = 500;
         code = 'DATABASE_ERROR';
-        message = 'A database operation error occurred.';
-        if (process.env.NODE_ENV === 'development') {
+        {
+          const lines = (err.message || '').split('\n').filter((l) => l.trim() && !l.startsWith('Invalid `prisma'));
+          const cleanMsg = lines[lines.length - 1]?.trim();
+          message = cleanMsg || 'A database operation error occurred.';
           details = err.message;
         }
         break;

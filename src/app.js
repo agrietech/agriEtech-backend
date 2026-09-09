@@ -36,6 +36,7 @@ const ingestionRoutes = require('./ingestion/ingestion.routes');
 const ussdRoutes = require('./delivery/ussd/ussd.routes');
 const adminRoutes = require('./modules/admin/admin.routes');
 const mediaRoutes = require('./modules/media/media.routes');
+const roleRequestRoutes = require('./modules/roleRequest/roleRequest.routes');
 const { isConnected } = require('./config/db');
 
 
@@ -123,13 +124,41 @@ const corsOptions = {
     if (!origin) return callback(null, true);
     if (isWildcardOrigin) return callback(null, true);
     if (configuredOrigins.includes(origin)) return callback(null, true);
-    return callback(new Error(`Origin ${origin} not allowed by CORS`));
+
+    // Support any localhost / 127.0.0.1 port for Flutter Web and local development
+    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+      return callback(null, true);
+    }
+
+    // Support any onrender.com deployment (backend, web client, staging)
+    if (/^https:\/\/([a-zA-Z0-9-]+\.)?onrender\.com$/.test(origin)) {
+      return callback(null, true);
+    }
+
+    // Safely deny without unhandled exception
+    return callback(null, false);
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Correlation-Id', 'x-api-key', 'x-sensor-api-key'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'Accept',
+    'X-Requested-With',
+    'X-Correlation-Id',
+    'x-api-key',
+    'x-sensor-api-key',
+    'x-sensor-token',
+    'x-device-token',
+    'Origin',
+    'Cache-Control',
+  ],
+  exposedHeaders: ['X-Correlation-Id'],
   credentials: true,
+  optionsSuccessStatus: 200,
 };
 app.use(cors(corsOptions));
+// Explicit preflight handling
+app.options('*', cors(corsOptions));
 app.use(compression());
 app.use(requestLogger);
 app.use(auditLogger);
@@ -260,6 +289,10 @@ app.get('/forgot-password', (req, res) => {
 });
 
 // API feature routes with specialized rate limiters
+// Mounted before the generic /api/v1/auth router so the more specific path wins
+// without relying on router fall-through. Path is the one documented in
+// roleRequest.routes.js and already used by the Flutter client.
+app.use('/api/v1/auth/role-requests', authLimiter, roleRequestRoutes);
 app.use('/api/v1/auth', authLimiter, authRoutes);
 app.use('/api/v1/boundaries', boundariesRoutes);
 app.use('/api/v1/farms', farmsRoutes);

@@ -38,7 +38,17 @@ function initRenderKeepAlive() {
   logger.info(`[Render Keep-Alive] Keep-alive pinger scheduled for ${targetUrl} (every 10 min)`);
 }
 
-// Start HTTP server
+// Start HTTP server with specific error handling
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    logger.error(`[EthioFarm] Port ${PORT} is already in use by another process. Please terminate the conflicting process or set a different PORT in .env`);
+    process.exit(1);
+  } else {
+    logger.error(`[EthioFarm] Server error: ${err.message}`);
+    process.exit(1);
+  }
+});
+
 server.listen(PORT, () => {
   logger.info(`[EthioFarm] Server running on port ${PORT} [${env.NODE_ENV}]`);
 });
