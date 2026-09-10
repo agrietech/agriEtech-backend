@@ -138,7 +138,7 @@ function normalizePhoneNumber(raw) {
 }
 
 /**
- * Handle interactive USSD session (*804# / *212#)
+ * Handle interactive USSD session (*212#)
  * Supports standard Ethiopian Telco / SMSEthiopia / Africa's Talking USSD protocols
  */
 async function handleUssdSession(req, res, _next) {
@@ -365,7 +365,7 @@ async function handleUssdSession(req, res, _next) {
       response = t.invalidOption;
     }
 
-    if (req.headers.accept && req.headers.accept.includes('application/json')) {
+    if (req.headers && req.headers.accept && req.headers.accept.includes('application/json')) {
       return res.json({
         response,
         message: response.replace(/^(CON|END)\s+/, ''),
@@ -378,7 +378,7 @@ async function handleUssdSession(req, res, _next) {
   } catch (error) {
     logger.error(`[USSD Exception] ${error.message}`);
     res.set('Content-Type', 'text/plain; charset=utf-8');
-    res.send('END An error occurred. Please dial *804# again later.');
+    res.send('END An error occurred. Please dial *212# again later.');
   }
 }
 

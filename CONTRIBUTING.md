@@ -9,7 +9,7 @@ Guidelines and setup instructions for the AgriEtech backend project.
 ```
 src/
 ├── config/       # DB, Redis, Socket.IO, Environment variables
-├── delivery/     # SMS (Africa's Talking), USSD (*804#), Push, WebSocket
+├── delivery/     # SMS (Africa's Talking), USSD (*212#), Push, WebSocket
 ├── ingestion/    # Satellite connectors & BullMQ background jobs
 ├── middleware/   # Auth (JWT/RBAC), Request Logging, Error Handling, Validation
 ├── modules/      # REST API modules (Routes, Controllers, Services)

@@ -38,6 +38,7 @@ const adminRoutes = require('./modules/admin/admin.routes');
 const mediaRoutes = require('./modules/media/media.routes');
 const roleRequestRoutes = require('./modules/roleRequest/roleRequest.routes');
 const weatherRoutes = require('./modules/weather/weather.routes');
+const cropProtectionRoutes = require('./modules/cropProtection/cropProtection.routes');
 const { isConnected } = require('./config/db');
 
 
@@ -260,9 +261,10 @@ app.get('/api/v1', (_req, res) => {
         diseaseDiagnosis: { path: '/api/v1/disease-diagnosis', description: 'Plant.id botanical identification + Gemini 2.5 Flash multimodal vision' },
         analytics: { path: '/api/v1/analytics', description: 'Executive dashboard analytics, regional breakdown, temporal trends' },
         ai: { path: '/api/v1/ai', description: 'Bilingual AI voice assistant, farmer Q&A, text-to-speech' },
-        media: { path: '/api/v1/media', description: 'Supabase storage uploads (agrEtech public bucket and private signed URL documents)' },
+        weather: { path: '/api/v1/weather', description: 'Real live weather forecasts, evapotranspiration, and hourly agro-meteorological metrics' },
+        cropProtection: { path: '/api/v1/crop-protection', description: 'AI weed detection, smart spray window, nutrient deficiency, pest ETL scout, tank mix compatibility, seed calculator' },
         ingestion: { path: '/api/v1/ingestion', description: 'Data connector status, manual pipeline pull triggers' },
-        ussd: { path: '/api/v1/delivery/ussd', description: 'Interactive USSD menu handler (*804#)' },
+        ussd: { path: '/api/v1/delivery/ussd', description: 'Interactive USSD menu handler (*212#)' },
         admin: { path: '/api/v1/admin', description: 'System administration, user roles, emergency broadcasts, audit logs, role request approvals' },
       },
       documentation: '/docs/API_SPECIFICATION.md',
@@ -308,6 +310,7 @@ app.use('/api/v1/media', mediaRoutes);
 app.use('/api/v1/analytics', analyticsRoutes);
 app.use('/api/v1/ai', aiLimiter, aiRoutes);
 app.use('/api/v1/weather', weatherRoutes);
+app.use('/api/v1/crop-protection', cropProtectionRoutes);
 app.use('/api/v1/ingestion', telemetryLimiter, ingestionRoutes);
 app.use('/api/v1/delivery/ussd', ussdLimiter, ussdRoutes);
 app.use('/api/v1/admin', adminRoutes);

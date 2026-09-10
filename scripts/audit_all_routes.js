@@ -445,7 +445,7 @@ async function runRouteAudit() {
   });
   await testRoute({
     category: 'Delivery',
-    name: 'USSD Interactive Session (*804# Initial Menu)',
+    name: 'USSD Interactive Session (*212# Initial Menu)',
     method: 'POST',
     url: '/api/v1/delivery/ussd',
     body: { text: '' },

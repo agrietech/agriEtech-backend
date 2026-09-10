@@ -1103,7 +1103,7 @@ All API endpoints return standard JSON envelopes:
 ### 13.1 USSD Callback Handler
 - **Method:** `POST /api/v1/delivery/ussd`
 - **Auth:** Public (Africa's Talking Callback)
-- **Request Body:** `sessionId={id}&serviceCode=*804#&phoneNumber=+251911223344&text=1*1`
+- **Request Body:** `sessionId={id}&serviceCode=*212#&phoneNumber=+251911223344&text=1*1`
 - **Response Format:** Plain text string prefixed with `CON` (continue) or `END` (terminate).
 
 ### 13.2 USSD Health Check
