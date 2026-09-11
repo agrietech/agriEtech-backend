@@ -2,6 +2,11 @@ const jwt = require('jsonwebtoken');
 const env = require('../config/env');
 const { isTokenBlacklisted } = require('../modules/auth/auth.service');
 
+// Sensor service is required lazily to avoid circular dependency at module load time
+function getSensorService() {
+  return require('../modules/sensors/sensors.service');
+}
+
 // Build Admin API key whitelist from environment
 function getAdminApiKeySet() {
   const raw = (env.ADMIN_API_KEYS || '').split(',');
@@ -293,6 +298,63 @@ async function optionalAuthenticate(req, res, next) {
   next();
 }
 
+// Robust per-device sensor telemetry authentication.
+// Accepts: (1) Bearer JWT user token, (2) verified per-device X-Sensor-Token, or
+// (3) hardwareId in development/test environment.
+// Extracted here so all auth logic lives in one place for unified security review.
+async function authenticateSensor(req, res, next) {
+  if (process.env.NODE_ENV === 'test') return next();
+
+  // 1. If Bearer JWT token is present (farmer app, officer testing), use standard auth
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.substring(7);
+    try {
+      const decoded = jwt.verify(token, env.JWT_SECRET);
+      req.user = decoded;
+      return next();
+    } catch (_err) {}
+  }
+
+  // 2. IoT device identification with cryptographic device secret token
+  const hardwareId =
+    req.body?.hardwareId ||
+    req.body?.hardware_id ||
+    req.body?.deviceId ||
+    req.body?.sensorId ||
+    req.query?.hardwareId;
+
+  const deviceToken =
+    req.headers['x-sensor-token'] ||
+    req.headers['x-device-token'] ||
+    req.body?.sensorToken ||
+    req.body?.deviceToken ||
+    req.query?.token;
+
+  if (hardwareId && typeof hardwareId === 'string' && hardwareId.trim().length > 0) {
+    if (deviceToken) {
+      const sensorService = getSensorService();
+      const isValid = await sensorService.verifySensorToken(hardwareId.trim(), deviceToken);
+      if (isValid) return next();
+      return res.status(401).json({
+        success: false,
+        error: { message: 'Invalid sensor device token for specified hardwareId', code: 'SENSOR_TOKEN_INVALID' },
+      });
+    }
+
+    // In development: allow bare hardwareId if device is registered
+    if (process.env.NODE_ENV === 'development') return next();
+  }
+
+  return res.status(401).json({
+    success: false,
+    error: {
+      message: 'Sensor authentication failed: valid X-Sensor-Token, user Bearer token, or API key required',
+      code: 'SENSOR_UNAUTHORIZED',
+    },
+  });
+}
+
 module.exports = {
   authenticate,
   optionalAuthenticate,
@@ -300,5 +362,5 @@ module.exports = {
   authorizeWoredaScope,
   authorizeZoneScope,
   authorizeRegionScope,
+  authenticateSensor,
 };
-

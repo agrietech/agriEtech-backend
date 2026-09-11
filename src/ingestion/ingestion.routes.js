@@ -2,9 +2,8 @@ const express = require('express');
 const router = express.Router();
 const controller = require('./ingestion.controller');
 
-const { authenticate, authorize } = require('../middleware/auth.middleware');
+const { authenticate, authorize, authenticateSensor } = require('../middleware/auth.middleware');
 const { telemetryLimiter } = require('../middleware/rate-limiter.middleware');
-const { authenticateSensor } = require('../modules/sensors/sensors.routes');
 
 router.get('/connectors', authenticate, authorize('ADMIN', 'RESEARCHER', 'REGIONAL_OFFICER'), controller.getConnectorsList);
 router.get('/health', authenticate, authorize('ADMIN', 'RESEARCHER', 'REGIONAL_OFFICER'), controller.testConnectorHealth);
