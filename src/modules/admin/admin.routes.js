@@ -4,6 +4,10 @@ const controller = require('./admin.controller');
 const roleRequestController = require('../roleRequest/roleRequest.controller');
 const env = require('../../config/env');
 
+// Import the unified auth middleware so adminAuth delegates JWT verification
+// to a single, patchable code path — no duplicate JWT logic.
+const { authenticate: sharedAuthenticate } = require('../../middleware/auth.middleware');
+
 // Admin authentication middleware (Supports API Keys, JWT Bearer Tokens, and browser sessions)
 const { isTokenBlacklisted } = require('../auth/auth.service');
 
@@ -14,14 +18,16 @@ function getCookie(req, name) {
   return match ? decodeURIComponent(match[2]) : null;
 }
 
-const adminAuth = async (req, res, next) => {
+// Resolve the token from all supported admin surfaces:
+// API key header, cookie, Bearer header, or query param.
+// Once extracted, JWT verification is delegated to sharedAuthenticate — one code path.
+const adminAuth = (req, res, next) => {
   if (process.env.NODE_ENV === 'test') {
     if (!req.user) req.user = { id: 'usr_admin_01', email: 'admin@ethiofarm.et', role: 'ADMIN' };
     return next();
   }
 
-  // 1. API Key Authentication (x-api-key header)
-  // Validates against configured admin keys/passwords
+  // 1. API Key Authentication (x-api-key header) — short-circuit before JWT path
   const apiKey = req.headers['x-api-key'] || req.headers['api-key'];
   if (apiKey) {
     const validKeys = env.getAdminKeys ? env.getAdminKeys() : [
@@ -39,63 +45,37 @@ const adminAuth = async (req, res, next) => {
     }
   }
 
-  // 2. JWT Bearer Token Authentication (from Header, Cookie, or Query)
-  const authHeader = req.headers.authorization;
+  // 2. Cookie / query token: extract and place as Bearer header so sharedAuthenticate handles it.
+  //    This keeps all JWT signing/blacklist/expiry logic in one place.
   const cookieToken = getCookie(req, 'admin_token') || getCookie(req, 'accessToken');
-  const token = (authHeader && authHeader.startsWith('Bearer '))
-    ? authHeader.substring(7)
-    : (cookieToken || req.query.token || req.query.accessToken);
-  
-  if (token) {
-    try {
-      const jwt = require('jsonwebtoken');
-      const env = require('../../config/env');
+  const queryToken = req.query.token || req.query.accessToken;
+  const fallbackToken = cookieToken || queryToken;
 
-      // Check token blacklist
-      if (await isTokenBlacklisted(token)) {
-        return res.status(401).json({
-          success: false,
-          error: { message: 'Token has been revoked. Please log in again.', code: 'TOKEN_REVOKED' },
-        });
-      }
-
-      const decoded = jwt.verify(token, env.JWT_SECRET);
-      if (decoded) {
-        if (decoded.type === 'refresh') {
-          return res.status(401).json({
-            success: false,
-            error: { message: 'Refresh token cannot be used for administrative access', code: 'INVALID_TOKEN_TYPE' },
-          });
-        }
-
-        req.user = decoded;
-        const allowedRoles = [
-          'ADMIN',
-          'REGIONAL_OFFICER',
-          'ZONAL_OFFICER',
-          'WOREDA_OFFICER',
-          'DEVELOPMENT_AGENT',
-        ];
-        if (allowedRoles.includes(decoded.role)) {
-          return next();
-        } else {
-          return res.status(403).json({
-            success: false,
-            error: { message: 'Insufficient administrative privileges', code: 'FORBIDDEN' },
-          });
-        }
-      }
-    } catch (_err) {
-      return res.status(401).json({
-        success: false,
-        error: { message: 'Invalid or expired authorization token', code: 'UNAUTHORIZED' },
-      });
-    }
+  if (fallbackToken && !req.headers.authorization) {
+    req.headers.authorization = `Bearer ${fallbackToken}`;
   }
 
-  return res.status(401).json({
-    success: false,
-    error: { message: 'Authentication required for administrative access', code: 'UNAUTHORIZED' },
+  // 3. Delegate JWT verification + blacklist check to the shared middleware
+  sharedAuthenticate(req, res, (err) => {
+    if (err) return next(err);
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        error: { message: 'Authentication required for administrative access', code: 'UNAUTHORIZED' },
+      });
+    }
+
+    // 4. Role check — DA, Officers, Admin can access the panel; FARMER/RESEARCHER cannot
+    const allowedRoles = [
+      'ADMIN', 'REGIONAL_OFFICER', 'ZONAL_OFFICER', 'WOREDA_OFFICER', 'DEVELOPMENT_AGENT',
+    ];
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: { message: 'Insufficient administrative privileges', code: 'FORBIDDEN' },
+      });
+    }
+    next();
   });
 };
 
