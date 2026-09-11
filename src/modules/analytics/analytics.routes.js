@@ -12,7 +12,16 @@ router.get('/temporal-trends', authenticate, controller.getTemporalTrends);
 router.get('/agronomic-advisories', authenticate, controller.getAgronomicAdvisories);
 router.get('/ai-insights', authenticate, controller.getAiInsights);
 router.post('/ai-insights', authenticate, controller.getAiInsights);
-router.get('/export', authenticate, authorize('RESEARCHER', 'ZONAL_OFFICER', 'REGIONAL_OFFICER', 'WOREDA_OFFICER', 'ADMIN'), controller.exportData);
+// Export: RESEARCHER has national scope, so no scope guard needed.
+// ZONAL_OFFICER and WOREDA_OFFICER are subject to their geographic jurisdiction via authorizeZoneScope.
+// authorizeZoneScope passes ADMIN, RESEARCHER, and REGIONAL_OFFICER through unconditionally.
+router.get(
+  '/export',
+  authenticate,
+  authorize('RESEARCHER', 'ZONAL_OFFICER', 'REGIONAL_OFFICER', 'WOREDA_OFFICER', 'ADMIN'),
+  authorizeZoneScope('zoneId'),
+  controller.exportData
+);
 
 // Coordinate-Specific Hyper-Local Agronomy & Digital Soil Engine
 router.get('/hyper-local', optionalAuthenticate, controller.getHyperLocalProfile);
