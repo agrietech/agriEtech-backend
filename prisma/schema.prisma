@@ -56,6 +56,11 @@ enum HazardType {
   VEGETATION_STRESS
   FROST
   HEAT_STRESS
+  EARTHQUAKE
+  LANDSLIDE
+  VOLCANIC
+  SOIL_DEGRADATION
+  ANIMAL_DISEASE
 }
 
 enum DeliveryChannel {
@@ -162,6 +167,9 @@ model Woreda {
   alerts           Alert[]
   advisories       Advisory[]
   alertSubscriptions AlertSubscription[]
+  livestockHerds   LivestockHerd[]
+  diseaseOutbreaks AnimalDiseaseOutbreak[]
+  vaccinationRecords VaccinationRecord[]
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
@@ -300,6 +308,11 @@ model RiskAssessment {
   floodScore       Float?
   locustScore      Float?
   vegetationScore  Float?
+  earthquakeScore  Float?            // Seismic hazard score 0.0-1.0
+  landslideScore   Float?            // Landslide susceptibility 0.0-1.0
+  volcanicScore    Float?            // Volcanic proximity score 0.0-1.0
+  soilDegradationScore Float?        // RUSLE erosion severity 0.0-1.0
+  animalDiseaseScore Float?          // Animal health risk 0.0-1.0
   compositeScore   Float?            // Weighted aggregate of all hazard scores
   alertLevel       String?           // GREEN, YELLOW, ORANGE, RED, CRITICAL
   spi30Day         Float?            // Standardized Precipitation Index 30-day
@@ -581,5 +594,77 @@ model AlertSubscription {
 
   @@index([woredaId, isActive])
   @@index([phoneNumber])
+}
+
+// ── Animal Health & Livestock Surveillance Models ─────────────────────────────
+
+model LivestockHerd {
+  id               String            @id @default(uuid())
+  woredaId         String
+  woreda           Woreda            @relation(fields: [woredaId], references: [id], onDelete: Cascade)
+  kebeleId         String?
+  userId           String?
+  animalType       String            // CATTLE, SHEEP, GOAT, POULTRY, CAMEL, EQUINE
+  breedName        String?           // Ethiopian breed name
+  headCount        Int               @default(0)
+  healthStatus     String            @default("HEALTHY") // HEALTHY, SICK, QUARANTINED, VACCINATED
+  lastVetCheckDate DateTime?
+  notes            String?
+  registeredAt     DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@index([woredaId])
+  @@index([animalType])
+  @@index([userId])
+}
+
+model AnimalDiseaseOutbreak {
+  id               String            @id @default(uuid())
+  woredaId         String
+  woreda           Woreda            @relation(fields: [woredaId], references: [id], onDelete: Cascade)
+  kebeleId         String?
+  diseaseName      String            // e.g. 'Foot-and-Mouth Disease', 'Anthrax'
+  diseaseId        String?           // Reference to diseaseDatabase.js ID
+  animalType       String            // CATTLE, SHEEP, GOAT, POULTRY, etc.
+  confirmedCases   Int               @default(0)
+  suspectedCases   Int               @default(0)
+  deaths           Int               @default(0)
+  severity         String            @default("MODERATE") // LOW, MODERATE, HIGH, CRITICAL
+  status           String            @default("ACTIVE")   // ACTIVE, CONTAINED, RESOLVED
+  latitude         Float?
+  longitude        Float?
+  reportedBy       String?
+  notes            String?
+  reportedAt       DateTime          @default(now())
+  resolvedAt       DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@index([woredaId, status])
+  @@index([diseaseName])
+  @@index([animalType])
+  @@index([reportedAt])
+}
+
+model VaccinationRecord {
+  id               String            @id @default(uuid())
+  woredaId         String
+  woreda           Woreda            @relation(fields: [woredaId], references: [id], onDelete: Cascade)
+  herdId           String?
+  animalType       String            // CATTLE, SHEEP, GOAT, POULTRY, etc.
+  vaccineName      String            // e.g. 'FMD Trivalent', 'PPR', 'Newcastle HB1'
+  dosesAdministered Int              @default(0)
+  targetPopulation Int               @default(0)
+  coveragePercent  Float?            // 0.0 - 100.0
+  campaignDate     DateTime
+  nextDueDate      DateTime?
+  administeredBy   String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@index([woredaId])
+  @@index([animalType])
+  @@index([campaignDate])
+  @@index([vaccineName])
 }
 
