@@ -463,7 +463,11 @@ Respond strictly in valid JSON format only:
     scoutMethod: aiPestDetection ? 'AI_MULTIMODAL_PEST_SCOUT' : 'MANUAL_FIELD_SCOUT_ETL',
     aiConfidence: aiPestDetection?.confidenceScore ?? 0.93,
     cropType,
-    economicThresholdEvaluation: etlResult
+    economicThresholdEvaluation: etlResult,
+    scoutResult: {
+      ...etlResult,
+      actionRecommended: etlResult.recommendation?.action || etlResult.recommendation?.en || 'ACTION_EVALUATED',
+    },
   };
 }
 
@@ -493,6 +497,10 @@ function calculateSeedAndPlanting({ cropId = 'teff', areaValue = 1.0, areaUnit =
   });
   return {
     success: true,
+    calculation: {
+      ...result.seedPlan,
+      recommendedSeedKgTotal: result.seedPlan?.totalSeedRequiredKg,
+    },
     ...result
   };
 }
