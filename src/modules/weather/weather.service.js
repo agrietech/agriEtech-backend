@@ -117,6 +117,8 @@ async function getWeatherForecast({ woredaId, lat, lng, days = 7 } = {}) {
     const cond = resolveWeatherDetails(c.weather_code);
     current = {
       temperatureC: Math.round(c.temperature_2m * 10) / 10,
+      maxTempC: openMeteoData.daily?.temperature_2m_max?.[0] ?? (Math.round(c.temperature_2m * 10) / 10),
+      minTempC: openMeteoData.daily?.temperature_2m_min?.[0] ?? (Math.round(c.temperature_2m * 10) / 10),
       feelsLikeC: Math.round(c.apparent_temperature * 10) / 10,
       relativeHumidity: c.relative_humidity_2m,
       precipitationMm: c.precipitation || 0.0,
@@ -137,6 +139,8 @@ async function getWeatherForecast({ woredaId, lat, lng, days = 7 } = {}) {
     const ow = openWeatherData;
     current = {
       temperatureC: ow.temperature?.current ?? 21.0,
+      maxTempC: ow.temperature?.max ?? (ow.temperature?.current ?? 24.5),
+      minTempC: ow.temperature?.min ?? (ow.temperature?.current ?? 16.0),
       feelsLikeC: ow.temperature?.feelsLike ?? 20.5,
       relativeHumidity: ow.humidity ?? 60.0,
       precipitationMm: 0.0,
@@ -157,6 +161,8 @@ async function getWeatherForecast({ woredaId, lat, lng, days = 7 } = {}) {
     // Robust calibrated baseline fallback
     current = {
       temperatureC: 21.5,
+      maxTempC: 25.0,
+      minTempC: 15.5,
       feelsLikeC: 21.0,
       relativeHumidity: 58.0,
       precipitationMm: 0.0,
