@@ -66,7 +66,24 @@ async function getAlerts(req, res, next) {
     let scopedZoneId = null;
     let scopedRegionId = null;
 
-    if (userRole === 'FARMER' || userRole === 'DEVELOPMENT_AGENT' || userRole === 'WOREDA_OFFICER') {
+    if (userRole === 'FARMER') {
+      if (user?.woredaId) {
+        if (woredaId && woredaId !== user.woredaId) {
+          throw new ForbiddenError(`Access restricted: you cannot view alerts for woreda '${woredaId}' outside your assigned jurisdiction`);
+        }
+        scopedWoredaId = user.woredaId;
+      } else {
+        try {
+          const firstFarm = await prisma.farm.findFirst({
+            where: { userId: user.id },
+            select: { woredaId: true },
+          });
+          if (firstFarm?.woredaId) {
+            scopedWoredaId = firstFarm.woredaId;
+          }
+        } catch (_) {}
+      }
+    } else if (userRole === 'DEVELOPMENT_AGENT' || userRole === 'WOREDA_OFFICER') {
       if (!user?.woredaId) {
         throw new ForbiddenError('No administrative woreda assigned to your account');
       }

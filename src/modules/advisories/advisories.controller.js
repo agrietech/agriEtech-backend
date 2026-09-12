@@ -13,7 +13,24 @@ async function getAdvisories(req, res, next) {
 
     // RBAC & Scoping enforcement
     if (user) {
-      if (user.role === 'FARMER' || user.role === 'DEVELOPMENT_AGENT' || user.role === 'WOREDA_OFFICER') {
+      if (user.role === 'FARMER') {
+        if (user.woredaId) {
+          if (woredaId && woredaId !== user.woredaId) {
+            throw new ForbiddenError('You can only view advisories for your assigned woreda');
+          }
+          woredaId = user.woredaId;
+        } else {
+          try {
+            const firstFarm = await prisma.farm.findFirst({
+              where: { userId: user.id },
+              select: { woredaId: true },
+            });
+            if (firstFarm?.woredaId) {
+              woredaId = firstFarm.woredaId;
+            }
+          } catch (_) {}
+        }
+      } else if (user.role === 'DEVELOPMENT_AGENT' || user.role === 'WOREDA_OFFICER') {
         if (!user.woredaId) {
           throw new ForbiddenError('Your account has no administrative woreda assigned');
         }
