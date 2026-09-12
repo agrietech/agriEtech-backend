@@ -186,34 +186,6 @@ async function getFarmsByScope(user = {}) {
     orderBy: { createdAt: 'desc' },
   });
 
-  // For administrative or field supervisory roles without an assigned jurisdiction yet,
-  // ensure they can view system farms for supervision rather than an empty dashboard
-  if (
-    farms.length === 0 &&
-    (role === 'DEVELOPMENT_AGENT' || role === 'WOREDA_OFFICER' || role === 'ZONAL_OFFICER' || role === 'REGIONAL_OFFICER') &&
-    !user.woredaId &&
-    !user.zoneId &&
-    !user.regionId
-  ) {
-    farms = await prisma.farm.findMany({
-      include: {
-        woreda: {
-          select: {
-            id: true,
-            nameEn: true,
-            nameAm: true,
-            zoneId: true,
-            zone: { select: { id: true, nameEn: true, regionId: true } },
-          },
-        },
-        crop: true,
-        sensors: true,
-      },
-      take: 20,
-      orderBy: { createdAt: 'desc' },
-    });
-  }
-
   return farms;
 }
 

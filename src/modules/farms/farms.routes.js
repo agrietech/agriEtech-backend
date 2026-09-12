@@ -3,12 +3,13 @@ const router = express.Router();
 const { body } = require('express-validator');
 const controller = require('./farms.controller');
 const validate = require('../../middleware/validate.middleware');
-const { authenticate } = require('../../middleware/auth.middleware');
+const { authenticate, authorize } = require('../../middleware/auth.middleware');
 
-// POST /api/v1/farms – Register a new farm
+// POST /api/v1/farms – Register a new farm (Only FARMER, DEVELOPMENT_AGENT, and ADMIN)
 router.post(
   '/',
   authenticate,
+  authorize('FARMER', 'DEVELOPMENT_AGENT', 'ADMIN'),
   [
     body('farmName')
       .trim()
@@ -67,6 +68,7 @@ router.get('/:id', authenticate, controller.getFarmDetails);
 router.put(
   '/:id',
   authenticate,
+  authorize('FARMER', 'DEVELOPMENT_AGENT', 'ADMIN'),
   [
     body('farmName').optional().trim().notEmpty().withMessage('farmName cannot be empty').isLength({ max: 200 }),
     body('primaryCrop').optional().isString().trim().notEmpty(),
@@ -84,6 +86,7 @@ router.put(
 router.patch(
   '/:id',
   authenticate,
+  authorize('FARMER', 'DEVELOPMENT_AGENT', 'ADMIN'),
   [
     body('farmName').optional().trim().notEmpty().withMessage('farmName cannot be empty').isLength({ max: 200 }),
     body('primaryCrop').optional().isString().trim().notEmpty(),
@@ -99,7 +102,7 @@ router.patch(
 );
 
 // DELETE /api/v1/farms/:id – Delete a farm plot
-router.delete('/:id', authenticate, controller.deleteFarm);
+router.delete('/:id', authenticate, authorize('FARMER', 'DEVELOPMENT_AGENT', 'ADMIN'), controller.deleteFarm);
 
 module.exports = router;
 
