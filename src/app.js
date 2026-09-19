@@ -41,6 +41,7 @@ const weatherRoutes = require('./modules/weather/weather.routes');
 const cropProtectionRoutes = require('./modules/cropProtection/cropProtection.routes');
 const hazardsRoutes = require('./modules/hazards/hazards.routes');
 const animalHealthRoutes = require('./modules/animalHealth/animalHealth.routes');
+const dashboardsRoutes = require('./modules/dashboards/dashboard.routes');
 const { isConnected } = require('./config/db');
 
 
@@ -271,6 +272,7 @@ app.get('/api/v1', (_req, res) => {
         riskAssessments: { path: '/api/v1/risk-assessments', description: 'Integrated SPI drought, flood, locust, vegetation risk calculation' },
         alerts: { path: '/api/v1/alerts', description: 'Smart alert generation, advisory dispatch, push notifications' },
         diseaseDiagnosis: { path: '/api/v1/disease-diagnosis', description: 'Plant.id botanical identification + Gemini 2.5 Flash multimodal vision' },
+        dashboards: { path: '/api/v1/dashboards', description: 'Role-tailored dashboards for Farmers, DAs, Officers, and Admins' },
         analytics: { path: '/api/v1/analytics', description: 'Executive dashboard analytics, regional breakdown, temporal trends' },
         ai: { path: '/api/v1/ai', description: 'Bilingual AI voice assistant, farmer Q&A, text-to-speech' },
         weather: { path: '/api/v1/weather', description: 'Real live weather forecasts, evapotranspiration, and hourly agro-meteorological metrics' },
@@ -321,6 +323,7 @@ app.use('/api/v1/advisories', advisoriesRoutes);
 app.use('/api/v1/notifications', notificationsRoutes);
 app.use('/api/v1/disease-diagnosis', aiLimiter, diseaseRoutes);
 app.use('/api/v1/media', mediaRoutes);
+app.use('/api/v1/dashboards', dashboardsRoutes);
 app.use('/api/v1/analytics', analyticsRoutes);
 app.use('/api/v1/ai', aiLimiter, aiRoutes);
 app.use('/api/v1/weather', weatherRoutes);

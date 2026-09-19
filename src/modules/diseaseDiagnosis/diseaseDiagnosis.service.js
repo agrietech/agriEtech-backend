@@ -17,7 +17,7 @@ async function diagnoseCropImage({ farmId, cropType, imageUrl, imageFile, imageB
     const role = (user.role || '').toUpperCase();
     if (role === 'FARMER') {
       const farm = await prisma.farm.findUnique({ where: { id: farmId }, select: { userId: true } });
-      if (farm && farm.userId !== user.id && farmId !== 'farm_demo_01') {
+      if (farm && farm.userId !== user.id) {
         throw new ForbiddenError('Access denied: You can only submit diagnoses for your own farm');
       }
     }
@@ -404,13 +404,11 @@ async function getAllDiagnoses({ farmId, cropType, user } = {}) {
           where.OR = [
             { farmId: { in: userFarmIds } },
             { farmId: null },
-            { farmId: 'farm_demo_01' },
           ];
         } else {
-          // Farmer has no farms registered yet: show diagnoses submitted without farm + benchmark demo records
+          // Farmer has no farms registered yet: show diagnoses submitted without farm
           where.OR = [
             { farmId: null },
-            { farmId: 'farm_demo_01' },
           ];
         }
       } catch (_) {
@@ -419,12 +417,23 @@ async function getAllDiagnoses({ farmId, cropType, user } = {}) {
           { farmId: null },
         ];
       }
-    } else if (role === 'DEVELOPMENT_AGENT' || role === 'WOREDA_OFFICER') {
+    } else if (role === 'DEVELOPMENT_AGENT') {
+      if (user.kebeleId) {
+        where.OR = [
+          { farm: { kebeleId: user.kebeleId } },
+          { farmId: null },
+        ];
+      } else if (user.woredaId) {
+        where.OR = [
+          { farm: { woredaId: user.woredaId } },
+          { farmId: null },
+        ];
+      }
+    } else if (role === 'WOREDA_OFFICER') {
       if (user.woredaId) {
         where.OR = [
           { farm: { woredaId: user.woredaId } },
           { farmId: null },
-          { farmId: 'farm_demo_01' },
         ];
       }
       // If woredaId is not yet assigned in profile, show all accessible diagnoses
@@ -433,7 +442,6 @@ async function getAllDiagnoses({ farmId, cropType, user } = {}) {
         where.OR = [
           { farm: { woreda: { zoneId: user.zoneId } } },
           { farmId: null },
-          { farmId: 'farm_demo_01' },
         ];
       }
     } else if (role === 'REGIONAL_OFFICER') {
@@ -441,7 +449,6 @@ async function getAllDiagnoses({ farmId, cropType, user } = {}) {
         where.OR = [
           { farm: { woreda: { zone: { regionId: user.regionId } } } },
           { farmId: null },
-          { farmId: 'farm_demo_01' },
         ];
       }
     }
@@ -586,10 +593,18 @@ async function getDiagnosesByFarm(farmId, user) {
       if (!farm) {
         throw new NotFoundError(`Farm with ID ${farmId} not found`);
       }
-      if (role === 'FARMER' && farm.userId !== user.id && farmId !== 'farm_demo_01') {
+      if (role === 'FARMER' && farm.userId !== user.id) {
         throw new ForbiddenError('Access denied: You can only view diagnoses for your own farms');
       }
-      if ((role === 'DEVELOPMENT_AGENT' || role === 'WOREDA_OFFICER') && user.woredaId && farm.woredaId !== user.woredaId) {
+      if (role === 'DEVELOPMENT_AGENT') {
+        if (user.kebeleId && farm.kebeleId && farm.kebeleId !== user.kebeleId) {
+          throw new ForbiddenError('Access denied: Farm is outside your kebele jurisdiction');
+        }
+        if (user.woredaId && farm.woredaId !== user.woredaId) {
+          throw new ForbiddenError('Access denied: Farm is outside your woreda jurisdiction');
+        }
+      }
+      if (role === 'WOREDA_OFFICER' && user.woredaId && farm.woredaId !== user.woredaId) {
         throw new ForbiddenError('Access denied: Farm is outside your woreda jurisdiction');
       }
       if (role === 'ZONAL_OFFICER' && user.zoneId && farm.woreda?.zoneId !== user.zoneId) {
@@ -650,7 +665,7 @@ async function getDiagnosisById(id, user) {
   // Jurisdictional check for scoped users
   if (user && isConnected() && diagnosis.farm) {
     const role = (user.role || 'FARMER').toUpperCase();
-    if (role === 'FARMER' && diagnosis.farm.userId && diagnosis.farm.userId !== user.id && diagnosis.farmId !== 'farm_demo_01') {
+    if (role === 'FARMER' && diagnosis.farm.userId && diagnosis.farm.userId !== user.id) {
       throw new ForbiddenError('Access denied: You can only view diagnoses for your own farm');
     }
   }

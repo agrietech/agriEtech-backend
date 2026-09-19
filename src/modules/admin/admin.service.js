@@ -39,40 +39,23 @@ async function getOverview() {
   const memUsage = process.memoryUsage();
   const queueStats = await getQueueStats();
 
-  let totalUsers = 125;
+  let totalUsers = 0;
   let roleDistribution = {
-    ADMIN: 2,
-    REGIONAL_OFFICER: 6,
-    ZONAL_OFFICER: 18,
-    WOREDA_OFFICER: 45,
-    DEVELOPMENT_AGENT: 120,
-    RESEARCHER: 12,
-    FARMER: 950,
+    ADMIN: 0,
+    REGIONAL_OFFICER: 0,
+    ZONAL_OFFICER: 0,
+    WOREDA_OFFICER: 0,
+    DEVELOPMENT_AGENT: 0,
+    RESEARCHER: 0,
+    FARMER: 0,
   };
-  let totalFarms = 85;
-  let totalSensors = 42;
-  let activeSensors = 38;
-  let totalAlerts = 12;
-  let totalDiagnoses = 56;
-  let recentAlerts = [
-    {
-      id: 'alert_demo_01',
-      hazardType: 'DROUGHT',
-      severity: 'WARNING',
-      headline: 'Early Seasonal Moisture Deficit Warning',
-      createdAt: new Date().toISOString(),
-      woreda: { nameEn: 'Adama Zuria', nameAm: 'አዳማ ዙሪያ' },
-    },
-  ];
-  let recentAuditLogs = [
-    {
-      id: 'log_01',
-      action: 'SYSTEM_STARTUP',
-      adminEmail: 'system@ethiofarm.et',
-      details: 'EthioFarm Integrated Risk backend initialized',
-      createdAt: new Date().toISOString(),
-    },
-  ];
+  let totalFarms = 0;
+  let totalSensors = 0;
+  let activeSensors = 0;
+  let totalAlerts = 0;
+  let totalDiagnoses = 0;
+  let recentAlerts = [];
+  let recentAuditLogs = [];
 
   if (isConnected()) {
     try {
