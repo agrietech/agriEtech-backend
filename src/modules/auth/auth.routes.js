@@ -31,6 +31,15 @@ router.patch('/me', authenticate, controller.updateProfile);
 router.post('/device-token', authenticate, controller.updateDeviceToken);
 router.patch('/update-password', authenticate, controller.updatePassword);
 
+// MFA routes
+router.post('/mfa/setup', authenticate, controller.setupMfa);
+router.post('/mfa/verify', authenticate, controller.verifyMfa);
+
+// Active session tracking & remote revocation
+router.get('/sessions', authenticate, controller.listSessions);
+router.delete('/sessions/:id', authenticate, controller.terminateSession);
+router.post('/sessions/terminate-others', authenticate, controller.terminateOtherSessions);
+
 // Role upgrade application routes
 router.use('/role-requests', roleRequestRoutes);
 
