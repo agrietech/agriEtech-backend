@@ -15,6 +15,22 @@ router.post(
   controller.createAlert
 );
 
+// Pre-approved multi-hazard templates & targeted campaigns
+router.get('/templates', authenticate, controller.getAllTemplates);
+router.get('/templates/:id', authenticate, controller.getTemplateById);
+router.post(
+  '/templates/:id/dispatch',
+  authenticate,
+  authorize('DEVELOPMENT_AGENT', 'WOREDA_OFFICER', 'ZONAL_OFFICER', 'REGIONAL_OFFICER', 'ADMIN'),
+  controller.dispatchTemplateAlert
+);
+router.post(
+  '/campaigns/targeted',
+  authenticate,
+  authorize('DEVELOPMENT_AGENT', 'WOREDA_OFFICER', 'ZONAL_OFFICER', 'REGIONAL_OFFICER', 'ADMIN'),
+  controller.createTargetedAlert
+);
+
 // GET routes — all authenticated users can view alerts scoped to their jurisdiction
 router.get('/', authenticate, controller.getAlerts);
 router.get('/active', authenticate, controller.getAlerts);

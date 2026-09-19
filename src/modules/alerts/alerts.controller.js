@@ -189,11 +189,72 @@ async function submitFeedback(req, res, next) {
   }
 }
 
+const alertTargetingService = require('./targeting/alert-targeting.service');
+const alertTemplatesService = require('./templates/alert-templates.service');
+
+/**
+ * POST /alerts/campaigns/targeted
+ * Create targeted alert campaign with intelligent audience selection
+ */
+async function createTargetedAlert(req, res, next) {
+  try {
+    const result = await alertTargetingService.createTargetedAlert(req.body);
+    res.status(201).json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * GET /alerts/templates
+ * Retrieve all pre-approved multi-hazard alert templates
+ */
+async function getAllTemplates(_req, res, next) {
+  try {
+    const templates = alertTemplatesService.getAllTemplates();
+    res.status(200).json({ success: true, data: templates });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * GET /alerts/templates/:id
+ * Retrieve specific template by ID
+ */
+async function getTemplateById(req, res, next) {
+  try {
+    const template = alertTemplatesService.getTemplate(req.params.id);
+    res.status(200).json({ success: true, data: template });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * POST /alerts/templates/:id/dispatch
+ * Dispatch an alert created from a pre-defined template with interpolated variables
+ */
+async function dispatchTemplateAlert(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { variables = {}, targeting = {} } = req.body;
+    const result = await alertTemplatesService.createFromTemplate(id, variables, targeting);
+    res.status(201).json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   createAlert,
   getAlerts,
   getAlertById,
   markAlertAsRead,
   submitFeedback,
+  createTargetedAlert,
+  getAllTemplates,
+  getTemplateById,
+  dispatchTemplateAlert,
 };
 
