@@ -6,6 +6,14 @@ const boundariesService = require('../boundaries/boundaries.service');
 const { BadRequestError } = require('../../utils/errors');
 const logger = require('../../utils/logger');
 const os = require('os');
+const {
+  buildUserScope,
+  buildFarmScope,
+  buildAlertScope,
+  buildSensorScope,
+  buildDiagnosisScope,
+  buildAuditLogScope,
+} = require('../../middleware/scope-filter.utils');
 
 /**
  * Persist audit log entry to database (with in-memory fallback for startup events)
@@ -35,7 +43,7 @@ async function logAuditAction(entry) {
 /**
  * Get comprehensive administrative dashboard overview across 1 National Admin + 6 Roles
  */
-async function getOverview() {
+async function getOverview(user = null) {
   const memUsage = process.memoryUsage();
   const queueStats = await getQueueStats();
 
@@ -59,6 +67,13 @@ async function getOverview() {
 
   if (isConnected()) {
     try {
+      // Build scope-aware where clauses for each entity
+      const userWhere = user ? buildUserScope(user) : {};
+      const farmWhere = user ? buildFarmScope(user) : {};
+      const sensorWhere = user ? buildSensorScope(user) : {};
+      const alertWhere = user ? buildAlertScope(user) : {};
+      const diagWhere = user ? buildDiagnosisScope(user) : {};
+
       const [
         dbUsers,
         usersByRole,
@@ -69,17 +84,19 @@ async function getOverview() {
         dbDiagnoses,
         dbRecentAlerts,
       ] = await Promise.all([
-        prisma.user.count(),
+        prisma.user.count({ where: userWhere }),
         prisma.user.groupBy({
           by: ['role'],
+          where: userWhere,
           _count: { id: true },
         }),
-        prisma.farm.count(),
-        prisma.sensor.count(),
-        prisma.sensor.count({ where: { isActive: true } }),
-        prisma.alert.count(),
-        prisma.diseaseDiagnosis.count(),
+        prisma.farm.count({ where: farmWhere }),
+        prisma.sensor.count({ where: sensorWhere }),
+        prisma.sensor.count({ where: { ...sensorWhere, isActive: true } }),
+        prisma.alert.count({ where: alertWhere }),
+        prisma.diseaseDiagnosis.count({ where: diagWhere }),
         prisma.alert.findMany({
+          where: alertWhere,
           take: 5,
           orderBy: { createdAt: 'desc' },
           include: { woreda: { select: { nameEn: true, nameAm: true } } },
@@ -107,7 +124,9 @@ async function getOverview() {
         roleDistribution[r.role] = r._count.id;
       });
 
+      const auditWhere = user ? buildAuditLogScope(user) : {};
       const dbAuditLogs = await prisma.auditLog.findMany({
+        where: auditWhere,
         take: 5,
         orderBy: { createdAt: 'desc' },
       });
@@ -149,11 +168,12 @@ async function getOverview() {
 /**
  * Get paginated list of users with filtering
  */
-async function getUsers({ page = 1, limit = 20, role, woredaId, search } = {}) {
+async function getUsers({ page = 1, limit = 20, role, woredaId, search, user } = {}) {
   const skip = (Number(page) - 1) * Number(limit);
   const take = Number(limit);
 
-  const where = {};
+  // Start with scope-enforced base filter
+  const where = user ? buildUserScope(user) : {};
   if (role) where.role = role;
   if (woredaId) where.woredaId = woredaId;
   if (search && search.trim()) {
@@ -236,25 +256,28 @@ async function updateUserRole(userId, newRole, adminContext = {}) {
     throw new BadRequestError(`Invalid role '${newRole}'. Allowed roles: ${validRoles.join(', ')}`);
   }
 
-  const updatedUser = await prisma.user.update({
-    where: { id: userId },
-    data: { role: newRole },
-    select: {
-      id: true,
-      email: true,
-      fullName: true,
-      role: true,
-      updatedAt: true,
-    },
-  });
-
-  await logAuditAction({
-    action: 'USER_ROLE_UPDATED',
-    adminId: adminContext.id || null,
-    adminEmail: adminContext.email || null,
-    details: `Updated role for user ${userId} to ${newRole}`,
-    ipAddress: adminContext.ip || null,
-  });
+  const [updatedUser] = await prisma.$transaction([
+    prisma.user.update({
+      where: { id: userId },
+      data: { role: newRole },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        role: true,
+        updatedAt: true,
+      },
+    }),
+    prisma.auditLog.create({
+      data: {
+        action: 'USER_ROLE_UPDATED',
+        adminId: adminContext.id || null,
+        adminEmail: adminContext.email || null,
+        details: `Updated role for user ${userId} to ${newRole}`,
+        ipAddress: adminContext.ip || null,
+      },
+    }),
+  ]);
 
   return updatedUser;
 }
@@ -265,25 +288,28 @@ async function updateUserRole(userId, newRole, adminContext = {}) {
 async function updateUserStatus(userId, { isEmailVerified }, adminContext = {}) {
   const verifiedBool = Boolean(isEmailVerified);
 
-  const updatedUser = await prisma.user.update({
-    where: { id: userId },
-    data: { isEmailVerified: verifiedBool },
-    select: {
-      id: true,
-      email: true,
-      fullName: true,
-      isEmailVerified: true,
-      updatedAt: true,
-    },
-  });
-
-  await logAuditAction({
-    action: 'USER_STATUS_UPDATED',
-    adminId: adminContext.id || null,
-    adminEmail: adminContext.email || null,
-    details: `Updated verification status for user ${userId}: isEmailVerified=${verifiedBool}`,
-    ipAddress: adminContext.ip || null,
-  });
+  const [updatedUser] = await prisma.$transaction([
+    prisma.user.update({
+      where: { id: userId },
+      data: { isEmailVerified: verifiedBool },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        isEmailVerified: true,
+        updatedAt: true,
+      },
+    }),
+    prisma.auditLog.create({
+      data: {
+        action: 'USER_STATUS_UPDATED',
+        adminId: adminContext.id || null,
+        adminEmail: adminContext.email || null,
+        details: `Updated verification status for user ${userId}: isEmailVerified=${verifiedBool}`,
+        ipAddress: adminContext.ip || null,
+      },
+    }),
+  ]);
 
   return updatedUser;
 }
@@ -542,6 +568,9 @@ async function getFarmerAudienceStats({ woredaId, regionId, cropType } = {}) {
       } else if (regionId && regionId !== 'ALL') {
         where.regionId = regionId;
       }
+      if (cropType && cropType !== 'ALL') {
+        where.farms = { some: { primaryCrop: { contains: cropType, mode: 'insensitive' } } };
+      }
 
       const [total, withPhone, farms] = await Promise.all([
         prisma.user.count({ where }),
@@ -589,10 +618,12 @@ async function getFarmerAudienceStats({ woredaId, regionId, cropType } = {}) {
 /**
  * Get audit logs from database
  */
-async function getAuditLogs(limit = 50) {
+async function getAuditLogs(limit = 50, user = null) {
   if (isConnected()) {
     try {
+      const auditWhere = user ? buildAuditLogScope(user) : {};
       return await prisma.auditLog.findMany({
+        where: auditWhere,
         take: Number(limit),
         orderBy: { createdAt: 'desc' },
       });
@@ -618,37 +649,40 @@ async function getAuditLogs(limit = 50) {
 async function createUser(data, adminContext = {}) {
   const passwordHash = await bcrypt.hash(data.password || 'Password123!', 10);
 
-  const created = await prisma.user.create({
-    data: {
-      phoneNumber: data.phoneNumber || null,
-      email: data.email ? data.email.trim().toLowerCase() : null,
-      fullName: data.fullName,
-      passwordHash,
-      role: data.role || 'FARMER',
-      preferredLang: data.preferredLang || 'am',
-      woredaId: data.woredaId || null,
-      isEmailVerified: true,
-    },
-    select: {
-      id: true,
-      fullName: true,
-      phoneNumber: true,
-      email: true,
-      role: true,
-      preferredLang: true,
-      woredaId: true,
-      isEmailVerified: true,
-      createdAt: true,
-    },
-  });
-
-  await logAuditAction({
-    action: 'USER_CREATED',
-    adminId: adminContext.id,
-    adminEmail: adminContext.email,
-    details: `Created new user ${created.fullName} (${created.role})`,
-    ipAddress: adminContext.ip,
-  });
+  const [created] = await prisma.$transaction([
+    prisma.user.create({
+      data: {
+        phoneNumber: data.phoneNumber || null,
+        email: data.email ? data.email.trim().toLowerCase() : null,
+        fullName: data.fullName,
+        passwordHash,
+        role: data.role || 'FARMER',
+        preferredLang: data.preferredLang || 'am',
+        woredaId: data.woredaId || null,
+        isEmailVerified: true,
+      },
+      select: {
+        id: true,
+        fullName: true,
+        phoneNumber: true,
+        email: true,
+        role: true,
+        preferredLang: true,
+        woredaId: true,
+        isEmailVerified: true,
+        createdAt: true,
+      },
+    }),
+    prisma.auditLog.create({
+      data: {
+        action: 'USER_CREATED',
+        adminId: adminContext.id || null,
+        adminEmail: adminContext.email || null,
+        details: `Created new user ${data.fullName} (${data.role || 'FARMER'})`,
+        ipAddress: adminContext.ip || null,
+      },
+    }),
+  ]);
 
   return created;
 }
@@ -663,53 +697,61 @@ async function updateUser(userId, data, adminContext = {}) {
   if (data.isEmailVerified !== undefined) updateData.isEmailVerified = Boolean(data.isEmailVerified);
   if (data.preferredLang) updateData.preferredLang = data.preferredLang;
 
-  const updated = await prisma.user.update({
-    where: { id: userId },
-    data: updateData,
-    select: {
-      id: true,
-      fullName: true,
-      phoneNumber: true,
-      email: true,
-      role: true,
-      preferredLang: true,
-      isEmailVerified: true,
-      woredaId: true,
-      updatedAt: true,
-    },
-  });
-
-  await logAuditAction({
-    action: 'USER_UPDATED',
-    adminId: adminContext.id,
-    adminEmail: adminContext.email,
-    details: `Updated user details for ${userId}`,
-    ipAddress: adminContext.ip,
-  });
+  const [updated] = await prisma.$transaction([
+    prisma.user.update({
+      where: { id: userId },
+      data: updateData,
+      select: {
+        id: true,
+        fullName: true,
+        phoneNumber: true,
+        email: true,
+        role: true,
+        preferredLang: true,
+        isEmailVerified: true,
+        woredaId: true,
+        updatedAt: true,
+      },
+    }),
+    prisma.auditLog.create({
+      data: {
+        action: 'USER_UPDATED',
+        adminId: adminContext.id || null,
+        adminEmail: adminContext.email || null,
+        details: `Updated user details for ${userId}`,
+        ipAddress: adminContext.ip || null,
+      },
+    }),
+  ]);
 
   return updated;
 }
 
 async function deleteUser(userId, adminContext = {}) {
-  await prisma.user.delete({ where: { id: userId } });
-  await logAuditAction({
-    action: 'USER_DELETED',
-    adminId: adminContext.id,
-    adminEmail: adminContext.email,
-    details: `Deleted user ${userId}`,
-    ipAddress: adminContext.ip,
-  });
+  await prisma.$transaction([
+    prisma.user.delete({ where: { id: userId } }),
+    prisma.auditLog.create({
+      data: {
+        action: 'USER_DELETED',
+        adminId: adminContext.id || null,
+        adminEmail: adminContext.email || null,
+        details: `Deleted user ${userId}`,
+        ipAddress: adminContext.ip || null,
+      },
+    }),
+  ]);
   return { success: true, id: userId };
 }
 
 /**
  * Farm Management Operations
  */
-async function getFarms({ page = 1, limit = 20, woredaId, search } = {}) {
+async function getFarms({ page = 1, limit = 20, woredaId, search, user } = {}) {
   const skip = (Number(page) - 1) * Number(limit);
   const take = Number(limit);
 
-  const where = {};
+  // Start with scope-enforced base filter
+  const where = user ? buildFarmScope(user) : {};
   if (woredaId) where.woredaId = woredaId;
   if (search && search.trim()) {
     where.OR = [
@@ -819,20 +861,24 @@ async function deleteFarm(farmId, adminContext = {}) {
 /**
  * Sensor Management Operations
  */
-async function getSensors({ page = 1, limit = 20 } = {}) {
+async function getSensors({ page = 1, limit = 20, user } = {}) {
   const skip = (Number(page) - 1) * Number(limit);
   const take = Number(limit);
 
+  // Build scope-enforced where clause
+  const sensorWhere = user ? buildSensorScope(user) : {};
+
   const [sensors, total] = await Promise.all([
     prisma.sensor.findMany({
+      where: sensorWhere,
       skip,
       take,
       orderBy: { createdAt: 'desc' },
       include: {
-        farm: { select: { farmName: true } },
+        farm: { select: { farmName: true, woredaId: true } },
       },
     }),
-    prisma.sensor.count(),
+    prisma.sensor.count({ where: sensorWhere }),
   ]);
 
   return { sensors, pagination: { page: Number(page), limit: Number(limit), total, totalPages: Math.ceil(total / take) || 1 } };
@@ -883,11 +929,12 @@ async function deleteSensor(sensorId, adminContext = {}) {
 /**
  * Alerts & Diagnoses Operations
  */
-async function getAlerts({ page = 1, limit = 50, hazardType, severity, woredaId, regionId } = {}) {
+async function getAlerts({ page = 1, limit = 50, hazardType, severity, woredaId, regionId, user } = {}) {
   const skip = (Number(page) - 1) * Number(limit);
   const take = Number(limit);
 
-  const where = {};
+  // Start with scope-enforced base filter
+  const where = user ? buildAlertScope(user) : {};
   if (hazardType && hazardType !== 'ALL') {
     let normalizedHazard = hazardType.toUpperCase();
     if (normalizedHazard === 'PEST') normalizedHazard = 'LOCUST_PEST';
@@ -1166,17 +1213,24 @@ async function deleteAlert(alertId, adminContext = {}) {
   return { success: true, id: alertId };
 }
 
-async function getDiagnoses({ page = 1, limit = 20 } = {}) {
+async function getDiagnoses({ page = 1, limit = 20, user } = {}) {
   const skip = (Number(page) - 1) * Number(limit);
   const take = Number(limit);
 
+  // Build scope-enforced where clause
+  const diagWhere = user ? buildDiagnosisScope(user) : {};
+
   const [diagnoses, total] = await Promise.all([
     prisma.diseaseDiagnosis.findMany({
+      where: diagWhere,
       skip,
       take,
       orderBy: { createdAt: 'desc' },
+      include: {
+        farm: { select: { id: true, farmName: true, woredaId: true } },
+      },
     }),
-    prisma.diseaseDiagnosis.count(),
+    prisma.diseaseDiagnosis.count({ where: diagWhere }),
   ]);
   return { diagnoses, pagination: { page: Number(page), limit: Number(limit), total, totalPages: Math.ceil(total / take) || 1 } };
 }
