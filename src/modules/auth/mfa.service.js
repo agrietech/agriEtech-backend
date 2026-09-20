@@ -273,6 +273,24 @@ class MFAService {
 
     return storedOtp === String(code).trim();
   }
+
+  /**
+   * Disable MFA for user and purge active/pending secrets
+   */
+  async disableMFA(userId) {
+    if (redis && typeof redis.del === 'function') {
+      try {
+        await redis.del(`mfa:active:${userId}`);
+        await redis.del(`mfa:pending:${userId}`);
+      } catch (err) {
+        logger.warn(`[MFA] Redis delete failed: ${err.message}`);
+      }
+    }
+    memoryMfaStore.delete(`mfa:active:${userId}`);
+    memoryMfaStore.delete(`mfa:pending:${userId}`);
+    logger.info(`[MFA] Successfully disabled MFA for user ${userId}`);
+    return { success: true, message: 'MFA successfully disabled' };
+  }
 }
 
 module.exports = new MFAService();

@@ -892,6 +892,33 @@ async function verifyMfa(req, res, next) {
   }
 }
 
+// Disable MFA for current user with password confirmation
+async function disableMfa(req, res, next) {
+  try {
+    const { password } = req.body;
+    if (!password) {
+      return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Password is required to disable MFA' } });
+    }
+
+    const { prisma } = require('../../config/db');
+    const bcrypt = require('bcryptjs');
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    if (!user || !user.passwordHash) {
+      return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'User verification failed' } });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.passwordHash).catch(() => false);
+    if (!isMatch) {
+      return res.status(401).json({ success: false, error: { code: 'INVALID_CREDENTIALS', message: 'Incorrect password' } });
+    }
+
+    const result = await mfaService.disableMFA(req.user.id);
+    res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+}
+
 // List all active sessions for current user
 async function listSessions(req, res, next) {
   try {
@@ -945,6 +972,7 @@ module.exports = {
   resendPhoneOtp,
   setupMfa,
   verifyMfa,
+  disableMfa,
   listSessions,
   terminateSession,
   terminateOtherSessions,
