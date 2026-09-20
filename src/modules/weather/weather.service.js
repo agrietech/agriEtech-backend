@@ -1,6 +1,5 @@
 const axios = require('axios');
 const logger = require('../../utils/logger');
-const env = require('../../config/env');
 const { getWoredaCoordinates } = require('../boundaries/boundaries.service');
 const openWeatherMapConnector = require('../../ingestion/connectors/openWeatherMapConnector');
 const worldBankClimateConnector = require('../../ingestion/connectors/worldBankClimateConnector');

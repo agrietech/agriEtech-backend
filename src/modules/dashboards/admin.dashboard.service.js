@@ -1,6 +1,5 @@
 const { prisma, isConnected } = require('../../config/db');
 const redis = require('../../config/redis');
-const logger = require('../../utils/logger');
 
 // Fallback memory cache
 const memoryAdminCache = new Map();
@@ -9,7 +8,7 @@ class AdminDashboardService {
   /**
    * System-Wide Administrative Control Panel
    */
-  async getAdminPanel(userId) {
+  async getAdminPanel(_userId) {
     const cacheKey = 'dashboard:admin:system';
 
     if (redis && typeof redis.get === 'function') {

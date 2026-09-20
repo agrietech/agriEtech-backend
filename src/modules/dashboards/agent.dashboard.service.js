@@ -1,6 +1,5 @@
 const { prisma } = require('../../config/db');
 const redis = require('../../config/redis');
-const logger = require('../../utils/logger');
 
 // Fallback memory cache
 const memoryAgentCache = new Map();

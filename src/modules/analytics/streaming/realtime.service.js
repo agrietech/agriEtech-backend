@@ -166,7 +166,7 @@ class RealtimeAnalyticsService extends EventEmitter {
     if (this.metricsBuffer.size === 0) return;
 
     const metrics = [];
-    for (const [key, values] of this.metricsBuffer.entries()) {
+    for (const values of this.metricsBuffer.values()) {
       metrics.push(...values);
     }
 

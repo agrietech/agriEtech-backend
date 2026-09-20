@@ -1,5 +1,5 @@
 const { prisma } = require('../../../config/db');
-const { BadRequestError, NotFoundError } = require('../../../utils/errors');
+const { NotFoundError } = require('../../../utils/errors');
 const logger = require('../../../utils/logger');
 
 class FarmPlannerService {
