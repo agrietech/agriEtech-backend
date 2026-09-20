@@ -323,6 +323,7 @@ app.use('/api/v1/advisories', advisoriesRoutes);
 app.use('/api/v1/notifications', notificationsRoutes);
 app.use('/api/v1/disease-diagnosis', aiLimiter, diseaseRoutes);
 app.use('/api/v1/media', mediaRoutes);
+app.use('/api/v1/dashboard', dashboardsRoutes);
 app.use('/api/v1/dashboards', dashboardsRoutes);
 app.use('/api/v1/analytics', analyticsRoutes);
 app.use('/api/v1/ai', aiLimiter, aiRoutes);
