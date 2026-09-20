@@ -462,8 +462,10 @@ async function getDashboardSummary({ role, userId, woredaId, zoneId, regionId } 
 }
 
 // Regional risk and weather indicators
-async function getRegionalBreakdown() {
+async function getRegionalBreakdown(regionId = null) {
+  const where = regionId ? { id: regionId } : {};
   const regions = await prisma.region.findMany({
+    where,
     select: {
       id: true,
       nameEn: true,

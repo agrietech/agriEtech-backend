@@ -1,6 +1,7 @@
 const advisoriesService = require('./advisories.service');
 const { ForbiddenError } = require('../../utils/errors');
 const { prisma } = require('../../config/db');
+const { assertResourceInScope } = require('../../middleware/scope-filter.utils');
 
 /**
  * Advisories Controller
@@ -88,6 +89,9 @@ async function getAdvisories(req, res, next) {
 async function getAdvisoryById(req, res, next) {
   try {
     const advisory = await advisoriesService.getAdvisoryById(req.params.id);
+    if (req.user) {
+      assertResourceInScope(req.user, advisory, 'advisory');
+    }
     res.status(200).json({ success: true, data: advisory });
   } catch (error) {
     next(error);
@@ -116,6 +120,10 @@ async function createAdvisory(req, res, next) {
 
 async function updateAdvisory(req, res, next) {
   try {
+    const advisory = await advisoriesService.getAdvisoryById(req.params.id);
+    if (req.user) {
+      assertResourceInScope(req.user, advisory, 'advisory');
+    }
     const updated = await advisoriesService.updateAdvisory(req.params.id, req.body);
     res.status(200).json({ success: true, data: updated });
   } catch (error) {
@@ -125,6 +133,10 @@ async function updateAdvisory(req, res, next) {
 
 async function deleteAdvisory(req, res, next) {
   try {
+    const advisory = await advisoriesService.getAdvisoryById(req.params.id);
+    if (req.user) {
+      assertResourceInScope(req.user, advisory, 'advisory');
+    }
     const result = await advisoriesService.deleteAdvisory(req.params.id);
     res.status(200).json({ success: true, data: result });
   } catch (error) {

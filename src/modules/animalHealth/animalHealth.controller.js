@@ -37,7 +37,17 @@ async function reportOutbreak(req, res, next) {
 // GET /api/v1/animal-health/outbreaks — Get active outbreaks
 async function getOutbreaks(req, res, next) {
   try {
-    const { woredaId, zoneId, regionId, status, animalType, limit } = req.query;
+    let { woredaId, zoneId, regionId, status, animalType, limit } = req.query;
+    const user = req.user;
+    if (user && !['ADMIN', 'RESEARCHER'].includes(user.role)) {
+      if (user.role === 'FARMER' || user.role === 'DEVELOPMENT_AGENT' || user.role === 'WOREDA_OFFICER') {
+        woredaId = user.woredaId;
+      } else if (user.role === 'ZONAL_OFFICER') {
+        zoneId = user.zoneId;
+      } else if (user.role === 'REGIONAL_OFFICER') {
+        regionId = user.regionId;
+      }
+    }
     const outbreaks = await animalHealthService.getOutbreaks({ woredaId, zoneId, regionId, status, animalType, limit });
     res.json({ success: true, data: { total: outbreaks.length, outbreaks } });
   } catch (err) {

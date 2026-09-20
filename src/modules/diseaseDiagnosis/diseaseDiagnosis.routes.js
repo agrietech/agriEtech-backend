@@ -12,7 +12,10 @@ const enforceDiagnosisScope = (req, _res, next) => {
   if (!user) return next();
   if (user.role === 'FARMER') {
     req.query.userId = user.id;
-  } else if (user.role === 'DEVELOPMENT_AGENT' || user.role === 'WOREDA_OFFICER') {
+  } else if (user.role === 'DEVELOPMENT_AGENT') {
+    if (user.kebeleId) req.query.kebeleId = user.kebeleId;
+    else if (user.woredaId) req.query.woredaId = user.woredaId;
+  } else if (user.role === 'WOREDA_OFFICER') {
     if (user.woredaId) req.query.woredaId = user.woredaId;
   } else if (user.role === 'ZONAL_OFFICER') {
     if (user.zoneId) req.query.zoneId = user.zoneId;
