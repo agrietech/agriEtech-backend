@@ -9,7 +9,7 @@ class SecurityMonitorService {
   /**
    * Track login attempts and enforce brute-force lockout
    */
-  async recordLoginAttempt(identifier, success, ipAddress = '127.0.0.1', userAgent = '') {
+  async recordLoginAttempt(identifier, success, ipAddress = '127.0.0.1', _userAgent = '') {
     if (!identifier) return { locked: false, attempts: 0 };
     const cleanId = String(identifier).toLowerCase().trim();
     const key = `login:attempts:${cleanId}`;
