@@ -7,27 +7,21 @@
 
 const { prisma } = require('../../config/db');
 const { LIVESTOCK_DISEASES, ETHIOPIAN_LIVESTOCK_BREEDS, getDiseaseById, getDiseasesByAnimalType, getZoonoticDiseases, getNotifiableDiseases, getSeasonalHighRiskDiseases } = require('./diseaseDatabase');
-const { VETERINARY_CALENDAR, getUpcomingVetTasks } = require('./veterinaryCalendar');
+const { getUpcomingVetTasks } = require('./veterinaryCalendar');
 const earthEngineConnector = require('../../ingestion/connectors/earthEngineConnector');
 const { getWoredaCoordinates } = require('../boundaries/boundaries.service');
-const redis = require('../../config/redis');
 const logger = require('../../utils/logger');
-
-const ANIMAL_HEALTH_CACHE_TTL = 30 * 60; // 30 min
 
 // ─── Disease Reference ────────────────────────────────────────────────────────
 
 function getAllDiseases({ animalType, zoonotic, notifiable, season } = {}) {
-  let diseases = [...LIVESTOCK_DISEASES];
+  let diseases = (notifiable === 'true' || notifiable === true) ? getNotifiableDiseases() : [...LIVESTOCK_DISEASES];
 
   if (animalType) {
     diseases = getDiseasesByAnimalType(animalType);
   }
   if (zoonotic === 'true' || zoonotic === true) {
     diseases = diseases.filter((d) => d.isZoonotic);
-  }
-  if (notifiable === 'true' || notifiable === true) {
-    diseases = diseases.filter((d) => d.isNotifiable);
   }
   if (season) {
     diseases = diseases.filter((d) => {
@@ -114,32 +108,37 @@ async function reportOutbreak({
     } : null,
   };
 
-  // Persist to database if model exists
-  try {
-    await prisma.animalDiseaseOutbreak.create({
-      data: {
-        woredaId: outbreak.woredaId,
-        kebeleId: outbreak.kebeleId,
-        diseaseName: outbreak.diseaseName,
-        diseaseId: outbreak.diseaseId,
-        animalType: outbreak.animalType,
-        confirmedCases: outbreak.confirmedCases,
-        suspectedCases: outbreak.suspectedCases,
-        deaths: outbreak.deaths,
-        severity: outbreak.severity,
-        status: 'ACTIVE',
-        latitude: outbreak.coordinates.lat,
-        longitude: outbreak.coordinates.lng,
-        reportedBy: outbreak.reportedBy,
-        notes: outbreak.notes,
-      },
-    });
-    logger.info(`[AnimalHealth] Outbreak reported: ${outbreak.diseaseName} in ${outbreak.woredaName} (${outbreak.confirmedCases} cases)`);
-  } catch (dbErr) {
-    logger.warn(`[AnimalHealth] DB persist notice (outbreak will be returned but may not persist): ${dbErr.message}`);
-  }
+  // Persist to database
+  const createdRecord = await prisma.animalDiseaseOutbreak.create({
+    data: {
+      woredaId: outbreak.woredaId,
+      kebeleId: outbreak.kebeleId,
+      diseaseName: outbreak.diseaseName,
+      diseaseId: outbreak.diseaseId,
+      animalType: outbreak.animalType,
+      confirmedCases: outbreak.confirmedCases,
+      suspectedCases: outbreak.suspectedCases,
+      deaths: outbreak.deaths,
+      severity: outbreak.severity,
+      status: 'ACTIVE',
+      latitude: outbreak.coordinates.lat,
+      longitude: outbreak.coordinates.lng,
+      reportedBy: outbreak.reportedBy,
+      notes: outbreak.notes,
+    },
+    include: {
+      woreda: { select: { id: true, nameEn: true, nameAm: true } },
+    },
+  });
 
-  return outbreak;
+  logger.info(`[AnimalHealth] Outbreak reported: ${createdRecord.diseaseName} in ${coords.nameEn} (${createdRecord.confirmedCases} cases)`);
+
+  return {
+    ...outbreak,
+    id: createdRecord.id,
+    createdAt: createdRecord.createdAt,
+    reportedAt: createdRecord.reportedAt,
+  };
 }
 
 async function getOutbreaks({ woredaId, zoneId, regionId, status = 'ACTIVE', animalType, limit = 50 } = {}) {
