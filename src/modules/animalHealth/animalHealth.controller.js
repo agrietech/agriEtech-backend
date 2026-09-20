@@ -138,6 +138,42 @@ async function getRiskAssessment(req, res, next) {
   }
 }
 
+// GET /api/v1/animal-health/campaigns — Ongoing vaccination campaigns
+async function getCampaigns(req, res, next) {
+  try {
+    const { woredaId, status } = req.query;
+    const campaigns = await animalHealthService.getVaccinationCampaigns({ woredaId, status });
+    res.json({ success: true, data: campaigns });
+  } catch (err) {
+    logger.error(`[AnimalHealthController] Campaigns error: ${err.message}`);
+    next(err);
+  }
+}
+
+// GET /api/v1/animal-health/pasture — Multi-woreda pasture monitoring
+async function getPastureMonitoring(req, res, next) {
+  try {
+    const { woredaId } = req.query;
+    const pasture = await animalHealthService.getPastureMonitoring({ woredaId });
+    res.json({ success: true, data: pasture });
+  } catch (err) {
+    logger.error(`[AnimalHealthController] Pasture monitoring error: ${err.message}`);
+    next(err);
+  }
+}
+
+// GET /api/v1/animal-health/stats — Summary health KPIs
+async function getHealthStats(req, res, next) {
+  try {
+    const { woredaId } = req.query;
+    const stats = await animalHealthService.getHealthStats({ woredaId });
+    res.json({ success: true, data: stats });
+  } catch (err) {
+    logger.error(`[AnimalHealthController] Health stats error: ${err.message}`);
+    next(err);
+  }
+}
+
 // GET /api/v1/animal-health/vet-calendar — Upcoming veterinary tasks
 async function getVetCalendar(req, res) {
   const { month } = req.query;
@@ -154,7 +190,11 @@ module.exports = {
   getLivestock,
   recordVaccination,
   getVaccinationStatus,
+  getVaccinationCampaigns: getCampaigns,
+  getCampaigns,
   getPastureCondition,
+  getPastureMonitoring,
   getRiskAssessment,
+  getHealthStats,
   getVetCalendar,
 };

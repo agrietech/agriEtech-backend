@@ -11,7 +11,7 @@ router.get('/diseases', authorize('ADMIN', 'RESEARCHER', 'REGIONAL_OFFICER', 'ZO
 router.get('/diseases/:diseaseId', authorize('ADMIN', 'RESEARCHER', 'REGIONAL_OFFICER', 'ZONAL_OFFICER', 'WOREDA_OFFICER', 'DEVELOPMENT_AGENT', 'FARMER'), controller.getDiseaseDetails);
 
 // Outbreak reporting and tracking
-router.post('/outbreaks', authorize('ADMIN', 'RESEARCHER', 'REGIONAL_OFFICER', 'ZONAL_OFFICER', 'WOREDA_OFFICER', 'DEVELOPMENT_AGENT'), authorizeWoredaScope('woredaId'), controller.reportOutbreak);
+router.post('/outbreaks', authorize('ADMIN', 'RESEARCHER', 'REGIONAL_OFFICER', 'ZONAL_OFFICER', 'WOREDA_OFFICER', 'DEVELOPMENT_AGENT', 'FARMER'), authorizeWoredaScope('woredaId'), controller.reportOutbreak);
 router.get('/outbreaks', authorize('ADMIN', 'RESEARCHER', 'REGIONAL_OFFICER', 'ZONAL_OFFICER', 'WOREDA_OFFICER', 'DEVELOPMENT_AGENT', 'FARMER'), controller.getOutbreaks);
 
 // Livestock registry
@@ -21,9 +21,14 @@ router.get('/livestock', authorize('ADMIN', 'RESEARCHER', 'REGIONAL_OFFICER', 'Z
 // Vaccination campaigns
 router.post('/vaccinations', authorize('ADMIN', 'RESEARCHER', 'REGIONAL_OFFICER', 'ZONAL_OFFICER', 'WOREDA_OFFICER', 'DEVELOPMENT_AGENT'), authorizeWoredaScope('woredaId'), controller.recordVaccination);
 router.get('/vaccinations', authorize('ADMIN', 'RESEARCHER', 'REGIONAL_OFFICER', 'ZONAL_OFFICER', 'WOREDA_OFFICER', 'DEVELOPMENT_AGENT', 'FARMER'), authorizeWoredaScope('woredaId'), controller.getVaccinationStatus);
+router.get('/campaigns', authorize('ADMIN', 'RESEARCHER', 'REGIONAL_OFFICER', 'ZONAL_OFFICER', 'WOREDA_OFFICER', 'DEVELOPMENT_AGENT', 'FARMER'), authorizeWoredaScope('woredaId'), controller.getCampaigns);
 
 // Pasture/forage condition (NDVI-based)
 router.get('/pasture-condition', authorize('ADMIN', 'RESEARCHER', 'REGIONAL_OFFICER', 'ZONAL_OFFICER', 'WOREDA_OFFICER', 'DEVELOPMENT_AGENT', 'FARMER'), authorizeWoredaScope('woredaId'), controller.getPastureCondition);
+router.get('/pasture', authorize('ADMIN', 'RESEARCHER', 'REGIONAL_OFFICER', 'ZONAL_OFFICER', 'WOREDA_OFFICER', 'DEVELOPMENT_AGENT', 'FARMER'), authorizeWoredaScope('woredaId'), controller.getPastureMonitoring);
+
+// Health statistics summary
+router.get('/stats', authorize('ADMIN', 'RESEARCHER', 'REGIONAL_OFFICER', 'ZONAL_OFFICER', 'WOREDA_OFFICER', 'DEVELOPMENT_AGENT', 'FARMER'), authorizeWoredaScope('woredaId'), controller.getHealthStats);
 
 // Combined animal health risk assessment
 router.get('/risk-assessment', authorize('ADMIN', 'RESEARCHER', 'REGIONAL_OFFICER', 'ZONAL_OFFICER', 'WOREDA_OFFICER', 'DEVELOPMENT_AGENT', 'FARMER'), authorizeWoredaScope('woredaId'), controller.getRiskAssessment);
